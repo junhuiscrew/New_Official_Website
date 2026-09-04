@@ -28,7 +28,9 @@ onMounted(async () => {
       </thead>
       <tbody>
         <tr v-for="item in items" :key="item.id">
-          <td>{{ item.public_reference }}</td>
+          <td>
+            <NuxtLink :to="`/rfqs/${item.id}`">{{ item.public_reference }}</NuxtLink>
+          </td>
           <td>{{ item.company_name }}</td>
           <td>{{ item.status }}</td>
           <td>{{ item.created_at }}</td>

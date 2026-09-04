@@ -92,6 +92,7 @@ def test_production_accepts_explicit_secrets_and_origins() -> None:
         database_url="postgresql+asyncpg://prod_user:strong-db-secret@db:5432/junhui",
         minio_access_key="prod-minio-access",
         minio_secret_key="strong-minio-secret-at-least-32-bytes",
+        minio_public_endpoint="storage.junhuiscrewbarrel.com",
         jwt_signing_secret="strong-jwt-signing-secret-at-least-32-bytes",
         refresh_token_secret="strong-refresh-token-secret-at-least-32-bytes",
         cors_allowed_origins=["https://junhuiscrewbarrel.com"],
@@ -100,6 +101,22 @@ def test_production_accepts_explicit_secrets_and_origins() -> None:
 
     assert settings.app_env == "production"
     assert settings.cors_allowed_origins == ["https://junhuiscrewbarrel.com"]
+
+
+def test_production_rejects_internal_minio_public_endpoint() -> None:
+    """验证生产预签名 URL 不能暴露 localhost 或 Docker 内部 minio 主机名。"""
+    for endpoint in ("localhost:9000", "minio:9000"):
+        with pytest.raises(ValidationError):
+            Settings(
+                app_env="production",
+                database_url="postgresql+asyncpg://prod_user:strong-db-secret@db:5432/junhui",
+                minio_public_endpoint=endpoint,
+                minio_secret_key="strong-minio-secret-at-least-32-bytes",
+                jwt_signing_secret="strong-jwt-signing-secret-at-least-32-bytes",
+                refresh_token_secret="strong-refresh-token-secret-at-least-32-bytes",
+                cors_allowed_origins=["https://junhuiscrewbarrel.com"],
+                _env_file=None,
+            )
 
 
 def test_cors_rejects_wildcard_when_credentials_are_enabled() -> None:

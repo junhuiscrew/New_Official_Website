@@ -66,7 +66,32 @@ async def list_trust(resource: str, pagination: PaginationParams = Depends(), se
     model = config[0]
     rows = list((await session.scalars(select(model).order_by(model.sort_order, model.id).offset(pagination.offset).limit(pagination.page_size))).all())
     total = await session.scalar(select(func.count()).select_from(model))
-    return success_response({"items": [serialize(row) for row in rows], "page": pagination.page, "page_size": pagination.page_size, "total": total or 0})
+    items = []
+    translation_model, owner_field = config[1], config[2]
+    for row in rows:
+        translations = list((await session.scalars(select(translation_model).where(getattr(translation_model, owner_field) == row.id))).all())
+        items.append({**serialize(row), "translations": [serialize(item) for item in translations]})
+    return success_response({"items": items, "page": pagination.page, "page_size": pagination.page_size, "total": total or 0})
+
+
+@router.get("/{resource}/{entity_id}", response_model=ApiResponse[dict[str, Any]])
+async def get_trust_detail(resource: str, entity_id: uuid.UUID, session: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)) -> ApiResponse[dict[str, Any]]:
+    """读取单个 Trust 主实体、翻译与统一生命周期状态。"""
+    config = TRUST_CONFIG.get(resource)
+    if config is None:
+        raise AppException(404, "trust_type_not_found", "未知 Trust 类型")
+    _permission(user, f"{config[3].replace('manufacturing_capability', 'capability')}.read")
+    model, translation_model, owner_field, owner_type, _has_route = config
+    entity = await session.get(model, entity_id)
+    if entity is None:
+        raise AppException(404, "trust_not_found", "Trust 实体不存在")
+    from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+
+    translations = list((await session.scalars(select(translation_model).where(getattr(translation_model, owner_field) == entity.id))).all())
+    statuses = list((await session.scalars(select(TranslationStatus).where(TranslationStatus.owner_type == owner_type, TranslationStatus.owner_id == entity.id))).all())
+    publications = list((await session.scalars(select(ContentPublication).where(ContentPublication.owner_type == owner_type, ContentPublication.owner_id == entity.id))).all())
+    routes = list((await session.scalars(select(ContentRoute).where(ContentRoute.owner_type == owner_type, ContentRoute.owner_id == entity.id))).all())
+    return success_response({"entity": serialize(entity), "translations": [serialize(item) for item in translations], "translation_statuses": [serialize(item) for item in statuses], "publications": [serialize(item) for item in publications], "routes": [serialize(item) for item in routes]})
 
 
 @router.post("/{resource}", response_model=ApiResponse[dict[str, Any]], status_code=201)

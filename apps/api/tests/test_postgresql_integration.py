@@ -80,10 +80,12 @@ async def test_postgresql_schema_seed_and_case_insensitive_email() -> None:
     assert permission_count == len(PERMISSIONS)
     assert default_count == 1
 
+    email_suffix = uuid.uuid4().hex
+    normalized_email = f"case-{email_suffix}@example.com"
     async with factory() as session, session.begin():
-        session.add(User(email="case@example.com", password_hash="not-used", is_active=True))
+        session.add(User(email=normalized_email, password_hash="not-used", is_active=True))
     async with factory() as session:
-        session.add(User(email="CASE@EXAMPLE.COM", password_hash="not-used", is_active=True))
+        session.add(User(email=normalized_email.upper(), password_hash="not-used", is_active=True))
         with pytest.raises(IntegrityError):
             await session.commit()
 
@@ -114,9 +116,10 @@ async def test_postgresql_authentication_creates_revocable_session() -> None:
     """
     engine = create_database_engine(TEST_DATABASE_URL or "")
     factory = create_session_factory(engine)
+    owner_email = f"integration-owner-{uuid.uuid4().hex}@example.com"
     await create_super_admin(
         factory,
-        email="integration-owner@example.com",
+        email=owner_email,
         password="IntegrationPassword!2026",
         display_name="Integration Owner",
     )
@@ -127,7 +130,7 @@ async def test_postgresql_authentication_creates_revocable_session() -> None:
         login = await client.post(
             "/api/v1/auth/login",
             json={
-                "email": "INTEGRATION-OWNER@EXAMPLE.COM",
+                "email": owner_email.upper(),
                 "password": "IntegrationPassword!2026",
             },
         )

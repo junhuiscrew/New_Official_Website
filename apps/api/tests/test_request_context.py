@@ -35,9 +35,9 @@ def test_trusted_proxy_can_supply_single_valid_client_ip(monkeypatch) -> None:
     )
 
 
-def test_untrusted_or_chained_forwarded_header_is_ignored(monkeypatch) -> None:
-    """验证非受信 peer 与可伪造的多段转发链不会覆盖直连地址。"""
+def test_untrusted_header_is_ignored_and_chain_stops_at_first_untrusted_hop(monkeypatch) -> None:
+    """验证非受信 peer 被忽略，代理链从右向左停在首个不受信地址。"""
     monkeypatch.setenv("TRUSTED_PROXY_CIDRS", '["172.16.0.0/12"]')
     get_settings.cache_clear()
     assert get_client_context(_request("198.51.100.10", "203.0.113.24"))[0] == "198.51.100.10"
-    assert get_client_context(_request("172.20.0.5", "1.2.3.4, 203.0.113.24"))[0] == "172.20.0.5"
+    assert get_client_context(_request("172.20.0.5", "1.2.3.4, 203.0.113.24"))[0] == "203.0.113.24"

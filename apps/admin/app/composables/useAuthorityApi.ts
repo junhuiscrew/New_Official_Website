@@ -21,7 +21,7 @@ export function useAuthorityApi() {
   // 所有写请求统一携带认证 Cookie 与双提交 CSRF Header。
   async function request<T>(
     path: string,
-    options: { method?: AuthorityMethod; body?: Record<string, unknown> } = {},
+    options: { method?: AuthorityMethod; body?: Record<string, unknown> | FormData } = {},
   ): Promise<T> {
     const method = options.method || 'GET'
     const response = await $fetch<ApiEnvelope<T>>(path, {
@@ -43,6 +43,7 @@ export function useAuthorityApi() {
   const replace = <T>(path: string, body: Record<string, unknown>) =>
     request<T>(path, { method: 'PUT', body })
   const archive = <T>(path: string) => request<T>(path, { method: 'POST' })
+  const upload = <T>(path: string, body: FormData) => request<T>(path, { method: 'POST', body })
 
-  return { request, list, detail, create, update, replace, archive }
+  return { request, list, detail, create, update, replace, archive, upload }
 }

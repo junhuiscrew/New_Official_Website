@@ -26,6 +26,12 @@ from app.modules.authority.models import (
     KnowledgeArticleTranslation,
 )
 from app.modules.catalog.models import Product, ProductSpecValue, ProductTranslation
+from app.modules.company.models import (
+    Exhibition,
+    ExhibitionTranslation,
+    ManufacturingCapability,
+    ManufacturingCapabilityTranslation,
+)
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.revisions import store_revision
 from app.modules.content.services.routes import validate_content_path
@@ -257,6 +263,18 @@ async def build_visible_source_text(
                 expert.years_experience,
             )
         )
+    elif owner_type == "manufacturing_capability":
+        capability = await session.get(ManufacturingCapability, owner_id)
+        translation = await session.scalar(select(ManufacturingCapabilityTranslation).where(ManufacturingCapabilityTranslation.capability_id == owner_id, ManufacturingCapabilityTranslation.locale_id == locale_id))
+        if capability is None or translation is None or capability.status != "enabled":
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的制造能力公开正文")
+        visible.extend(_visible_values(translation.name, translation.summary, translation.description, translation.key_facts_json, capability.capability_type))
+    elif owner_type == "exhibition":
+        exhibition = await session.get(Exhibition, owner_id)
+        translation = await session.scalar(select(ExhibitionTranslation).where(ExhibitionTranslation.exhibition_id == owner_id, ExhibitionTranslation.locale_id == locale_id))
+        if exhibition is None or translation is None or exhibition.status != "enabled":
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的展会公开正文")
+        visible.extend(_visible_values(translation.title, translation.summary, translation.description, exhibition.event_name, exhibition.country_code, exhibition.city, exhibition.start_date, exhibition.end_date, exhibition.booth_no))
     else:
         raise AppException(422, "unsupported_geo_owner", "该内容类型不支持 GEO 文档")
     return "\n".join(visible)

@@ -39,11 +39,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     minio_endpoint: str = "localhost:9000"
+    minio_public_endpoint: str = "localhost:9000"
     minio_access_key: str = "junhui-local-admin"
     minio_secret_key: str = Field(default="change-me-minio-local-only", repr=False)
     minio_secure: bool = False
     minio_public_bucket: str = "public-media"
     minio_private_bucket: str = "private-rfq"
+    minio_region: str = "us-east-1"
 
     cors_allowed_origins: list[str] = [
         "http://localhost:3000",
@@ -70,6 +72,10 @@ class Settings(BaseSettings):
     rfq_rate_limit_per_day: int = 20
     rfq_retention_days: int = 730
     malware_scanner_enabled: bool = False
+    malware_scanner_host: str = "localhost"
+    malware_scanner_port: int = 3310
+    malware_scanner_timeout_seconds: int = 30
+    rfq_submission_token_ttl_minutes: int = 30
 
     @field_validator("app_env", mode="before")
     @classmethod
@@ -173,6 +179,10 @@ class Settings(BaseSettings):
                 for origin in parsed_origins
             ):
                 invalid_fields.append("cors_allowed_origins")
+        if environment == "production":
+            public_endpoint = urlparse(f"//{self.minio_public_endpoint}")
+            if not public_endpoint.hostname or self._is_local_origin_hostname(public_endpoint.hostname) or public_endpoint.hostname == "minio":
+                invalid_fields.append("minio_public_endpoint")
         if invalid_fields:
             joined_fields = ", ".join(sorted(set(invalid_fields)))
             raise ValueError(f"Unsafe {self.app_env} settings: {joined_fields}")

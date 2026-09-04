@@ -17,12 +17,22 @@ if (error.value || !response.value?.data)
   throw createError({ statusCode: 404, statusMessage: 'Capability not found' })
 const page = computed(() => response.value!.data)
 useHead(() => ({
-  title: page.value.translation.name,
+  title: page.value.seo?.title || page.value.translation.name,
   meta: [
-    { name: 'description', content: page.value.translation.summary },
-    { name: 'robots', content: 'index, follow' },
+    { name: 'description', content: page.value.seo?.description || page.value.translation.summary },
+    {
+      name: 'robots',
+      content: page.value.seo?.robots_index === false ? 'noindex, follow' : 'index, follow',
+    },
   ],
-  link: [{ rel: 'canonical', href: page.value.url }],
+  link: [
+    { rel: 'canonical', href: page.value.seo?.canonical || page.value.url },
+    ...(page.value.seo?.hreflang || []).map((item: { hreflang: string; url: string }) => ({
+      rel: 'alternate',
+      hreflang: item.hreflang,
+      href: item.url,
+    })),
+  ],
   script: [{ type: 'application/ld+json', innerHTML: serializeJsonLd(page.value.schema) }],
 }))
 </script>
@@ -35,6 +45,14 @@ useHead(() => ({
       <ul>
         <li v-for="fact in page.translation.key_facts_json || []" :key="fact">{{ fact }}</li>
       </ul>
+      <section v-if="page.geo">
+        <h2>Technical answer</h2>
+        <p>{{ page.geo.direct_answer }}</p>
+        <ul>
+          <li v-for="fact in page.geo.key_facts || []" :key="fact">{{ fact }}</li>
+        </ul>
+        <p v-for="evidence in page.geo.evidence || []" :key="evidence">{{ evidence }}</p>
+      </section>
     </article>
   </main>
 </template>

@@ -218,6 +218,7 @@ def test_mixed_case_production_environment_still_sets_secure_cookies() -> None:
         app_env="Production",
         database_url="postgresql+asyncpg://prod_user:strong-db-secret@db:5432/junhui",
         minio_secret_key="strong-minio-secret-at-least-32-bytes",
+        minio_public_endpoint="storage.junhuiscrewbarrel.com",
         jwt_signing_secret="strong-jwt-signing-secret-at-least-32-bytes",
         refresh_token_secret="strong-refresh-token-secret-at-least-32-bytes",
         cors_allowed_origins=["https://junhuiscrewbarrel.com"],

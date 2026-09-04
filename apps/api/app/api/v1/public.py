@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
-from app.modules.company.services import get_public_company_profile, get_public_trust
+from app.modules.company.services import (
+    get_public_company_profile,
+    get_public_trust,
+    list_public_trust,
+)
 from app.modules.discovery.public_delivery import (
     get_public_case,
     get_public_catalog_entity,
@@ -128,6 +132,12 @@ async def public_trust(resource: str, locale_slug: str, slug: str, session: Asyn
         from app.core.exceptions.handlers import AppException
         raise AppException(404, "public_content_not_found", "公开 Trust 内容不存在")
     return success_response(await get_public_trust(session, owner_type, locale_slug, slug))
+
+
+@router.get("/trust/{resource}/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])
+async def public_trust_index(resource: str, locale_slug: str, session: AsyncSession = Depends(get_session)) -> ApiResponse[list[dict[str, Any]]]:
+    """输入 Trust 资源与语言；输出真实、已发布且符合索引门槛的列表。"""
+    return success_response(await list_public_trust(session, resource, locale_slug))
 
 
 @router.get(

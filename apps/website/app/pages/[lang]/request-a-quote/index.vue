@@ -8,21 +8,63 @@ const form = reactive({
   contact_name: '',
   email: '',
   message: '',
-  items: [{ item_type: 'custom', requirements: '' }],
+  items: [
+    {
+      item_type: 'custom',
+      product_name_text: '',
+      quantity: '',
+      material_text: '',
+      screw_diameter: '',
+      length: '',
+      machine_brand: '',
+      machine_model: '',
+      requirements: '',
+    },
+  ],
   consent_privacy: false,
   consent_marketing: false,
   honeypot: '',
   preferred_language: lang,
 })
 const result = ref('')
+const files = ref<File[]>([])
 const errorMessage = ref('')
+function addItem() {
+  form.items.push({
+    item_type: 'custom',
+    product_name_text: '',
+    quantity: '',
+    material_text: '',
+    screw_diameter: '',
+    length: '',
+    machine_brand: '',
+    machine_model: '',
+    requirements: '',
+  })
+}
+function removeItem(index: number) {
+  if (form.items.length > 1) form.items.splice(index, 1)
+}
 async function submit() {
   try {
-    const response = await api<{ data: { reference: string; status: string } }>('/public/rfqs', {
+    const response = await api<{
+      data: { reference: string; status: string; submission_token: string }
+    }>('/public/rfqs', {
       method: 'POST',
       body: form,
     })
     result.value = response.data.reference
+    // 短期提交令牌只允许为刚创建的 RFQ 写入 private-rfq。
+    for (const attachment of files.value) {
+      const body = new FormData()
+      body.append('file', attachment)
+      body.append('file_category', 'other')
+      await api(`/public/rfqs/${response.data.reference}/files`, {
+        method: 'POST',
+        body,
+        headers: { 'X-RFQ-Submission-Token': response.data.submission_token },
+      })
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to submit RFQ.'
   }
@@ -39,12 +81,26 @@ async function submit() {
       <fieldset>
         <legend>Items</legend>
         <div v-for="(item, index) in form.items" :key="index">
+          <label>Product <input v-model="item.product_name_text" /></label>
+          <label>Quantity <input v-model="item.quantity" /></label>
+          <label>Material <input v-model="item.material_text" /></label>
+          <label>Screw diameter <input v-model="item.screw_diameter" /></label>
+          <label>Length <input v-model="item.length" /></label>
+          <label>Machine brand <input v-model="item.machine_brand" /></label>
+          <label>Machine model <input v-model="item.machine_model" /></label>
           <label>Requirements <textarea v-model="item.requirements" /></label>
+          <button type="button" @click="removeItem(index)">Remove item</button>
         </div>
-        <button type="button" @click="form.items.push({ item_type: 'custom', requirements: '' })">
-          Add item
-        </button>
+        <button type="button" @click="addItem">Add item</button>
       </fieldset>
+      <label
+        >Drawings and specifications
+        <input
+          type="file"
+          multiple
+          accept=".jpg,.jpeg,.png,.webp,.pdf,.dwg,.dxf,.step,.stp,.iges,.igs"
+          @change="files = Array.from(($event.target as HTMLInputElement).files || [])"
+      /></label>
       <label
         ><input v-model="form.consent_privacy" type="checkbox" required /> I agree to the Privacy
         Policy</label

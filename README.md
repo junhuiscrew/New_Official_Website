@@ -2,15 +2,15 @@
 
 Junhui Global Website 是面向全球塑料机械行业的螺杆、机筒及相关塑化部件 B2B 官网基础工程，正式主域名为 `https://junhuiscrewbarrel.com`。
 
-仓库当前完成 Phase 3.2：在 Phase 3.1 Monorepo、Nuxt SSR、FastAPI、PostgreSQL、Redis、MinIO 和 Alembic 基线上，加入 Authentication、RBAC、Localization、Publication、Route、Revision、Audit 与 Staging 安全基础。最终首页视觉、完整 CMS、产品 CRUD、RFQ 和批量 SEO 内容仍不在本阶段范围内。
+仓库当前完成 Phase 3.5 Remediation：在既有 Structured Core、Authority Content、SEO/GEO 与统一发布生命周期上，补齐真实 MinIO/S3 对象存储、RFQ 私有附件、Celery 恶意软件扫描流程、Company Trust 生命周期和对应 Admin/Public 闭环。最终首页视觉、完整 Page Builder、生产部署和批量内容仍不在本阶段范围内。
 
 ## 目录
 
 ```text
 apps/
   website/        Public Website，Nuxt SSR placeholder
-  admin/          Admin 登录与 Users/Roles/Locales 基础页面
-  api/            FastAPI 模块化单体、Alembic 与测试
+  admin/          Admin、Trust/Media/Downloads/RFQ 管理页面
+  api/            FastAPI 模块化单体、Celery Worker、Alembic 与测试
 packages/
   config/         Website/Admin 共享 API Base 解析
   ui/             共享 UI 包边界
@@ -53,6 +53,8 @@ Seed 可重复执行，只补充缺失的 2 个 Locale、8 个系统 Role、完�
 | Redis | localhost:6379 |
 | MinIO S3 / Console | http://localhost:9000 / http://localhost:9001 |
 
+`worker` 通过 Redis 接收 RFQ 私有附件扫描任务。开发环境可关闭外部扫描器；Staging/Production 在扫描器不可用时会 fail-closed，将文件保持为不可下载状态。
+
 Website 根路径以 308 跳转到 `/zh-cn/`。浏览器统一使用同源 `/api/v1`，Nuxt SSR 在容器内使用 `http://api:8000/api/v1`。Admin 的 HTML 与响应头全局设置 `noindex, nofollow`。
 
 ## Bootstrap Super Admin
@@ -90,7 +92,7 @@ pnpm format:check
 pnpm build
 ```
 
-真实 PostgreSQL 17 + Redis 隔离测试（自动执行 migrations、seed 和完整后端测试）：
+真实 PostgreSQL 17 + Redis + MinIO 隔离测试（自动执行 migrations、seed 和完整后端测试）：
 
 ```bash
 docker compose --profile test up --abort-on-container-exit --exit-code-from api-test api-test
@@ -133,6 +135,14 @@ docker compose down
 - FAQPage Schema 由 `FAQ_SCHEMA_ENABLED` 控制，默认关闭；系统不会生成虚构 Offer、价格、Review、Rating 或人物。
 - Redirect Manager 使用精确 host/path 规则，并拒绝 self、loop、chain、duplicate 与不安全目标；已发布 URL 必须通过单事务 URL Change API 变更。
 - Case 客户名称、地址、Logo 采用逐字段公开许可；未获许可的数据不会进入 Public DTO、Schema、SEO 或 GEO。
+
+## Phase 3.5 Trust、Media 与 RFQ
+
+- `public-media` 与 `private-rfq` 使用独立 MinIO bucket；公共媒体通过同源应用代理交付，浏览器不会看到 Docker 内部端点。
+- RFQ 支持多 Item 与匿名附件；附件经过扩展名、MIME、文件头、文件名、大小、SHA256 和恶意软件状态校验。
+- 私有下载必须同时满足认证、`rfq.download_private_file`、RFQ 归属、`clean + ready`，之后才签发短期 S3 Presigned GET。
+- Trust、Media、Downloads 与 RFQ Admin 页面均连接真实 API；公开 Trust 索引只显示满足统一可索引门槛的真实数据。
+- 当前修复验收记录见 `docs/architecture/phase3-5-remediation-report.md`。
 
 ## Phase 3.2 文档
 

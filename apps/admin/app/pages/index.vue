@@ -1,4 +1,4 @@
-<!-- 页面用途：Admin CMS 最小占位页，不包含最终登录或内容管理界面。 -->
+<!-- 页面用途：Phase 3.2 Admin 功能验证总览，不代表最终 CMS Dashboard。 -->
 <script setup lang="ts">
 import { adminMeta } from '../admin-config'
 
@@ -16,10 +16,11 @@ useHead({
 <template>
   <main class="admin-shell">
     <section aria-labelledby="admin-title">
-      <p>Phase 3.1</p>
+      <p>Phase 3.2</p>
       <h1 id="admin-title">Junhui Global Website Admin</h1>
       <p>
-        Administration foundation is running. Authentication and CMS features begin in Phase 3.2.
+        Authentication, RBAC, localization and publication foundations are available for
+        verification.
       </p>
     </section>
   </main>

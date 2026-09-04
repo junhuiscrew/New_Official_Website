@@ -8,6 +8,7 @@ Create Date: 2026-09-04
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "20260904_0001"
@@ -30,7 +31,11 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(length=255), nullable=False, comment="密码哈希"),
         sa.Column("display_name", sa.String(length=100), nullable=True, comment="用户显示名称"),
         sa.Column(
-            "is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False, comment="是否启用"
+            "is_active",
+            sa.Boolean(),
+            server_default=sa.text("true"),
+            nullable=False,
+            comment="是否启用",
         ),
         sa.Column("id", sa.Uuid(), nullable=False, comment="主键ID"),
         sa.Column(
@@ -130,7 +135,11 @@ def upgrade() -> None:
             comment="是否启用：true启用，false停用",
         ),
         sa.Column(
-            "sort_order", sa.Integer(), server_default=sa.text("0"), nullable=False, comment="显示排序值"
+            "sort_order",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+            comment="显示排序值",
         ),
         sa.Column("id", sa.Uuid(), nullable=False, comment="主键ID"),
         sa.Column(
@@ -166,7 +175,10 @@ def upgrade() -> None:
             comment="角色分配时间",
         ),
         sa.ForeignKeyConstraint(
-            ["assigned_by"], ["users.id"], name=op.f("fk_user_roles_assigned_by_users"), ondelete="SET NULL"
+            ["assigned_by"],
+            ["users.id"],
+            name=op.f("fk_user_roles_assigned_by_users"),
+            ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
             ["role_id"], ["roles.id"], name=op.f("fk_user_roles_role_id_roles"), ondelete="CASCADE"
@@ -196,7 +208,10 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["role_id"], ["roles.id"], name=op.f("fk_role_permissions_role_id_roles"), ondelete="CASCADE"
+            ["role_id"],
+            ["roles.id"],
+            name=op.f("fk_role_permissions_role_id_roles"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("role_id", "permission_id", name=op.f("pk_role_permissions")),
         comment="角色权限关联表",
@@ -222,4 +237,3 @@ def downgrade() -> None:
     op.drop_table("roles")
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_table("users")
-

@@ -6,9 +6,38 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Uuid, func
+from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.core.database import Base, TimestampMixin, UuidPrimaryKeyMixin
+
+
+class CaseInsensitiveEmail(TypeDecorator[str]):
+    """
+    在 PostgreSQL 使用 CITEXT，在轻量测试数据库回退到 VARCHAR。
+
+    输入：数据库 dialect。
+
+    输出：对应 dialect 的邮箱字段类型。
+    """
+
+    impl = String(320)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect: Dialect):
+        """
+        为目标数据库选择大小写不敏感邮箱类型。
+
+        输入：
+            dialect: Dialect，SQLAlchemy 当前数据库方言。
+
+        输出：TypeEngine，PostgreSQL 为 CITEXT，其余为 VARCHAR(320)。
+        """
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(CITEXT())
+        return dialect.type_descriptor(String(320))
 
 
 class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
@@ -24,7 +53,7 @@ class User(UuidPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = {"comment": "用户表"}
 
     email: Mapped[str] = mapped_column(
-        String(320), nullable=False, unique=True, index=True, comment="用户邮箱"
+        CaseInsensitiveEmail(), nullable=False, unique=True, index=True, comment="用户邮箱"
     )
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False, comment="密码哈希")
     display_name: Mapped[str | None] = mapped_column(

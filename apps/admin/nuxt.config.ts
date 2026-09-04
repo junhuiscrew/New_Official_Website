@@ -1,4 +1,4 @@
-// 配置用途：Admin CMS 的最小 Nuxt SSR 壳，Phase 3.1 不实现登录和完整 CMS。
+// 配置用途：Admin CMS 的 Phase 3.2 认证与 RBAC 基础壳，不包含完整 CMS。
 import { defineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
@@ -6,6 +6,21 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   ssr: true,
   css: ['~/assets/css/main.css'],
+  app: {
+    head: {
+      meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+    },
+  },
+  routeRules: {
+    '/api/**': { proxy: 'http://api:8000/api/**' },
+    '/**': { headers: { 'X-Robots-Tag': 'noindex, nofollow' } },
+  },
+  runtimeConfig: {
+    apiInternalBase: 'http://api:8000/api/v1',
+    public: {
+      apiBase: '/api/v1',
+    },
+  },
   typescript: {
     strict: true,
     typeCheck: true,

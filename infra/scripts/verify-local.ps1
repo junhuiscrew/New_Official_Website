@@ -1,4 +1,4 @@
-# 脚本用途：验证 Phase 3.1 本地 Compose 服务与关键 HTTP 端点。
+# 脚本用途：验证 Phase 3.2 本地 Compose 服务与关键 HTTP 端点。
 $ErrorActionPreference = "Stop"
 $apiHostPort = if ([string]::IsNullOrWhiteSpace($env:API_HOST_PORT)) { 8010 } else { $env:API_HOST_PORT }
 
@@ -40,12 +40,16 @@ function Assert-HttpStatus {
     }
 }
 
-# 分别验证 API、根路径跳转、两种语言、管理后台与 Nginx 代理。
-Assert-HttpStatus -Url "http://localhost:$apiHostPort/api/v1/health" -ExpectedStatus 200
+# 分别验证 live/ready、根路径跳转、两种语言、Admin SSR 安全壳与 Nginx 代理。
+Assert-HttpStatus -Url "http://localhost:$apiHostPort/api/v1/health/live" -ExpectedStatus 200
+Assert-HttpStatus -Url "http://localhost:$apiHostPort/api/v1/health/ready" -ExpectedStatus 200
 Assert-HttpStatus -Url "http://localhost:3000/" -ExpectedStatus 308
 Assert-HttpStatus -Url "http://localhost:3000/zh-cn/" -ExpectedStatus 200
 Assert-HttpStatus -Url "http://localhost:3000/en/" -ExpectedStatus 200
+# Admin SSR 只返回不含敏感数据的应用壳，浏览器 hydration 后再执行登录/权限 Guard。
 Assert-HttpStatus -Url "http://localhost:3001/" -ExpectedStatus 200
+Assert-HttpStatus -Url "http://localhost:3001/login" -ExpectedStatus 200
 Assert-HttpStatus -Url "http://localhost:8080/en/" -ExpectedStatus 200
+Assert-HttpStatus -Url "http://localhost:8080/api/v1/health/ready" -ExpectedStatus 200
 
-Write-Host "Phase 3.1 local verification passed."
+Write-Host "Phase 3.2 local verification passed."

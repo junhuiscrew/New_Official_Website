@@ -34,6 +34,14 @@ def reset_settings_cache(monkeypatch: pytest.MonkeyPatch):
         Iterator[None]，测试生命周期控制器。
     """
     monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+asyncpg://test_user:phase32-test-db-secret@postgres-test:5432/junhui_test",
+    )
+    monkeypatch.setenv("MINIO_SECRET_KEY", "phase32-test-minio-secret-at-least-24-bytes")
+    monkeypatch.setenv("JWT_SIGNING_SECRET", "phase32-test-jwt-signing-secret-at-least-32-bytes")
+    monkeypatch.setenv("REFRESH_TOKEN_SECRET", "phase32-test-refresh-secret-at-least-32-bytes")
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://testserver"]')
     from app.core.config import get_settings
 
     get_settings.cache_clear()

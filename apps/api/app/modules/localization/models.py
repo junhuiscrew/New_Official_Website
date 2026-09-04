@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base, TimestampMixin, UuidPrimaryKeyMixin
@@ -18,7 +18,16 @@ class Locale(UuidPrimaryKeyMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "locales"
-    __table_args__ = {"comment": "站点语言表"}
+    __table_args__ = (
+        Index(
+            "ux_locales_single_default",
+            "is_default",
+            unique=True,
+            postgresql_where=text("is_default"),
+            sqlite_where=text("is_default = 1"),
+        ),
+        {"comment": "站点语言表"},
+    )
 
     code: Mapped[str] = mapped_column(
         String(16), nullable=False, unique=True, index=True, comment="标准语言代码"

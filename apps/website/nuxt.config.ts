@@ -8,11 +8,13 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   routeRules: {
     '/': { redirect: { to: '/zh-cn/', statusCode: 308 } },
+    '/api/**': { proxy: 'http://api:8000/api/**' },
   },
   runtimeConfig: {
+    apiInternalBase: 'http://api:8000/api/v1',
     public: {
       siteUrl: 'https://junhuiscrewbarrel.com',
-      apiBase: 'http://localhost:8000/api/v1',
+      apiBase: '/api/v1',
     },
   },
   typescript: {

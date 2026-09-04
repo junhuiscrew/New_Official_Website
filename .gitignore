@@ -29,3 +29,4 @@ Thumbs.db
 # 本地数据与日志
 data/
 *.log
+*.htpasswd

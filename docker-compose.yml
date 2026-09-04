@@ -69,10 +69,11 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: runtime
     environment:
       APP_ENV: development
       APP_NAME: Junhui Global Website API
-      APP_VERSION: 0.1.0
+      APP_VERSION: 0.2.0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-junhui}:${POSTGRES_PASSWORD:-junhui-local-dev}@postgres:5432/${POSTGRES_DB:-junhui}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
@@ -81,6 +82,10 @@ services:
       MINIO_SECURE: 'false'
       MINIO_PUBLIC_BUCKET: public-media
       MINIO_PRIVATE_BUCKET: private-rfq
+      CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:3001","http://localhost:8080"]'
+      JWT_SIGNING_SECRET: ${JWT_SIGNING_SECRET:-change-me-jwt-local-only}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-change-me-refresh-local-only}
+      AUTH_COOKIE_SECURE: 'false'
     command: >-
       sh -c "alembic upgrade head && python -m app.cli seed &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -99,7 +104,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=3)",
         ]
       interval: 5s
       timeout: 5s
@@ -112,7 +117,8 @@ services:
       dockerfile: apps/website/Dockerfile
     environment:
       NUXT_PUBLIC_SITE_URL: https://junhuiscrewbarrel.com
-      NUXT_PUBLIC_API_BASE: http://localhost:${API_HOST_PORT:-8010}/api/v1
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_INTERNAL_BASE: http://api:8000/api/v1
     ports:
       - '3000:3000'
     depends_on:
@@ -136,7 +142,8 @@ services:
       context: .
       dockerfile: apps/admin/Dockerfile
     environment:
-      NUXT_PUBLIC_API_BASE: http://localhost:${API_HOST_PORT:-8010}/api/v1
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_INTERNAL_BASE: http://api:8000/api/v1
     ports:
       - '3001:3001'
     depends_on:
@@ -171,6 +178,55 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  postgres-test:
+    profiles: ['test']
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: junhui_test
+      POSTGRES_USER: junhui_test
+      POSTGRES_PASSWORD: junhui-test-only
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U junhui_test -d junhui_test']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis-test:
+    profiles: ['test']
+    image: redis:8.2-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api-test:
+    profiles: ['test']
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: test
+    environment:
+      APP_ENV: test
+      APP_VERSION: 0.2.0
+      DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test
+      TEST_DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test
+      REDIS_URL: redis://redis-test:6379/0
+      MINIO_SECRET_KEY: phase32-test-minio-secret-at-least-24-bytes
+      JWT_SIGNING_SECRET: phase32-test-jwt-signing-secret-at-least-32-bytes
+      REFRESH_TOKEN_SECRET: phase32-test-refresh-secret-at-least-32-bytes
+    command: >-
+      sh -c "alembic upgrade head && python -m app.cli seed &&
+      pytest -q -p no:cacheprovider --basetemp=/tmp/junhui-pytest"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
 
 volumes:
   postgres_data:

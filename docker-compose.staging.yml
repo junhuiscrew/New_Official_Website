@@ -1,0 +1,61 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?staging PostgreSQL password is required}
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?staging MinIO access key is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?staging MinIO secret key is required}
+    ports: !reset []
+
+  minio-init:
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?staging MinIO access key is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?staging MinIO secret key is required}
+
+  api:
+    environment:
+      APP_ENV: staging
+      DATABASE_URL: ${DATABASE_URL:?staging DATABASE_URL is required}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?staging MINIO_ACCESS_KEY is required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?staging MINIO_SECRET_KEY is required}
+      JWT_SIGNING_SECRET: ${JWT_SIGNING_SECRET:?staging JWT_SIGNING_SECRET is required}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:?staging REFRESH_TOKEN_SECRET is required}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?staging CORS allowlist is required}
+      AUTH_COOKIE_SECURE: 'true'
+      PUBLIC_SITEMAP_ENABLED: 'false'
+      ANALYTICS_ENABLED: 'false'
+      MARKETING_EMAIL_ENABLED: 'false'
+      TRUSTED_PROXY_CIDRS: '["172.16.0.0/12","192.168.0.0/16","10.0.0.0/8"]'
+    ports: !reset []
+
+  website:
+    environment:
+      NUXT_PUBLIC_SITEMAP_ENABLED: 'false'
+      NUXT_PUBLIC_ANALYTICS_ENABLED: 'false'
+    ports: !reset []
+
+  admin:
+    environment:
+      NUXT_APP_BASE_URL: /admin/
+    ports: !reset []
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3001/admin/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+
+  nginx:
+    volumes:
+      - ./infra/nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+      - ${STAGING_HTPASSWD_FILE:?external htpasswd file is required}:/etc/nginx/staging.htpasswd:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/healthz']

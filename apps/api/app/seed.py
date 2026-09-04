@@ -1,4 +1,4 @@
-"""Phase 3.1 的幂等基础数据 Seed。"""
+"""Phase 3.2 语言、角色、权限与角色矩阵的幂等系统 Seed。"""
 
 from collections.abc import Sequence
 
@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.modules.localization.models import Locale
-from app.modules.users.models import Role
+from app.modules.users.models import Permission, Role, RolePermission
 
 LOCALES: tuple[dict[str, object], ...] = (
     {
@@ -44,10 +44,135 @@ ROLES: tuple[dict[str, object], ...] = (
     {"name": "media_manager", "display_name": "媒体管理员", "description": "管理公开媒体资产"},
 )
 
+PERMISSION_CODES: tuple[str, ...] = (
+    "user.read",
+    "user.create",
+    "user.update",
+    "user.disable",
+    "role.read",
+    "role.manage",
+    "locale.read",
+    "locale.manage",
+    "content.read",
+    "content.create",
+    "content.update",
+    "content.review",
+    "content.publish",
+    "content.archive",
+    "translation.read",
+    "translation.create",
+    "translation.update",
+    "translation.review",
+    "translation.publish",
+    "seo.read",
+    "seo.update",
+    "geo.read",
+    "geo.update",
+    "redirect.read",
+    "redirect.manage",
+    "media.read",
+    "media.upload",
+    "media.update",
+    "media.delete",
+    "rfq.read",
+    "rfq.assign",
+    "rfq.update",
+    "rfq.download_private_file",
+    "settings.read",
+    "settings.update",
+    "audit.read",
+)
+
+PERMISSIONS: tuple[dict[str, object], ...] = tuple(
+    {
+        "code": code,
+        "display_name": code,
+        "description": f"Phase 3.2 系统权限：{code}",
+    }
+    for code in PERMISSION_CODES
+)
+
+CONTENT_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("content."))
+TRANSLATION_PERMISSIONS = frozenset(
+    code for code in PERMISSION_CODES if code.startswith("translation.")
+)
+MEDIA_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("media."))
+RFQ_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("rfq."))
+
+# 角色矩阵只声明系统基线；Seed 只补充缺失关系，不删除管理员后续添加的自定义映射。
+ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
+    "super_admin": frozenset(PERMISSION_CODES),
+    "content_admin": CONTENT_PERMISSIONS
+    | TRANSLATION_PERMISSIONS
+    | MEDIA_PERMISSIONS
+    | frozenset(
+        {
+            "user.read",
+            "role.read",
+            "locale.read",
+            "locale.manage",
+            "seo.read",
+            "seo.update",
+            "geo.read",
+            "geo.update",
+            "redirect.read",
+            "redirect.manage",
+            "settings.read",
+            "audit.read",
+        }
+    ),
+    "editor": frozenset(
+        {
+            "content.read",
+            "content.create",
+            "content.update",
+            "translation.read",
+            "media.read",
+            "media.upload",
+        }
+    ),
+    "translator": frozenset(
+        {
+            "content.read",
+            "locale.read",
+            "translation.read",
+            "translation.create",
+            "translation.update",
+        }
+    ),
+    "reviewer": frozenset(
+        {
+            "content.read",
+            "content.review",
+            "content.publish",
+            "translation.read",
+            "translation.review",
+            "translation.publish",
+            "audit.read",
+        }
+    ),
+    "seo_manager": frozenset(
+        {
+            "content.read",
+            "translation.read",
+            "locale.read",
+            "seo.read",
+            "seo.update",
+            "geo.read",
+            "geo.update",
+            "redirect.read",
+            "redirect.manage",
+            "audit.read",
+        }
+    ),
+    "sales": RFQ_PERMISSIONS,
+    "media_manager": MEDIA_PERMISSIONS,
+}
+
 
 async def _seed_by_unique_field(
     session: AsyncSession,
-    model: type[Locale] | type[Role],
+    model: type[Locale] | type[Role] | type[Permission],
     rows: Sequence[dict[str, object]],
     unique_field: str,
 ) -> None:
@@ -70,7 +195,7 @@ async def _seed_by_unique_field(
 
 async def seed_database(session_factory: async_sessionmaker[AsyncSession]) -> None:
     """
-    写入 Phase 3.1 的语言与基础角色。
+    写入语言、基础角色、权限和系统角色权限映射。
 
     输入：
         session_factory: async_sessionmaker[AsyncSession]，目标数据库 session factory。
@@ -80,3 +205,24 @@ async def seed_database(session_factory: async_sessionmaker[AsyncSession]) -> No
     async with session_factory() as session, session.begin():
         await _seed_by_unique_field(session, Locale, LOCALES, "code")
         await _seed_by_unique_field(session, Role, ROLES, "name")
+        await _seed_by_unique_field(session, Permission, PERMISSIONS, "code")
+        await session.flush()
+
+        roles = {role.name: role for role in (await session.scalars(select(Role))).all()}
+        permissions = {
+            permission.code: permission
+            for permission in (await session.scalars(select(Permission))).all()
+        }
+        existing_pairs = set(
+            (
+                await session.execute(select(RolePermission.role_id, RolePermission.permission_id))
+            ).all()
+        )
+        for role_name, permission_codes in ROLE_PERMISSION_MATRIX.items():
+            role = roles[role_name]
+            for permission_code in permission_codes:
+                permission = permissions[permission_code]
+                pair = (role.id, permission.id)
+                if pair not in existing_pairs:
+                    session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+                    existing_pairs.add(pair)

@@ -221,3 +221,40 @@ API `live` 与 `ready` 均返回 HTTP 200。Docker Compose 版本：`v5.3.1`。
 - Missing Locale 默认 draft + inactive + noindex，不因“Translation row 已存在”而提前公开。
 - 本轮没有实现 sitemap、schema、SEO/GEO 文档生成或批量内容，符合 remediation 范围限制。
 - 未发现交接文件冻结决策与 `$seo-rank` / `$geo-rank` 规范冲突；如有优先级争议，仍以正式交接文件和已冻结业务决策为最高约束。
+
+## 23. Phase 3.3 Final Patch
+
+本补丁仅修复 editor 的 Product 编辑依赖读取权限与 Admin 五种规格值输入，不包含 Phase 3.4 功能。
+
+### Final Patch commit
+
+- 实现 commit SHA：提交后回填。
+- 分支：`phase-3.3-fix`。
+
+### Editor 权限
+
+- 新增读取权限：`catalog.read`、`specification.read`、`material.read`、`technology.read`、`application.read`、`solution.read`。
+- 保留既有 Product 创建/编辑能力：`catalog.create`、`catalog.update`。
+- 未新增 `material.create`、`technology.create`、`application.create`、`solution.create`，也未授予全局 `specification.manage`。
+- API 回归覆盖 Category、Product detail、Specification Group/Definition/Value 及四类关联实体读取，Product PATCH 与 Relation PUT，并断言四类知识实体创建均返回 403。
+
+### Admin Specification value_type
+
+- `text`：显示文本输入并只提交 `value_text`。
+- `number`：显示数值输入并只提交 `value_number`。
+- `range`：显示 minimum + maximum，并提交 `value_min` 与 `value_max`。
+- `boolean`：显示 True/False select，并提交 `value_boolean`，包括 `false`。
+- `enum`：显示 enum value 输入并只提交 `enum_value`。
+- 新增 `buildSpecificationValuePayload()`，确保请求只携带当前 Definition 类型对应的结构化值字段。
+
+### Final Patch regression 与验证结果
+
+- TDD RED：editor 所有 Product 编辑依赖读取请求返回 403；Admin 五类型工具/条件输入契约 2 项失败。
+- 目标 GREEN：后端 `3 passed`；Admin `14 passed`。
+- Ruff：`All checks passed!`。
+- Backend local：`108 passed, 7 skipped, 1 warning in 27.87s`；7 项仅在 PostgreSQL profile 执行。
+- PostgreSQL container：空库迁移到 `20260904_0005`、Seed、完整测试 `115 passed, 1 warning in 29.77s`。
+- Website Vitest：`5 passed`；Admin Vitest：`14 passed`。
+- Website/Admin Typecheck：通过。
+- Website/Admin Production Build：通过。
+- 已知 warning 仍为上游 Starlette/AnyIO 与 Nuxt/Node deprecation 提示，无测试或构建失败。

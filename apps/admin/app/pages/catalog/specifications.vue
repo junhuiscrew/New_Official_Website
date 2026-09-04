@@ -1,6 +1,11 @@
 <!-- 页面用途：Specification Group、Definition 与 Product/ProductModel Value 基础编辑。 -->
 <script setup lang="ts">
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
+import {
+  buildSpecificationValuePayload,
+  type SpecificationValueDraft,
+  type SpecificationValueType,
+} from '~/utils/specificationValue'
 
 interface GroupItem {
   id: string
@@ -9,7 +14,7 @@ interface GroupItem {
 }
 interface DefinitionItem extends GroupItem {
   group_id: string
-  value_type: string
+  value_type: SpecificationValueType
   default_unit: string | null
   is_filterable: boolean
 }
@@ -44,13 +49,21 @@ const definitionForm = reactive({
   sort_order: 0,
   translations: [] as CatalogTranslationDraft[],
 })
-const valueForm = reactive({
+const valueForm = reactive<SpecificationValueDraft>({
   product_id: '',
   product_model_id: '',
   definition_id: '',
   value_text: '',
-  value_number: 0,
+  value_number: null,
+  value_min: null,
+  value_max: null,
+  value_boolean: false,
+  enum_value: '',
 })
+// 当前规格类型决定唯一显示和提交的值字段，避免多个类型字段同时进入请求体。
+const selectedValueType = computed(
+  () => definitions.value.find((item) => item.id === valueForm.definition_id)?.value_type ?? null,
+)
 
 function cleanTranslations(items: CatalogTranslationDraft[]) {
   return items
@@ -110,15 +123,8 @@ async function createDefinition() {
 }
 
 async function createValue() {
-  const definition = definitions.value.find((item) => item.id === valueForm.definition_id)
-  if (!definition) return
-  const body: Record<string, unknown> = {
-    product_id: valueForm.product_id || null,
-    product_model_id: valueForm.product_model_id || null,
-    definition_id: valueForm.definition_id,
-  }
-  if (definition.value_type === 'number') body.value_number = valueForm.value_number
-  else body.value_text = valueForm.value_text
+  if (!selectedValueType.value) return
+  const body = buildSpecificationValuePayload(selectedValueType.value, valueForm)
   try {
     await api.create('/catalog/specifications/values', body)
     Object.assign(valueForm, {
@@ -126,7 +132,11 @@ async function createValue() {
       product_model_id: '',
       definition_id: '',
       value_text: '',
-      value_number: 0,
+      value_number: null,
+      value_min: null,
+      value_max: null,
+      value_boolean: false,
+      enum_value: '',
     })
   } catch (error) {
     errorMessage.value =
@@ -205,11 +215,34 @@ onMounted(load)
             <option v-for="item in definitions" :key="item.id" :value="item.id">
               {{ item.code }}
             </option></select
-          ><input v-model="valueForm.value_text" placeholder="Text / enum value" /><input
-            v-model.number="valueForm.value_number"
-            type="number"
-            placeholder="Number"
-          /><button type="submit">Save value</button>
+          ><label v-if="selectedValueType === 'text'"
+            >Text <input v-model="valueForm.value_text" required /></label
+          ><label v-if="selectedValueType === 'number'"
+            >Number
+            <input
+              v-model.number="valueForm.value_number"
+              type="number"
+              step="any"
+              required /></label
+          ><template v-if="selectedValueType === 'range'">
+            <label
+              >Minimum
+              <input v-model.number="valueForm.value_min" type="number" step="any" required
+            /></label>
+            <label
+              >Maximum
+              <input v-model.number="valueForm.value_max" type="number" step="any" required
+            /></label>
+          </template>
+          <label v-if="selectedValueType === 'boolean'"
+            >Boolean
+            <select v-model="valueForm.value_boolean">
+              <option :value="true">True</option>
+              <option :value="false">False</option>
+            </select></label
+          ><label v-if="selectedValueType === 'enum'"
+            >Enum value <input v-model="valueForm.enum_value" required /></label
+          ><button type="submit" :disabled="!selectedValueType">Save value</button>
         </form>
       </section>
     </section>

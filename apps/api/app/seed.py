@@ -163,8 +163,14 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "translation.read",
             "media.read",
             "media.upload",
+            "catalog.read",
             "catalog.create",
             "catalog.update",
+            "specification.read",
+            "material.read",
+            "technology.read",
+            "application.read",
+            "solution.read",
         }
     ),
     "translator": frozenset(

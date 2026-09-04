@@ -216,3 +216,97 @@ async def test_product_and_material_detail_return_complete_editor_dto(
     assert material_zh_status["status"] == "draft"
     assert material_data["publications"][0]["status"] == "draft"
     assert material_data["routes"][0]["is_canonical"] is True
+
+
+async def test_editor_can_read_product_dependencies_and_edit_relations_without_creating_knowledge(
+    catalog_remediation_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证 editor 可读取 Product 编辑依赖并修改产品关系，但不能创建基础知识实体。
+
+    输入：catalog_remediation_api_factory，已 Seed 角色和用户的数据库工厂。
+    输出：None；断言读取/产品编辑成功，四类知识实体创建均为 403。
+    """
+    async with _role_client(catalog_remediation_api_factory, "content_admin") as client:
+        category = await client.post(
+            "/api/v1/catalog/categories",
+            json={"slug": "editor-access-category", "translations": []},
+        )
+        product = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category.json()["data"]["id"],
+                "slug": "editor-access-product",
+                "translations": [],
+            },
+        )
+        resource_ids: dict[str, str] = {}
+        for resource in ("materials", "technologies", "applications", "solutions"):
+            created = await client.post(
+                f"/api/v1/catalog/{resource}",
+                json={"slug": f"editor-access-{resource}", "translations": []},
+            )
+            assert created.status_code == 201
+            resource_ids[resource] = created.json()["data"]["id"]
+        group = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={"code": "editor-access-group", "translations": []},
+        )
+        definition = await client.post(
+            "/api/v1/catalog/specifications/definitions",
+            json={
+                "group_id": group.json()["data"]["id"],
+                "code": "editor-access-text",
+                "value_type": "text",
+                "translations": [],
+            },
+        )
+        value = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": product.json()["data"]["id"],
+                "definition_id": definition.json()["data"]["id"],
+                "value_text": "editor-visible",
+            },
+        )
+        assert value.status_code == 201
+
+    product_id = product.json()["data"]["id"]
+    async with _role_client(catalog_remediation_api_factory, "editor") as client:
+        read_paths = [
+            "/api/v1/catalog/categories",
+            f"/api/v1/catalog/products/{product_id}",
+            "/api/v1/catalog/specifications/groups",
+            "/api/v1/catalog/specifications/definitions",
+            "/api/v1/catalog/specifications/values",
+            "/api/v1/catalog/materials",
+            "/api/v1/catalog/technologies",
+            "/api/v1/catalog/applications",
+            "/api/v1/catalog/solutions",
+        ]
+        read_responses = [await client.get(path) for path in read_paths]
+        product_update = await client.patch(
+            f"/api/v1/catalog/products/{product_id}",
+            json={"is_featured": True},
+        )
+        relation_update = await client.put(
+            f"/api/v1/catalog/products/{product_id}/relations",
+            json={
+                "material_ids": [resource_ids["materials"]],
+                "technology_ids": [resource_ids["technologies"]],
+                "application_ids": [resource_ids["applications"]],
+                "solution_ids": [resource_ids["solutions"]],
+            },
+        )
+        forbidden_creates = [
+            await client.post(
+                f"/api/v1/catalog/{resource}",
+                json={"slug": f"editor-forbidden-{resource}", "translations": []},
+            )
+            for resource in ("materials", "technologies", "applications", "solutions")
+        ]
+
+    assert [response.status_code for response in read_responses] == [200] * len(read_paths)
+    assert product_update.status_code == 200
+    assert relation_update.status_code == 200
+    assert [response.status_code for response in forbidden_creates] == [403, 403, 403, 403]

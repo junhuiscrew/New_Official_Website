@@ -138,6 +138,70 @@ async def test_catalog_specification_type_mismatch_is_rejected(
     assert response.status_code == 422
 
 
+async def test_catalog_accepts_all_five_specification_value_types(
+    catalog_api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证 text、number、range、boolean、enum 五种规格值均通过真实 API 服务端校验。
+
+    输入：catalog_api_session_factory，Catalog API 隔离数据库。
+    输出：None；断言五类结构化 payload 均成功保存且字段未串型。
+    """
+    async with _catalog_client(catalog_api_session_factory) as client:
+        category = await client.post(
+            "/api/v1/catalog/categories",
+            json={"slug": "five-types-category", "translations": []},
+        )
+        product = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category.json()["data"]["id"],
+                "slug": "five-types-product",
+                "translations": [],
+            },
+        )
+        group = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={"code": "five-types-group", "translations": []},
+        )
+        value_payloads: dict[str, dict[str, object]] = {
+            "text": {"value_text": "316L"},
+            "number": {"value_number": 12.5},
+            "range": {"value_min": 10, "value_max": 15},
+            "boolean": {"value_boolean": False},
+            "enum": {"enum_value": "A4-80"},
+        }
+        saved_values: dict[str, dict[str, object]] = {}
+        for value_type, typed_payload in value_payloads.items():
+            definition = await client.post(
+                "/api/v1/catalog/specifications/definitions",
+                json={
+                    "group_id": group.json()["data"]["id"],
+                    "code": f"five-types-{value_type}",
+                    "value_type": value_type,
+                    "translations": [],
+                },
+            )
+            response = await client.post(
+                "/api/v1/catalog/specifications/values",
+                json={
+                    "product_id": product.json()["data"]["id"],
+                    "definition_id": definition.json()["data"]["id"],
+                    **typed_payload,
+                },
+            )
+            assert definition.status_code == 201
+            assert response.status_code == 201
+            saved_values[value_type] = response.json()["data"]
+
+    assert saved_values["text"]["value_text"] == "316L"
+    assert saved_values["number"]["value_number"] == 12.5
+    assert saved_values["range"]["value_min"] == 10
+    assert saved_values["range"]["value_max"] == 15
+    assert saved_values["boolean"]["value_boolean"] is False
+    assert saved_values["enum"]["enum_value"] == "A4-80"
+
+
 async def test_catalog_seed_contains_structured_permissions(
     catalog_api_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

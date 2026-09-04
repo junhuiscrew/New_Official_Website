@@ -72,6 +72,25 @@ async def test_permission_and_role_matrix_seed_is_idempotent(
         (role_by_name["super_admin"].id, permission.id) in pairs
         for permission in permission_by_code.values()
     )
+    editor_permissions = {
+        code
+        for code, permission in permission_by_code.items()
+        if (role_by_name["editor"].id, permission.id) in pairs
+    }
+    assert {
+        "catalog.read",
+        "specification.read",
+        "material.read",
+        "technology.read",
+        "application.read",
+        "solution.read",
+    } <= editor_permissions
+    assert {
+        "material.create",
+        "technology.create",
+        "application.create",
+        "solution.create",
+    }.isdisjoint(editor_permissions)
 
 
 async def test_seed_preserves_custom_permission_mapping(

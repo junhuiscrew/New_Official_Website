@@ -60,4 +60,47 @@ describe('catalog admin routes', () => {
     expect(translationSource).toContain('zh-CN')
     expect(translationSource).toContain('en')
   })
+
+  it('builds exact API payloads for all five specification value types', async () => {
+    const utilityPath = resolve(process.cwd(), 'app/utils/specificationValue.ts')
+    expect(existsSync(utilityPath)).toBe(true)
+    if (!existsSync(utilityPath)) return
+
+    const { buildSpecificationValuePayload } = await import('../app/utils/specificationValue')
+    const base = {
+      product_id: 'product-id',
+      product_model_id: '',
+      definition_id: 'definition-id',
+      value_text: '316L',
+      value_number: 12.5,
+      value_min: 10,
+      value_max: 15,
+      value_boolean: false,
+      enum_value: 'A4-80',
+    }
+
+    expect(buildSpecificationValuePayload('text', base)).toMatchObject({ value_text: '316L' })
+    expect(buildSpecificationValuePayload('number', base)).toMatchObject({ value_number: 12.5 })
+    expect(buildSpecificationValuePayload('range', base)).toMatchObject({
+      value_min: 10,
+      value_max: 15,
+    })
+    expect(buildSpecificationValuePayload('boolean', base)).toMatchObject({
+      value_boolean: false,
+    })
+    expect(buildSpecificationValuePayload('enum', base)).toMatchObject({ enum_value: 'A4-80' })
+  })
+
+  it('renders a dedicated input contract for every specification value type', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/pages/catalog/specifications.vue'),
+      'utf8',
+    )
+    expect(source).toContain('buildSpecificationValuePayload')
+    expect(source).toContain("selectedValueType === 'text'")
+    expect(source).toContain("selectedValueType === 'number'")
+    expect(source).toContain("selectedValueType === 'range'")
+    expect(source).toContain("selectedValueType === 'boolean'")
+    expect(source).toContain("selectedValueType === 'enum'")
+  })
 })

@@ -9,7 +9,7 @@ from app.core.exceptions.handlers import AppException
 
 OFFICIAL_HOST = "junhuiscrewbarrel.com"
 LEGACY_HOST = "junhuiscrew.com"
-ALLOWED_TARGET_HOSTS = frozenset(
+ALLOWED_SOURCE_HOSTS = frozenset(
     {OFFICIAL_HOST, f"www.{OFFICIAL_HOST}", LEGACY_HOST, f"www.{LEGACY_HOST}"}
 )
 
@@ -44,7 +44,7 @@ def normalize_redirect_target(target_url: str) -> str:
     hostname = (parsed.hostname or "").lower().rstrip(".")
     if (
         parsed.scheme.lower() != "https"
-        or hostname not in ALLOWED_TARGET_HOSTS
+        or hostname != OFFICIAL_HOST
         or parsed.username
         or parsed.password
         or parsed.fragment
@@ -68,7 +68,7 @@ def validate_redirect_rule(
     输出：str，校验后的规范目标 URL。
     """
     host = source_host.strip().lower().rstrip(".")
-    if not host or not source_path.startswith("/") or "//" in source_path:
+    if host not in ALLOWED_SOURCE_HOSTS or not source_path.startswith("/") or "//" in source_path:
         raise AppException(409, "invalid_redirect_path", "重定向来源必须是精确绝对路径")
     normalized_target = normalize_redirect_target(target_url)
     source_url = _source_url(host, source_path)

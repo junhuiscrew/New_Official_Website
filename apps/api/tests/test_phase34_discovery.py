@@ -116,12 +116,12 @@ def test_redirect_validation_rejects_duplicate_chain_and_loop() -> None:
     from app.modules.discovery.redirects import RedirectEdge, validate_redirect_rule
 
     rules = [
-        RedirectEdge("junhuiscrew.com", "/legacy/", "https://junhuiscrewbarrel.com/final/"),
-        RedirectEdge("junhuiscrewbarrel.com", "/next/", "https://junhuiscrew.com/legacy/"),
+        RedirectEdge("junhuiscrewbarrel.com", "/legacy/", "https://junhuiscrewbarrel.com/final/"),
+        RedirectEdge("junhuiscrewbarrel.com", "/next/", "https://junhuiscrewbarrel.com/legacy/"),
     ]
     with pytest.raises(AppException) as duplicate:
         validate_redirect_rule(
-            "junhuiscrew.com",
+            "junhuiscrewbarrel.com",
             "/legacy/",
             "https://junhuiscrewbarrel.com/new/",
             rules,
@@ -131,7 +131,7 @@ def test_redirect_validation_rejects_duplicate_chain_and_loop() -> None:
         validate_redirect_rule(
             "junhuiscrewbarrel.com",
             "/old/",
-            "https://junhuiscrew.com/legacy/",
+            "https://junhuiscrewbarrel.com/legacy/",
             rules,
         )
     assert chain.value.code == "redirect_chain"

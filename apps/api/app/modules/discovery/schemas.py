@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SeoDocumentUpsert(BaseModel):
@@ -24,7 +24,9 @@ class SeoDocumentUpsert(BaseModel):
 
 
 class GeoDocumentUpsert(BaseModel):
-    """统一 GEO 文档新增或更新输入。"""
+    """统一 GEO 文档新增或更新输入；可见事实由服务端数据库构造。"""
+
+    model_config = ConfigDict(extra="forbid")
 
     direct_answer: str | None = None
     target_questions_json: list[str] = Field(default_factory=list)
@@ -33,7 +35,6 @@ class GeoDocumentUpsert(BaseModel):
     related_questions_json: list[str] = Field(default_factory=list)
     reviewer_id: uuid.UUID | None = None
     last_reviewed_at: datetime | None = None
-    visible_source_text: str = Field(min_length=1)
 
 
 class SourceCitationCreate(BaseModel):

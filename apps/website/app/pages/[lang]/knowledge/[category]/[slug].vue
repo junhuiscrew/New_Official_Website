@@ -9,6 +9,10 @@ interface KnowledgeDto {
   reviewer?: { name: string; job_title?: string } | null
   sources: Array<{ title: string; url: string; publisher?: string }>
   faqs: Array<{ question: string; answer: string }>
+  relations: Record<
+    string,
+    Array<{ type: string; slug: string; name: string; url: string; summary: string }>
+  >
   seo: { title: string; description?: string; canonical: string; robots: string }
   geo: Record<string, unknown> | null
   breadcrumb: Array<{ name: string; url: string }>
@@ -64,6 +68,7 @@ useHead(() => ({
       </p>
       <p class="body-markdown">{{ page.translation.body_markdown }}</p>
       <PublicGeoContent :geo="page.geo" />
+      <PublicRelationLinks :relations="page.relations" />
       <section v-if="page.sources.length">
         <h2>Sources</h2>
         <ol>

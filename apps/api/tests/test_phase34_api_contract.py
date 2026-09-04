@@ -19,6 +19,7 @@ def test_phase34_routes_are_registered() -> None:
         ("/api/v1/authority/{entity_type}/{entity_id}/relations", "PUT"),
         ("/api/v1/discovery/seo/{owner_type}/{owner_id}/{locale_id}", "PUT"),
         ("/api/v1/discovery/geo/{owner_type}/{owner_id}/{locale_id}", "PUT"),
+        ("/api/v1/discovery/geo-visible-source/{owner_type}/{owner_id}/{locale_id}", "GET"),
         ("/api/v1/discovery/sources", "POST"),
         ("/api/v1/discovery/redirects", "POST"),
         ("/api/v1/discovery/health/{owner_type}/{owner_id}/{locale_id}", "GET"),
@@ -27,6 +28,9 @@ def test_phase34_routes_are_registered() -> None:
         ("/api/v1/public/products/{locale_slug}/{category_slug}/{slug}", "GET"),
         ("/api/v1/public/case-studies/{locale_slug}/{slug}", "GET"),
         ("/api/v1/public/knowledge/{locale_slug}/{category_slug}/{slug}", "GET"),
+        ("/api/v1/public/experts/{locale_slug}/{slug}", "GET"),
+        ("/api/v1/public/product-categories/{locale_slug}/{slug}", "GET"),
+        ("/api/v1/public/{resource}/{locale_slug}/{slug}", "GET"),
         ("/sitemap.xml", "GET"),
         ("/robots.txt", "GET"),
         ("/llms.txt", "GET"),
@@ -38,7 +42,11 @@ def test_nginx_routes_root_discovery_files_to_api() -> None:
     """Nginx 外部入口必须把 Sitemap、Robots 与 llms.txt 转发给统一 API。"""
     from pathlib import Path
 
-    repository_root = Path(__file__).resolve().parents[3]
+    # Docker 测试镜像把契约文件放在 /workspace，本机则从仓库层级解析。
+    workspace_root = Path("/workspace")
+    repository_root = (
+        workspace_root if workspace_root.exists() else Path(__file__).resolve().parents[3]
+    )
     for filename in ("nginx.conf", "nginx.staging.conf"):
         source = (repository_root / "infra" / "nginx" / filename).read_text(encoding="utf-8")
         assert "sitemap\\.xml|robots\\.txt|llms\\.txt" in source

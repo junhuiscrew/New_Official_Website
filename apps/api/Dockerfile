@@ -22,7 +22,7 @@ COPY apps/api/tests ./tests
 COPY apps/admin/nuxt.config.ts /workspace/apps/admin/nuxt.config.ts
 COPY apps/admin/Dockerfile /workspace/apps/admin/Dockerfile
 COPY apps/website/Dockerfile /workspace/apps/website/Dockerfile
-COPY infra/nginx/nginx.staging.conf /workspace/infra/nginx/nginx.staging.conf
+COPY infra/nginx/nginx.conf infra/nginx/nginx.staging.conf /workspace/infra/nginx/
 COPY docker-compose.yml docker-compose.staging.yml /workspace/
 COPY docs/architecture/migration-runtime-strategy.md /workspace/docs/architecture/migration-runtime-strategy.md
 

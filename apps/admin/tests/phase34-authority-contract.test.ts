@@ -35,7 +35,9 @@ describe('phase 3.4 authority admin', () => {
       resolve(process.cwd(), 'app/components/discovery/GeoEditor.vue'),
       'utf8',
     )
-    expect(geo).toContain('visible_source_text')
+    expect(geo).not.toContain("updateText('visible_source_text'")
+    expect(geo).toContain('serverVisibleSourceText')
+    expect(geo).toContain('readonly')
     expect(geo).toContain('direct_answer')
     expect(geo).toContain('key_facts_json')
     expect(geo).toContain('evidence_json')

@@ -19,6 +19,8 @@ from app.modules.content.models import ContentPublication, ContentRoute, Transla
 from app.modules.discovery.models import SeoDocument
 from app.modules.localization.models import Locale
 
+OFFICIAL_ORIGIN = "https://junhuiscrewbarrel.com"
+
 # 只有具备结构化主实体的路由才允许进入公开索引源。
 INDEXABLE_OWNER_TYPES = frozenset(
     {
@@ -87,6 +89,12 @@ async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
             TranslationStatus.status == "published",
             Locale.is_enabled.is_(True),
             or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+            or_(
+                SeoDocument.id.is_(None),
+                SeoDocument.canonical_override.is_(None),
+                SeoDocument.canonical_override
+                == OFFICIAL_ORIGIN + ContentRoute.path,
+            ),
         )
         .order_by(ContentRoute.path.asc())
     )

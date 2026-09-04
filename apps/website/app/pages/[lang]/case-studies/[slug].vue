@@ -5,6 +5,13 @@ import { serializeJsonLd } from '~/utils/jsonLd'
 interface CaseDto {
   slug: string
   client_name?: string
+  client_address?: string
+  country_code?: string
+  industry?: string
+  machine_brand?: string
+  machine_model?: string
+  screw_diameter?: string
+  filler_percentage?: string
   translation: {
     title: string
     summary?: string
@@ -16,6 +23,10 @@ interface CaseDto {
     engineer_comment?: string
   }
   faqs: Array<{ question: string; answer: string }>
+  relations: Record<
+    string,
+    Array<{ type: string; slug: string; name: string; url: string; summary: string }>
+  >
   seo: { title: string; description?: string; canonical: string; robots: string }
   geo: Record<string, unknown> | null
   breadcrumb: Array<{ name: string; url: string }>
@@ -65,6 +76,28 @@ useHead(() => ({
       <h1>{{ page.translation.title }}</h1>
       <p>{{ page.translation.summary }}</p>
       <p v-if="page.client_name">Customer: {{ page.client_name }}</p>
+      <p v-if="page.client_address">Customer address: {{ page.client_address }}</p>
+      <dl>
+        <template
+          v-for="(value, label) in {
+            Country: page.country_code,
+            Industry: page.industry,
+            'Machine brand': page.machine_brand,
+            'Machine model': page.machine_model,
+            'Screw diameter': page.screw_diameter,
+            'Filler percentage': page.filler_percentage,
+          }"
+          :key="label"
+        >
+          <template v-if="value"
+            ><dt>{{ label }}</dt>
+            <dd>{{ value }}</dd></template
+          >
+        </template>
+      </dl>
+      <p v-if="page.translation.client_description">
+        {{ page.translation.client_description }}
+      </p>
       <section>
         <h2>Problem</h2>
         <p>{{ page.translation.problem }}</p>
@@ -81,7 +114,12 @@ useHead(() => ({
         <h2>Result</h2>
         <p>{{ page.translation.result }}</p>
       </section>
+      <section v-if="page.translation.engineer_comment">
+        <h2>Engineer comment</h2>
+        <p>{{ page.translation.engineer_comment }}</p>
+      </section>
       <PublicGeoContent :geo="page.geo" />
+      <PublicRelationLinks :relations="page.relations" />
       <PublicFaqList :items="page.faqs" />
     </article>
   </main>

@@ -12,8 +12,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
-from app.modules.authority.models import AuthorExpert, CaseStudy
-from app.modules.content.models import ContentPublication, ContentRoute
+from app.modules.authority.models import (
+    FAQ,
+    ArticleFAQ,
+    AuthorExpert,
+    AuthorExpertTranslation,
+    CaseStudy,
+    CaseStudyTranslation,
+    FAQCase,
+    FAQProduct,
+    FAQTranslation,
+    KnowledgeArticle,
+    KnowledgeArticleTranslation,
+)
+from app.modules.catalog.models import Product, ProductSpecValue, ProductTranslation
+from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.revisions import store_revision
 from app.modules.content.services.routes import validate_content_path
 from app.modules.discovery.geo import validate_geo_visibility
@@ -26,6 +39,227 @@ from app.modules.discovery.schemas import (
     SourceCitationCreate,
 )
 from app.modules.localization.models import Locale
+
+
+def _visible_values(*values: object) -> list[str]:
+    """
+    把结构化公开字段递归展开为可用于事实匹配的文本片段。
+
+    输入：values，字符串、数字、列表或字典形式的公开字段。
+    输出：list[str]，去空后的可见文本片段。
+    """
+    result: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            result.extend(_visible_values(*value.values()))
+        elif isinstance(value, list | tuple | set):
+            result.extend(_visible_values(*value))
+        elif isinstance(value, bool):
+            result.append("true" if value else "false")
+        else:
+            text = str(value).strip()
+            if text:
+                result.append(text)
+    return result
+
+
+async def _visible_faq_text(
+    session: AsyncSession,
+    relation_model: type,
+    owner_column: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> list[str]:
+    """
+    查询页面中实际可见且已发布的 FAQ 文本。
+
+    输入：数据库会话、关系模型、owner 字段、owner ID 与语言 ID。
+    输出：list[str]，按展示顺序排列的问题和答案。
+    """
+    rows = (
+        await session.execute(
+            select(FAQTranslation.question, FAQTranslation.answer)
+            .join(FAQ, FAQ.id == FAQTranslation.faq_id)
+            .join(relation_model, relation_model.faq_id == FAQ.id)
+            .join(
+                TranslationStatus,
+                (TranslationStatus.owner_type == "faq")
+                & (TranslationStatus.owner_id == FAQ.id)
+                & (TranslationStatus.locale_id == FAQTranslation.locale_id),
+            )
+            .where(
+                getattr(relation_model, owner_column) == owner_id,
+                FAQTranslation.locale_id == locale_id,
+                FAQ.status == "enabled",
+                TranslationStatus.status == "published",
+            )
+            .order_by(relation_model.sort_order, FAQ.sort_order)
+        )
+    ).all()
+    return [part for row in rows for part in (row.question, row.answer)]
+
+
+async def build_visible_source_text(
+    session: AsyncSession,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> str:
+    """
+    从数据库真实公开字段构造 GEO 可见事实文本，拒绝客户端自报正文。
+
+    输入：session 异步会话、owner_type 内容类型、owner_id 实体 ID、locale_id 语言 ID。
+    输出：str，Product、Case、Knowledge 或 Expert 页面可见文本的稳定聚合。
+    """
+    visible: list[str] = []
+    if owner_type == "product":
+        product = await session.get(Product, owner_id)
+        translation = await session.scalar(
+            select(ProductTranslation).where(
+                ProductTranslation.product_id == owner_id,
+                ProductTranslation.locale_id == locale_id,
+            )
+        )
+        if product is None or translation is None:
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的产品可见正文")
+        visible.extend(
+            _visible_values(
+                translation.name,
+                translation.short_description,
+                translation.description,
+                translation.highlights_jsonb,
+            )
+        )
+        specifications = list(
+            (
+                await session.scalars(
+                    select(ProductSpecValue).where(
+                        ProductSpecValue.product_id == owner_id,
+                        ProductSpecValue.is_public.is_(True),
+                    )
+                )
+            ).all()
+        )
+        for specification in specifications:
+            visible.extend(
+                _visible_values(
+                    specification.value_text,
+                    specification.value_number,
+                    specification.value_min,
+                    specification.value_max,
+                    specification.value_boolean,
+                    specification.enum_value,
+                    specification.unit_override,
+                )
+            )
+        visible.extend(
+            await _visible_faq_text(
+                session, FAQProduct, "product_id", owner_id, locale_id
+            )
+        )
+    elif owner_type == "case_study":
+        case = await session.get(CaseStudy, owner_id)
+        translation = await session.scalar(
+            select(CaseStudyTranslation).where(
+                CaseStudyTranslation.case_study_id == owner_id,
+                CaseStudyTranslation.locale_id == locale_id,
+            )
+        )
+        if case is None or translation is None:
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的案例可见正文")
+        # 客户名称、地址和 Logo 只有在明确授权时才属于页面可见事实。
+        visible.extend(
+            _visible_values(
+                translation.title,
+                translation.summary,
+                translation.client_description,
+                translation.problem,
+                translation.analysis,
+                translation.solution,
+                translation.result,
+                translation.engineer_comment,
+                case.country_code,
+                case.industry,
+                case.machine_brand,
+                case.machine_model,
+                case.screw_diameter,
+                case.filler_percentage,
+                case.client_name if case.client_name_public else None,
+                case.client_address if case.client_address_public else None,
+                str(case.client_logo_media_id)
+                if case.client_logo_public and case.client_logo_media_id
+                else None,
+            )
+        )
+        visible.extend(
+            await _visible_faq_text(
+                session, FAQCase, "case_study_id", owner_id, locale_id
+            )
+        )
+    elif owner_type == "knowledge_article":
+        article = await session.get(KnowledgeArticle, owner_id)
+        translation = await session.scalar(
+            select(KnowledgeArticleTranslation).where(
+                KnowledgeArticleTranslation.article_id == owner_id,
+                KnowledgeArticleTranslation.locale_id == locale_id,
+            )
+        )
+        if article is None or translation is None:
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的知识正文")
+        visible.extend(
+            _visible_values(
+                translation.title,
+                translation.summary,
+                translation.body_markdown,
+            )
+        )
+        visible.extend(
+            await _visible_faq_text(
+                session, ArticleFAQ, "article_id", owner_id, locale_id
+            )
+        )
+        sources = list(
+            (
+                await session.scalars(
+                    select(SourceCitation).where(
+                        SourceCitation.article_id == owner_id
+                    )
+                )
+            ).all()
+        )
+        for source in sources:
+            visible.extend(
+                _visible_values(
+                    source.title,
+                    source.publisher,
+                    source.url,
+                    source.publication_date,
+                )
+            )
+    elif owner_type == "author_expert":
+        expert = await session.get(AuthorExpert, owner_id)
+        translation = await session.scalar(
+            select(AuthorExpertTranslation).where(
+                AuthorExpertTranslation.author_expert_id == owner_id,
+                AuthorExpertTranslation.locale_id == locale_id,
+            )
+        )
+        if expert is None or translation is None:
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的专家公开资料")
+        visible.extend(
+            _visible_values(
+                translation.name,
+                translation.job_title,
+                translation.short_bio,
+                translation.expertise_json,
+                expert.years_experience,
+            )
+        )
+    else:
+        raise AppException(422, "unsupported_geo_owner", "该内容类型不支持 GEO 文档")
+    return "\n".join(visible)
 
 
 def validate_canonical_override(value: str | None) -> str | None:
@@ -144,18 +378,23 @@ async def upsert_geo_document(
     输入：session、owner 标识、locale、payload 与 actor_id。
     输出：GeoDocument；隐藏声明或虚构 reviewer 时拒绝。
     """
+    await _reject_case_private_identity(
+        session, owner_type, owner_id, repr(payload.model_dump())
+    )
+    visible_source_text = await build_visible_source_text(
+        session, owner_type, owner_id, locale_id
+    )
     validate_geo_visibility(
         direct_answer=payload.direct_answer,
         key_facts=payload.key_facts_json,
         evidence=payload.evidence_json,
-        visible_text=payload.visible_source_text,
+        visible_text=visible_source_text,
     )
-    await _reject_case_private_identity(session, owner_type, owner_id, repr(payload.model_dump()))
     if payload.reviewer_id:
         reviewer = await session.get(AuthorExpert, payload.reviewer_id)
         if reviewer is None or not reviewer.is_real_person_verified:
             raise AppException(409, "verified_reviewer_required", "GEO reviewer 必须是已核验的真实专家")
-    values = payload.model_dump(exclude={"visible_source_text"})
+    values = payload.model_dump()
     document = await session.scalar(
         select(GeoDocument).where(
             GeoDocument.owner_type == owner_type,

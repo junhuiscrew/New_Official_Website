@@ -1,4 +1,4 @@
-<!-- 组件职责：编辑 GEO 直接答案、关键事实、证据及其可见正文校验输入。 -->
+<!-- 组件职责：编辑 GEO 声明，并只读展示后端根据真实正文构造的事实来源。 -->
 <script setup lang="ts">
 export interface GeoDraft {
   direct_answer: string
@@ -8,10 +8,9 @@ export interface GeoDraft {
   related_questions_json: string[]
   reviewer_id: string
   last_reviewed_at: string
-  visible_source_text: string
 }
 
-const props = defineProps<{ modelValue: GeoDraft }>()
+const props = defineProps<{ modelValue: GeoDraft; serverVisibleSourceText: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: GeoDraft]; save: [] }>()
 
 function updateText(field: keyof GeoDraft, value: string) {
@@ -84,14 +83,10 @@ function updateLines(
         @input="updateText('last_reviewed_at', ($event.target as HTMLInputElement).value)"
     /></label>
     <label
-      >Visible source content
-      <textarea
-        :value="modelValue.visible_source_text"
-        required
-        @input="updateText('visible_source_text', ($event.target as HTMLTextAreaElement).value)"
-      />
+      >Server-visible source content
+      <textarea :value="serverVisibleSourceText" readonly />
     </label>
-    <p>Direct answer、key facts 与 evidence 必须逐项出现在上方可见正文中。</p>
+    <p>该预览由后端真实 Product / Case / Knowledge / Expert 内容构造，不能在此编辑。</p>
     <button type="button" @click="$emit('save')">Validate and save GEO</button>
   </fieldset>
 </template>

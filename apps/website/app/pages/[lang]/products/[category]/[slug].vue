@@ -12,6 +12,10 @@ interface ProductDto {
   }
   models: Array<{ model_code: string }>
   specifications: Array<Record<string, unknown>>
+  relations: Record<
+    string,
+    Array<{ type: string; slug: string; name: string; url: string; summary: string }>
+  >
   faqs: Array<{ question: string; answer: string }>
   seo: { title: string; description?: string; canonical: string; robots: string }
   geo: {
@@ -69,6 +73,7 @@ useHead(() => ({
       <h1>{{ page.translation.name }}</h1>
       <p>{{ page.translation.short_description }}</p>
       <p>{{ page.translation.description }}</p>
+      <pre v-if="page.translation.highlights?.length">{{ page.translation.highlights }}</pre>
       <PublicGeoContent :geo="page.geo" />
       <section v-if="page.models.length">
         <h2>Models</h2>
@@ -80,6 +85,7 @@ useHead(() => ({
         <h2>Specifications</h2>
         <pre>{{ page.specifications }}</pre>
       </section>
+      <PublicRelationLinks :relations="page.relations" />
       <PublicFaqList :items="page.faqs" />
     </article>
   </main>

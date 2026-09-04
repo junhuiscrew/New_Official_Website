@@ -100,8 +100,8 @@ const geo = ref<GeoDraft>({
   related_questions_json: [],
   reviewer_id: '',
   last_reviewed_at: '',
-  visible_source_text: '',
 })
+const geoVisibleSourceText = ref('')
 const source = ref<SourceDraft>({ title: '', url: '', publisher: '', source_type: 'official' })
 
 const translationFields = computed(() => {
@@ -240,6 +240,17 @@ async function editItem(item: AuthorityItem) {
     if (seoDocument) seo.value = { ...seo.value, ...(seoDocument as unknown as SeoDraft) }
     const geoDocument = detail.geo_documents?.find((row) => row.locale_id === activeLocaleId.value)
     if (geoDocument) geo.value = { ...geo.value, ...(geoDocument as unknown as GeoDraft) }
+    if (activeLocaleId.value) {
+      try {
+        const preview = await api.detail<{ visible_source_text: string }>(
+          `/discovery/geo-visible-source/${ownerType.value}/${item.id}/${activeLocaleId.value}`,
+        )
+        geoVisibleSourceText.value = preview.visible_source_text
+      } catch {
+        // 翻译尚未建立时只清空预览，不影响主体内容编辑。
+        geoVisibleSourceText.value = ''
+      }
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load detail.'
   }
@@ -546,6 +557,7 @@ onMounted(load)
         </fieldset>
         <SeoEditor v-model="seo" @save="saveSeo" /><GeoEditor
           v-model="geo"
+          :server-visible-source-text="geoVisibleSourceText"
           @save="saveGeo"
         /><SourceCitationEditor v-model="source" @save="saveSource" />
       </section>

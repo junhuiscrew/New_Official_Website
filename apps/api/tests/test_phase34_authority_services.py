@@ -220,7 +220,6 @@ async def test_case_private_identity_cannot_enter_seo_or_geo(
                 locale.id,
                 GeoDocumentUpsert(
                     direct_answer="绝密客户有限公司采用了本方案。",
-                    visible_source_text="绝密客户有限公司采用了本方案。",
                 ),
                 None,
             )

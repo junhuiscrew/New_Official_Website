@@ -1,4 +1,4 @@
-"""Product、Case 与 Knowledge 的只读公开 API。"""
+"""结构化核心内容与 Authority Content 的只读公开 API。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
 from app.modules.discovery.public_delivery import (
     get_public_case,
+    get_public_catalog_entity,
+    get_public_expert,
     get_public_knowledge,
     get_public_product,
 )
@@ -86,3 +88,64 @@ async def public_knowledge_article(
     输出：ApiResponse，供 Nuxt SSR 使用的知识文章数据。
     """
     return success_response(await get_public_knowledge(session, locale_slug, category_slug, slug))
+
+
+@router.get("/experts/{locale_slug}/{slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_expert(
+    locale_slug: str,
+    slug: str,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回已核验真实人物的严格公开 Expert DTO。
+
+    输入：语言、人物 slug 与数据库 session。
+    输出：ApiResponse，供 Nuxt Expert SSR 使用的人物与 Person Schema 数据。
+    """
+    return success_response(await get_public_expert(session, locale_slug, slug))
+
+
+@router.get(
+    "/product-categories/{locale_slug}/{slug}",
+    response_model=ApiResponse[dict[str, Any]],
+)
+async def public_product_category(
+    locale_slug: str,
+    slug: str,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """输入语言和分类 slug，输出 Sitemap 可解析的公开产品分类 DTO。"""
+    return success_response(
+        await get_public_catalog_entity(
+            session, "product_category", locale_slug, slug
+        )
+    )
+
+
+@router.get("/{resource}/{locale_slug}/{slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_catalog_entity(
+    resource: str,
+    locale_slug: str,
+    slug: str,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回 Material、Technology、Application 或 Solution 最小公开 DTO。
+
+    输入：资源复数名、语言、实体 slug 与数据库 session。
+    输出：ApiResponse；不支持的资源按公开 404 处理。
+    """
+    owner_types = {
+        "materials": "material",
+        "technologies": "technology",
+        "applications": "application",
+        "solutions": "solution",
+    }
+    owner_type = owner_types.get(resource)
+    if owner_type is None:
+        from app.core.exceptions.handlers import AppException
+
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
+    return success_response(
+        await get_public_catalog_entity(session, owner_type, locale_slug, slug)
+    )

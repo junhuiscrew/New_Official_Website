@@ -10,8 +10,9 @@ from app.core.database import Base, create_database_engine, create_session_facto
 from app.core.exceptions.handlers import AppException
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.catalog.models import Product, ProductCategory
 from app.modules.content import models as content_models  # noqa: F401
-from app.modules.content.models import ContentPublication
+from app.modules.content.models import ContentPublication, TranslationStatus
 from app.modules.content.services.indexable import list_indexable_routes
 from app.modules.content.services.routes import create_content_route, validate_content_path
 from app.modules.localization.models import Locale
@@ -84,14 +85,35 @@ async def test_indexable_route_source_requires_published_active_canonical_route(
     """验证 SEO/GEO 索引源只返回已发布且启用语言的结构化规范路由。"""
     async with route_session_factory() as session, session.begin():
         locale = await session.scalar(__import__("sqlalchemy").select(Locale))
-        route = await create_content_route(session, "product", uuid.uuid4(), locale, "/en/products/demo/")
-        session.add(
-            ContentPublication(
-                owner_type=route.owner_type,
-                owner_id=route.owner_id,
-                locale_id=route.locale_id,
-                status="published",
-            )
+        category = ProductCategory(slug="demo-category", status="enabled", sort_order=0)
+        session.add(category)
+        await session.flush()
+        product = Product(
+            category_id=category.id,
+            slug="demo",
+            status="enabled",
+            featured=False,
+            sort_order=0,
+        )
+        session.add(product)
+        await session.flush()
+        route = await create_content_route(session, "product", product.id, locale, "/en/products/demo/")
+        session.add_all(
+            [
+                ContentPublication(
+                    owner_type=route.owner_type,
+                    owner_id=route.owner_id,
+                    locale_id=route.locale_id,
+                    status="published",
+                ),
+                TranslationStatus(
+                    owner_type=route.owner_type,
+                    owner_id=route.owner_id,
+                    locale_id=route.locale_id,
+                    source_locale_id=route.locale_id,
+                    status="published",
+                ),
+            ]
         )
         route.active = True
         route.indexable = True

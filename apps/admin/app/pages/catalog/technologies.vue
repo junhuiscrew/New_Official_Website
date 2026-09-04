@@ -1,5 +1,7 @@
-<!-- 页面用途：Technology 结构化实体最小管理占位页。 -->
+<!-- 页面用途：Technology 结构化实体列表、创建、编辑、翻译与退役。 -->
 <script setup lang="ts">
 useHead({ title: 'Catalog Technologies', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 </script>
-<template><main class="admin-shell"><h1>Technologies</h1><p>Structured technology CRUD foundation is ready.</p></main></template>
+<template>
+  <EntityCrud title="Technologies" resource="technologies" body-field="definition" />
+</template>

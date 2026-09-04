@@ -24,6 +24,53 @@ _TRANSITION_PERMISSIONS: dict[tuple[str, str], str] = {
 }
 
 
+async def invalidate_publication_after_translation_edit(
+    session: AsyncSession,
+    *,
+    publication: ContentPublication,
+    translation: TranslationStatus,
+    route: ContentRoute,
+    actor_id: uuid.UUID | None,
+) -> None:
+    """
+    在正文修改后统一撤销审核、发布和公开索引状态。
+
+    输入：session、同一 owner/locale 的 publication、translation、route 和 actor_id。
+    输出：None；Translation 回到 draft，已发布内容回到 review，Route inactive/noindex。
+    """
+    owner_key = (publication.owner_type, publication.owner_id, publication.locale_id)
+    if owner_key != (translation.owner_type, translation.owner_id, translation.locale_id) or (
+        owner_key != (route.owner_type, route.owner_id, route.locale_id)
+    ):
+        raise AppException(409, "publication_owner_mismatch", "发布、翻译和路由必须属于同一内容语言")
+    previous_publication_status = publication.status
+    translation.status = TranslationState.DRAFT.value
+    translation.reviewed_by = None
+    translation.published_at = None
+    if publication.status in {
+        PublicationStatus.PUBLISHED.value,
+        PublicationStatus.SCHEDULED.value,
+    }:
+        publication.status = PublicationStatus.REVIEW.value
+    publication.published_at = None
+    publication.scheduled_at = None
+    route.active = False
+    route.indexable = False
+    write_audit_log(
+        session,
+        action="publication.invalidated_by_translation",
+        target_type=publication.owner_type,
+        target_id=str(publication.owner_id),
+        user_id=actor_id,
+        metadata={
+            "from": previous_publication_status,
+            "to": publication.status,
+            "locale_id": str(publication.locale_id),
+        },
+    )
+    await session.flush()
+
+
 async def transition_publication(
     session: AsyncSession,
     *,

@@ -18,12 +18,26 @@ from app.core.responses import ApiResponse, success_response
 from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.catalog.models import (
     Application,
+    ApplicationTranslation,
     Material,
+    MaterialTranslation,
     Product,
+    ProductApplication,
     ProductCategory,
+    ProductCategoryTranslation,
+    ProductMaterial,
     ProductModel,
+    ProductModelTranslation,
+    ProductSolution,
+    ProductSpecValue,
+    ProductTechnology,
+    ProductTranslation,
     Solution,
+    SolutionTranslation,
+    SpecificationDefinition,
+    SpecificationGroup,
     Technology,
+    TechnologyTranslation,
 )
 from app.modules.catalog.schemas import (
     CategoryCreate,
@@ -38,6 +52,7 @@ from app.modules.catalog.schemas import (
     SpecificationDefinitionCreate,
     SpecificationGroupCreate,
     SpecificationValueCreate,
+    SpecificationValueUpdate,
 )
 from app.modules.catalog.services import (
     archive_entity,
@@ -53,11 +68,18 @@ from app.modules.catalog.services import (
     update_core_entity,
     update_product,
     update_product_model,
+    update_specification_value,
 )
+from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
-_ENTITY_MODELS = {"materials": ("material", Material), "technologies": ("technology", Technology), "applications": ("application", Application), "solutions": ("solution", Solution)}
+_ENTITY_MODELS = {
+    "materials": ("material", Material, MaterialTranslation, "material_id"),
+    "technologies": ("technology", Technology, TechnologyTranslation, "technology_id"),
+    "applications": ("application", Application, ApplicationTranslation, "application_id"),
+    "solutions": ("solution", Solution, SolutionTranslation, "solution_id"),
+}
 
 
 def _serialize(entity: Any) -> dict[str, Any]:
@@ -70,6 +92,90 @@ async def _list_entities(session: AsyncSession, model: type, pagination: Paginat
     total = await session.scalar(select(func.count()).select_from(model))
     rows = list((await session.scalars(select(model).order_by(model.sort_order, model.id).offset(pagination.offset).limit(pagination.page_size))).all())
     return {"items": [_serialize(row) for row in rows], "page": pagination.page, "page_size": pagination.page_size, "total": total or 0}
+
+
+async def _lifecycle_detail(
+    session: AsyncSession,
+    owner_type: str,
+    owner_id: uuid.UUID,
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    聚合指定实体全部语言的翻译、发布与 canonical Route 状态。
+
+    输入：session、owner_type、owner_id。
+    输出：dict，包含 translation_statuses、publications 与 routes。
+    """
+    translation_statuses = list(
+        (
+            await session.scalars(
+                select(TranslationStatus)
+                .where(
+                    TranslationStatus.owner_type == owner_type,
+                    TranslationStatus.owner_id == owner_id,
+                )
+                .order_by(TranslationStatus.locale_id)
+            )
+        ).all()
+    )
+    publications = list(
+        (
+            await session.scalars(
+                select(ContentPublication)
+                .where(
+                    ContentPublication.owner_type == owner_type,
+                    ContentPublication.owner_id == owner_id,
+                )
+                .order_by(ContentPublication.locale_id)
+            )
+        ).all()
+    )
+    routes = list(
+        (
+            await session.scalars(
+                select(ContentRoute)
+                .where(
+                    ContentRoute.owner_type == owner_type,
+                    ContentRoute.owner_id == owner_id,
+                    ContentRoute.is_canonical.is_(True),
+                )
+                .order_by(ContentRoute.locale_id)
+            )
+        ).all()
+    )
+    return {
+        "translation_statuses": [_serialize(item) for item in translation_statuses],
+        "publications": [_serialize(item) for item in publications],
+        "routes": [_serialize(item) for item in routes],
+    }
+
+
+async def _entity_detail(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    entity: Any,
+    translation_model: type,
+    owner_field: str,
+) -> dict[str, Any]:
+    """
+    构造知识实体 Admin 编辑页所需聚合 DTO。
+
+    输入：session、owner 配置、实体与翻译模型。
+    输出：dict，包含 master、translations 和完整公开生命周期状态。
+    """
+    translations = list(
+        (
+            await session.scalars(
+                select(translation_model)
+                .where(getattr(translation_model, owner_field) == entity.id)
+                .order_by(translation_model.locale_id)
+            )
+        ).all()
+    )
+    data = _serialize(entity)
+    data["translations"] = [_serialize(item) for item in translations]
+    data.update(await _lifecycle_detail(session, owner_type, entity.id))
+    return data
 
 
 async def _write_result(session: AsyncSession, operation: Any) -> Any:
@@ -100,6 +206,27 @@ async def category_tree(session: AsyncSession = Depends(get_session), _user: Use
     return success_response(roots)
 
 
+@router.get("/categories/{category_id}", response_model=ApiResponse[dict[str, Any]])
+async def get_category(
+    category_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("catalog.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """返回分类主字段、翻译与完整语言生命周期。"""
+    category = await session.get(ProductCategory, category_id)
+    if category is None:
+        raise AppException(404, "category_not_found", "产品分类不存在")
+    return success_response(
+        await _entity_detail(
+            session,
+            owner_type="product_category",
+            entity=category,
+            translation_model=ProductCategoryTranslation,
+            owner_field="category_id",
+        )
+    )
+
+
 @router.post("/categories", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
 async def post_category(payload: CategoryCreate, request: Request, session: AsyncSession = Depends(get_session), user: User = Depends(require_permission("catalog.create")), _csrf: None = Depends(require_csrf)) -> ApiResponse[dict[str, Any]]:
     """创建分类及其翻译/发布基础记录。"""
@@ -122,13 +249,72 @@ async def list_products(pagination: PaginationParams = Depends(), session: Async
 
 @router.get("/products/{product_id}", response_model=ApiResponse[dict[str, Any]])
 async def get_product(product_id: uuid.UUID, session: AsyncSession = Depends(get_session), _user: User = Depends(require_permission("catalog.read"))) -> ApiResponse[dict[str, Any]]:
-    """读取产品详情和关联型号。"""
+    """一次读取产品编辑所需翻译、型号、规格、关系与发布路由状态。"""
     product = await session.get(Product, product_id)
     if product is None:
         raise AppException(404, "product_not_found", "产品不存在")
     models = list((await session.scalars(select(ProductModel).where(ProductModel.product_id == product_id).order_by(ProductModel.sort_order, ProductModel.id))).all())
-    data = _serialize(product)
-    data["models"] = [_serialize(model) for model in models]
+    model_items: list[dict[str, Any]] = []
+    for model in models:
+        model_data = _serialize(model)
+        model_translations = list(
+            (
+                await session.scalars(
+                    select(ProductModelTranslation)
+                    .where(ProductModelTranslation.product_model_id == model.id)
+                    .order_by(ProductModelTranslation.locale_id)
+                )
+            ).all()
+        )
+        model_specs = list(
+            (
+                await session.scalars(
+                    select(ProductSpecValue)
+                    .where(ProductSpecValue.product_model_id == model.id)
+                    .order_by(ProductSpecValue.sort_order, ProductSpecValue.id)
+                )
+            ).all()
+        )
+        model_data["translations"] = [_serialize(item) for item in model_translations]
+        model_data["specifications"] = [_serialize(item) for item in model_specs]
+        model_items.append(model_data)
+    specifications = list(
+        (
+            await session.scalars(
+                select(ProductSpecValue)
+                .where(ProductSpecValue.product_id == product_id)
+                .order_by(ProductSpecValue.sort_order, ProductSpecValue.id)
+            )
+        ).all()
+    )
+    relation_config = {
+        "material_ids": (ProductMaterial, "material_id"),
+        "technology_ids": (ProductTechnology, "technology_id"),
+        "application_ids": (ProductApplication, "application_id"),
+        "solution_ids": (ProductSolution, "solution_id"),
+    }
+    relations: dict[str, list[str]] = {}
+    for field_name, (relation_model, target_field) in relation_config.items():
+        relations[field_name] = [
+            str(item)
+            for item in (
+                await session.scalars(
+                    select(getattr(relation_model, target_field))
+                    .where(relation_model.product_id == product_id)
+                    .order_by(relation_model.sort_order, getattr(relation_model, target_field))
+                )
+            ).all()
+        ]
+    data = await _entity_detail(
+        session,
+        owner_type="product",
+        entity=product,
+        translation_model=ProductTranslation,
+        owner_field="product_id",
+    )
+    data["models"] = model_items
+    data["specifications"] = [_serialize(item) for item in specifications]
+    data["relations"] = relations
     return success_response(data)
 
 
@@ -174,11 +360,31 @@ async def put_product_relations(product_id: uuid.UUID, payload: RelationUpdate, 
     return success_response({"product_id": str(product_id), **payload.model_dump(mode="json")})
 
 
+@router.get("/specifications/groups", response_model=ApiResponse[dict[str, Any]])
+async def list_specification_groups(
+    pagination: PaginationParams = Depends(),
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("specification.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """分页列出规格分组。"""
+    return success_response(await _list_entities(session, SpecificationGroup, pagination))
+
+
 @router.post("/specifications/groups", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
 async def post_specification_group(payload: SpecificationGroupCreate, request: Request, session: AsyncSession = Depends(get_session), user: User = Depends(require_permission("specification.manage")), _csrf: None = Depends(require_csrf)) -> ApiResponse[dict[str, Any]]:
     """创建规格分组。"""
     result = await _write_result(session, create_specification_group(session, payload, user.id))
     return success_response(_serialize(result))
+
+
+@router.get("/specifications/definitions", response_model=ApiResponse[dict[str, Any]])
+async def list_specification_definitions(
+    pagination: PaginationParams = Depends(),
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("specification.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """分页列出动态规格定义。"""
+    return success_response(await _list_entities(session, SpecificationDefinition, pagination))
 
 
 @router.post("/specifications/definitions", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
@@ -188,6 +394,16 @@ async def post_specification_definition(payload: SpecificationDefinitionCreate, 
     return success_response(_serialize(result))
 
 
+@router.get("/specifications/values", response_model=ApiResponse[dict[str, Any]])
+async def list_specification_values(
+    pagination: PaginationParams = Depends(),
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("specification.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """分页列出 Product 与 ProductModel 的规格值。"""
+    return success_response(await _list_entities(session, ProductSpecValue, pagination))
+
+
 @router.post("/specifications/values", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
 async def post_specification_value(payload: SpecificationValueCreate, request: Request, session: AsyncSession = Depends(get_session), user: User = Depends(require_permission("specification.manage")), _csrf: None = Depends(require_csrf)) -> ApiResponse[dict[str, Any]]:
     """创建经 value_type 校验的产品规格值。"""
@@ -195,22 +411,64 @@ async def post_specification_value(payload: SpecificationValueCreate, request: R
     return success_response(_serialize(result))
 
 
-def _register_entity_routes(table_name: str, owner_type: str, model: type) -> None:
-    """为四类知识实体注册一致的 list/create/update/archive 路由。"""
+@router.patch("/specifications/values/{value_id}", response_model=ApiResponse[dict[str, Any]])
+async def patch_specification_value(
+    value_id: uuid.UUID,
+    payload: SpecificationValueUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """更新已有 Product/ProductModel 规格值。"""
+    result = await _write_result(
+        session,
+        update_specification_value(session, value_id, payload, user.id),
+    )
+    return success_response(_serialize(result))
+
+
+def _register_entity_routes(
+    table_name: str,
+    owner_type: str,
+    model: type,
+    translation_model: type,
+    owner_field: str,
+) -> None:
+    """为四类知识实体注册使用各自原子权限的真实 CRUD 路由。"""
 
     async def list_handler(
         pagination: PaginationParams = Depends(),
         session: AsyncSession = Depends(get_session),
-        _user: User = Depends(require_permission("catalog.read")),
+        _user: User = Depends(require_permission(f"{owner_type}.read")),
     ) -> ApiResponse[dict[str, Any]]:
         """分页列出结构化实体。"""
         return success_response(await _list_entities(session, model, pagination))
+
+    async def detail_handler(
+        entity_id: uuid.UUID,
+        session: AsyncSession = Depends(get_session),
+        _user: User = Depends(require_permission(f"{owner_type}.read")),
+    ) -> ApiResponse[dict[str, Any]]:
+        """返回知识实体及其翻译、发布和 canonical Route 聚合详情。"""
+        entity = await session.get(model, entity_id)
+        if entity is None:
+            raise AppException(404, f"{owner_type}_not_found", "结构化实体不存在")
+        return success_response(
+            await _entity_detail(
+                session,
+                owner_type=owner_type,
+                entity=entity,
+                translation_model=translation_model,
+                owner_field=owner_field,
+            )
+        )
 
     async def create_handler(
         payload: EntityCreate,
         request: Request,
         session: AsyncSession = Depends(get_session),
-        user: User = Depends(require_permission("catalog.create")),
+        user: User = Depends(require_permission(f"{owner_type}.create")),
         _csrf: None = Depends(require_csrf),
     ) -> ApiResponse[dict[str, Any]]:
         """创建结构化实体。"""
@@ -222,7 +480,7 @@ def _register_entity_routes(table_name: str, owner_type: str, model: type) -> No
         payload: EntityUpdate,
         request: Request,
         session: AsyncSession = Depends(get_session),
-        user: User = Depends(require_permission("catalog.update")),
+        user: User = Depends(require_permission(f"{owner_type}.update")),
         _csrf: None = Depends(require_csrf),
     ) -> ApiResponse[dict[str, Any]]:
         """更新结构化实体。"""
@@ -233,7 +491,7 @@ def _register_entity_routes(table_name: str, owner_type: str, model: type) -> No
         entity_id: uuid.UUID,
         request: Request,
         session: AsyncSession = Depends(get_session),
-        user: User = Depends(require_permission("catalog.archive")),
+        user: User = Depends(require_permission(f"{owner_type}.archive")),
         _csrf: None = Depends(require_csrf),
     ) -> ApiResponse[dict[str, Any]]:
         """退役结构化实体。"""
@@ -242,9 +500,16 @@ def _register_entity_routes(table_name: str, owner_type: str, model: type) -> No
 
     router.add_api_route(f"/{table_name}", list_handler, methods=["GET"], response_model=ApiResponse[dict[str, Any]])
     router.add_api_route(f"/{table_name}", create_handler, methods=["POST"], status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
+    router.add_api_route(f"/{table_name}/{{entity_id}}", detail_handler, methods=["GET"], response_model=ApiResponse[dict[str, Any]])
     router.add_api_route(f"/{table_name}/{{entity_id}}", update_handler, methods=["PATCH"], response_model=ApiResponse[dict[str, Any]])
     router.add_api_route(f"/{table_name}/{{entity_id}}/archive", archive_handler, methods=["POST"], response_model=ApiResponse[dict[str, Any]])
 
 
-for _table_name, (_owner_type, _model) in _ENTITY_MODELS.items():
-    _register_entity_routes(_table_name, _owner_type, _model)
+for _table_name, (_owner_type, _model, _translation_model, _owner_field) in _ENTITY_MODELS.items():
+    _register_entity_routes(
+        _table_name,
+        _owner_type,
+        _model,
+        _translation_model,
+        _owner_field,
+    )

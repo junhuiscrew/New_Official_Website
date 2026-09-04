@@ -18,6 +18,23 @@ async function handleLogout() {
       <NuxtLink v-if="currentUser.permissions.includes('locale.read')" to="/locales"
         >Locales</NuxtLink
       >
+      <NuxtLink
+        v-if="
+          currentUser.permissions.some(
+            (permission) =>
+              permission.endsWith('.read') &&
+              [
+                'catalog.read',
+                'material.read',
+                'technology.read',
+                'application.read',
+                'solution.read',
+              ].includes(permission),
+          )
+        "
+        to="/catalog"
+        >Catalog</NuxtLink
+      >
     </nav>
     <span>{{ currentUser.display_name || currentUser.email }}</span>
     <button type="button" @click="handleLogout">Logout</button>

@@ -1,0 +1,218 @@
+"""Phase 3.3 Remediation 的 Catalog 聚合 DTO 与细粒度 RBAC API 测试。"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.database import Base, create_database_engine, create_session_factory, get_session
+from app.core.security.passwords import hash_password
+from app.main import create_app
+from app.modules.audit import models as audit_models  # noqa: F401
+from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.catalog import models as catalog_models  # noqa: F401
+from app.modules.content import models as content_models  # noqa: F401
+from app.modules.localization import models as localization_models  # noqa: F401
+from app.modules.users.models import Role, User, UserRole
+from app.seed import seed_database
+
+PASSWORD = "CatalogPassword!2026"
+
+
+@pytest.fixture
+async def catalog_remediation_api_factory(
+    sqlite_database_url: str,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """
+    创建含 content_admin、seo_manager 与 sales 的隔离 API 数据库。
+
+    输入：sqlite_database_url，测试数据库地址。
+    输出：async_sessionmaker，预置三类 RBAC 用户。
+    """
+    engine = create_database_engine(sqlite_database_url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = create_session_factory(engine)
+    await seed_database(factory)
+    async with factory() as session, session.begin():
+        for role_name in ("content_admin", "editor", "seo_manager", "sales"):
+            role = await session.scalar(select(Role).where(Role.name == role_name))
+            assert role is not None
+            user = User(
+                email=f"{role_name}@example.com",
+                password_hash=hash_password(PASSWORD),
+                display_name=role_name,
+                is_active=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(UserRole(user_id=user.id, role_id=role.id))
+    yield factory
+    await engine.dispose()
+
+
+@asynccontextmanager
+async def _role_client(
+    session_factory: async_sessionmaker[AsyncSession],
+    role_name: str,
+) -> AsyncIterator[AsyncClient]:
+    """
+    创建指定系统角色的已登录 API 客户端。
+
+    输入：session_factory、role_name。
+    输出：AsyncClient，自动携带 Cookie 与 CSRF Header。
+    """
+    app = create_app()
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_session] = override_session
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": f"{role_name}@example.com", "password": PASSWORD},
+        )
+        assert login.status_code == 200
+        client.headers["X-CSRF-Token"] = client.cookies.get("junhui_csrf") or ""
+        yield client
+
+
+@pytest.mark.parametrize(
+    ("resource", "permission_prefix"),
+    [
+        ("materials", "material"),
+        ("technologies", "technology"),
+        ("applications", "application"),
+        ("solutions", "solution"),
+    ],
+)
+async def test_structured_entities_enforce_granular_permissions(
+    catalog_remediation_api_factory: async_sessionmaker[AsyncSession],
+    resource: str,
+    permission_prefix: str,
+) -> None:
+    """四类知识实体必须使用各自 read/create 权限，而不是通用 catalog 权限。"""
+    payload = {"slug": f"{permission_prefix}-rbac-test", "translations": []}
+    async with _role_client(catalog_remediation_api_factory, "sales") as client:
+        sales_write = await client.post(f"/api/v1/catalog/{resource}", json=payload)
+    async with _role_client(catalog_remediation_api_factory, "editor") as client:
+        editor_write = await client.post(f"/api/v1/catalog/{resource}", json=payload)
+    async with _role_client(catalog_remediation_api_factory, "seo_manager") as client:
+        seo_read = await client.get(f"/api/v1/catalog/{resource}")
+        seo_write = await client.post(f"/api/v1/catalog/{resource}", json=payload)
+    async with _role_client(catalog_remediation_api_factory, "content_admin") as client:
+        admin_write = await client.post(f"/api/v1/catalog/{resource}", json=payload)
+
+    assert sales_write.status_code == 403
+    assert editor_write.status_code == 403
+    assert seo_read.status_code == 200
+    assert seo_write.status_code == 403
+    assert admin_write.status_code == 201
+
+
+async def test_product_and_material_detail_return_complete_editor_dto(
+    catalog_remediation_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Product 与 Material detail 必须一次返回 Admin 编辑页所需生命周期和关系数据。"""
+    async with _role_client(catalog_remediation_api_factory, "content_admin") as client:
+        locales = (await client.get("/api/v1/locales")).json()["data"]
+        zh_id = next(item["id"] for item in locales if item["code"] == "zh-CN")
+        category = await client.post(
+            "/api/v1/catalog/categories",
+            json={
+                "slug": "editor-category",
+                "translations": [{"locale_id": zh_id, "name": "编辑分类"}],
+            },
+        )
+        product = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category.json()["data"]["id"],
+                "slug": "editor-product",
+                "translations": [
+                    {
+                        "locale_id": zh_id,
+                        "name": "编辑产品",
+                        "fields": {"description": "产品正文"},
+                    }
+                ],
+            },
+        )
+        product_id = product.json()["data"]["id"]
+        material = await client.post(
+            "/api/v1/catalog/materials",
+            json={
+                "slug": "editor-material",
+                "translations": [{"locale_id": zh_id, "name": "编辑材料"}],
+            },
+        )
+        material_id = material.json()["data"]["id"]
+        await client.post(
+            f"/api/v1/catalog/products/{product_id}/models",
+            json={
+                "model_code": "EDITOR-01",
+                "translations": [{"locale_id": zh_id, "name": "编辑型号"}],
+            },
+        )
+        await client.put(
+            f"/api/v1/catalog/products/{product_id}/relations",
+            json={"material_ids": [material_id]},
+        )
+        group = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={
+                "code": "editor-group",
+                "translations": [{"locale_id": zh_id, "name": "编辑规格组"}],
+            },
+        )
+        definition = await client.post(
+            "/api/v1/catalog/specifications/definitions",
+            json={
+                "group_id": group.json()["data"]["id"],
+                "code": "editor-number",
+                "value_type": "number",
+                "translations": [{"locale_id": zh_id, "name": "编辑数值"}],
+            },
+        )
+        await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": product_id,
+                "definition_id": definition.json()["data"]["id"],
+                "value_number": 42,
+            },
+        )
+        product_detail = await client.get(f"/api/v1/catalog/products/{product_id}")
+        material_detail = await client.get(f"/api/v1/catalog/materials/{material_id}")
+
+    assert product_detail.status_code == 200
+    product_data = product_detail.json()["data"]
+    assert product_data["translations"][0]["name"] == "编辑产品"
+    assert product_data["models"][0]["model_code"] == "EDITOR-01"
+    assert product_data["specifications"][0]["value_number"] == 42
+    assert product_data["relations"]["material_ids"] == [material_id]
+    product_zh_status = next(
+        item for item in product_data["translation_statuses"] if item["locale_id"] == zh_id
+    )
+    assert product_zh_status["status"] == "draft"
+    assert product_data["publications"][0]["status"] == "draft"
+    assert product_data["routes"][0]["is_canonical"] is True
+
+    assert material_detail.status_code == 200
+    material_data = material_detail.json()["data"]
+    assert material_data["translations"][0]["name"] == "编辑材料"
+    material_zh_status = next(
+        item for item in material_data["translation_statuses"] if item["locale_id"] == zh_id
+    )
+    assert material_zh_status["status"] == "draft"
+    assert material_data["publications"][0]["status"] == "draft"
+    assert material_data["routes"][0]["is_canonical"] is True

@@ -5,8 +5,16 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.catalog.models import (
+    Application,
+    Material,
+    Product,
+    ProductCategory,
+    Solution,
+    Technology,
+)
 from app.modules.content.enums import PublicationStatus
-from app.modules.content.models import ContentPublication, ContentRoute
+from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.localization.models import Locale
 
 # 只有具备结构化主实体的路由才允许进入公开索引源。
@@ -14,13 +22,21 @@ INDEXABLE_OWNER_TYPES = frozenset(
     {
         "product_category",
         "product",
-        "product_model",
         "material",
         "technology",
         "application",
         "solution",
     }
 )
+
+_BUSINESS_MODELS = {
+    "product_category": ProductCategory,
+    "product": Product,
+    "material": Material,
+    "technology": Technology,
+    "application": Application,
+    "solution": Solution,
+}
 
 
 async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
@@ -41,6 +57,12 @@ async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
             & (ContentPublication.owner_id == ContentRoute.owner_id)
             & (ContentPublication.locale_id == ContentRoute.locale_id),
         )
+        .join(
+            TranslationStatus,
+            (TranslationStatus.owner_type == ContentRoute.owner_type)
+            & (TranslationStatus.owner_id == ContentRoute.owner_id)
+            & (TranslationStatus.locale_id == ContentRoute.locale_id),
+        )
         .join(Locale, Locale.id == ContentRoute.locale_id)
         .where(
             ContentRoute.owner_type.in_(INDEXABLE_OWNER_TYPES),
@@ -48,9 +70,27 @@ async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
             ContentRoute.indexable.is_(True),
             ContentRoute.active.is_(True),
             ContentPublication.status == PublicationStatus.PUBLISHED.value,
+            TranslationStatus.status == "published",
             Locale.is_enabled.is_(True),
         )
         .order_by(ContentRoute.path.asc())
     )
-    return list((await session.scalars(statement)).all())
-
+    candidates = list((await session.scalars(statement)).all())
+    enabled_ids: dict[str, set] = {}
+    for owner_type, model in _BUSINESS_MODELS.items():
+        owner_ids = {route.owner_id for route in candidates if route.owner_type == owner_type}
+        if not owner_ids:
+            enabled_ids[owner_type] = set()
+            continue
+        enabled_ids[owner_type] = set(
+            (
+                await session.scalars(
+                    select(model.id).where(model.id.in_(owner_ids), model.status == "enabled")
+                )
+            ).all()
+        )
+    return [
+        route
+        for route in candidates
+        if route.owner_id in enabled_ids.get(route.owner_type, set())
+    ]

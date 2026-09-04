@@ -182,6 +182,20 @@ class SpecificationValueCreate(BaseModel):
         return self
 
 
+class SpecificationValueUpdate(BaseModel):
+    """已有产品规格值的局部更新输入。"""
+
+    value_text: str | None = None
+    value_number: float | None = None
+    value_min: float | None = None
+    value_max: float | None = None
+    value_boolean: bool | None = None
+    enum_value: str | None = None
+    unit_override: str | None = None
+    sort_order: int | None = None
+    is_public: bool | None = None
+
+
 class RelationUpdate(BaseModel):
     """产品显式关系的整体替换输入。"""
 

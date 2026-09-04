@@ -13,6 +13,20 @@ from app.core.database import create_database_engine, create_session_factory
 from app.core.exceptions.handlers import AppException
 from app.main import create_app
 from app.modules.auth.models import AuthSession
+from app.modules.catalog.schemas import (
+    CategoryCreate,
+    EntityCreate,
+    ProductCreate,
+    ProductUpdate,
+    TranslationInput,
+)
+from app.modules.catalog.services import (
+    archive_entity,
+    create_category,
+    create_core_entity,
+    create_product,
+    update_product,
+)
 from app.modules.content.enums import PublicationStatus
 from app.modules.content.models import (
     ContentPublication,
@@ -20,6 +34,7 @@ from app.modules.content.models import (
     ContentRoute,
     TranslationStatus,
 )
+from app.modules.content.services.indexable import list_indexable_routes
 from app.modules.content.services.publication import transition_publication
 from app.modules.content.services.revisions import store_revision
 from app.modules.localization.models import Locale
@@ -440,4 +455,122 @@ async def test_postgresql_competing_default_locale_switches_are_serialized() -> 
                 select(func.count()).select_from(Locale).where(Locale.is_default.is_(True))
             )
         assert default_count == 1
+    await engine.dispose()
+
+
+async def test_postgresql_catalog_remediation_lifecycle_is_atomic() -> None:
+    """
+    验证真实 PostgreSQL 中正文撤回、missing locale 补齐与业务退役保持原子一致。
+
+    输入：TEST_DATABASE_URL 环境变量。
+    输出：None；断言统一索引源不会返回审核失效或退役内容。
+    """
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    unique = uuid.uuid4().hex
+    async with factory() as session, session.begin():
+        zh = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        en = await session.scalar(select(Locale).where(Locale.code == "en"))
+        assert zh is not None and en is not None
+        category = await create_category(
+            session,
+            CategoryCreate(
+                slug=f"pg-category-{unique}",
+                translations=[TranslationInput(locale_id=zh.id, name="PG 分类")],
+            ),
+        )
+        product = await create_product(
+            session,
+            ProductCreate(
+                category_id=category.id,
+                slug=f"pg-product-{unique}",
+                translations=[TranslationInput(locale_id=zh.id, name="PG 产品")],
+            ),
+        )
+        material = await create_core_entity(
+            session,
+            "material",
+            EntityCreate(
+                slug=f"pg-material-{unique}",
+                translations=[TranslationInput(locale_id=zh.id, name="PG 材料")],
+            ),
+        )
+
+        async def publish(owner_type: str, owner_id: uuid.UUID) -> None:
+            """加载并发布同一 owner 的中文生命周期记录。"""
+            publication = await session.scalar(
+                select(ContentPublication).where(
+                    ContentPublication.owner_type == owner_type,
+                    ContentPublication.owner_id == owner_id,
+                    ContentPublication.locale_id == zh.id,
+                )
+            )
+            translation = await session.scalar(
+                select(TranslationStatus).where(
+                    TranslationStatus.owner_type == owner_type,
+                    TranslationStatus.owner_id == owner_id,
+                    TranslationStatus.locale_id == zh.id,
+                )
+            )
+            route = await session.scalar(
+                select(ContentRoute).where(
+                    ContentRoute.owner_type == owner_type,
+                    ContentRoute.owner_id == owner_id,
+                    ContentRoute.locale_id == zh.id,
+                )
+            )
+            assert publication is not None and translation is not None and route is not None
+            publication.status = "review"
+            translation.status = "human_reviewed"
+            await session.flush()
+            await transition_publication(
+                session,
+                publication=publication,
+                translation=translation,
+                route=route,
+                target_status=PublicationStatus.PUBLISHED,
+                actor_permissions={"content.publish"},
+                actor_id=None,
+            )
+
+        await publish("product", product.id)
+        await publish("material", material.id)
+        indexed_owner_ids = {route.owner_id for route in await list_indexable_routes(session)}
+        assert {product.id, material.id} <= indexed_owner_ids
+
+        await update_product(
+            session,
+            product.id,
+            ProductUpdate(
+                translations=[TranslationInput(locale_id=zh.id, name="PG 产品已修改")]
+            ),
+        )
+        await update_product(
+            session,
+            product.id,
+            ProductUpdate(
+                translations=[TranslationInput(locale_id=en.id, name="PG Product")]
+            ),
+        )
+        await archive_entity(session, "material", material.id)
+        indexed_owner_ids = {route.owner_id for route in await list_indexable_routes(session)}
+        assert product.id not in indexed_owner_ids
+        assert material.id not in indexed_owner_ids
+
+        en_publication = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.owner_type == "product",
+                ContentPublication.owner_id == product.id,
+                ContentPublication.locale_id == en.id,
+            )
+        )
+        en_route = await session.scalar(
+            select(ContentRoute).where(
+                ContentRoute.owner_type == "product",
+                ContentRoute.owner_id == product.id,
+                ContentRoute.locale_id == en.id,
+            )
+        )
+        assert en_publication is not None and en_publication.status == "draft"
+        assert en_route is not None and en_route.active is False and en_route.indexable is False
     await engine.dispose()

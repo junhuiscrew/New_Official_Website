@@ -1,0 +1,19 @@
+{
+  "name": "junhui-global-website",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "build": "pnpm --filter @junhui/website build && pnpm --filter @junhui/admin build",
+    "dev:website": "pnpm --filter @junhui/website dev",
+    "dev:admin": "pnpm --filter @junhui/admin dev",
+    "format": "prettier --write \"apps/**/*.{ts,vue,css,json}\" \"*.{json,yaml,yml}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,vue,css,json}\" \"*.{json,yaml,yml}\"",
+    "lint": "pnpm typecheck",
+    "test": "pnpm --filter @junhui/website test && pnpm --filter @junhui/admin test",
+    "typecheck": "pnpm --filter @junhui/website typecheck && pnpm --filter @junhui/admin typecheck"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2"
+  }
+}

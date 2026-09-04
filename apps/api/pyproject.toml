@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "junhui-global-api"
+version = "0.1.0"
+description = "Junhui Global Website modular monolith API"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "alembic==1.16.5",
+    "asyncpg==0.30.0",
+    "celery[redis]==5.5.3",
+    "fastapi==0.116.1",
+    "greenlet==3.2.4",
+    "pydantic-settings==2.10.1",
+    "sqlalchemy[asyncio]==2.0.43",
+    "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "aiosqlite==0.21.0",
+    "httpx==0.28.1",
+    "pytest==8.4.2",
+    "pytest-asyncio==1.1.0",
+]
+dev = [
+    "junhui-global-api[test]",
+    "ruff==0.12.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --basetemp=.pytest-tmp"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

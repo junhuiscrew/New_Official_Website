@@ -1,0 +1,31 @@
+# 环境变量与密钥
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.ruff_cache/
+.venv/
+htmlcov/
+.coverage
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+dist/
+.pnpm-store/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 本地数据与日志
+data/
+*.log

@@ -228,7 +228,7 @@ API `live` 与 `ready` 均返回 HTTP 200。Docker Compose 版本：`v5.3.1`。
 
 ### Final Patch commit
 
-- 实现 commit SHA：提交后回填。
+- 实现 commit SHA：`75122ca1f7ee5ca91a081878455153935a11aad3`（`fix: finalize editor catalog access and spec inputs`）。
 - 分支：`phase-3.3-fix`。
 
 ### Editor 权限

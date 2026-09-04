@@ -14,6 +14,7 @@ from app.modules.catalog.models import (
     Solution,
     Technology,
 )
+from app.modules.company.models import Exhibition, ManufacturingCapability
 from app.modules.content.enums import PublicationStatus
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.discovery.models import SeoDocument
@@ -33,6 +34,8 @@ INDEXABLE_OWNER_TYPES = frozenset(
         "case_study",
         "knowledge_article",
         "author_expert",
+        "manufacturing_capability",
+        "exhibition",
     }
 )
 
@@ -46,6 +49,8 @@ _BUSINESS_MODELS = {
     "case_study": CaseStudy,
     "knowledge_article": KnowledgeArticle,
     "author_expert": AuthorExpert,
+    "manufacturing_capability": ManufacturingCapability,
+    "exhibition": Exhibition,
 }
 
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
+from app.modules.company.services import get_public_company_profile, get_public_trust
 from app.modules.discovery.public_delivery import (
     get_public_case,
     get_public_catalog_entity,
@@ -18,8 +19,21 @@ from app.modules.discovery.public_delivery import (
     get_public_product,
 )
 from app.modules.discovery.services import resolve_redirect
+from app.modules.media.services import list_public_downloads
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+
+@router.get("/downloads/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])
+async def public_downloads(locale_slug: str, session: AsyncSession = Depends(get_session)) -> ApiResponse[list[dict[str, Any]]]:
+    """返回 public-media 中已就绪的公开下载资源，不暴露私有 RFQ 文件。"""
+    return success_response(await list_public_downloads(session, locale_slug))
+
+
+@router.get("/company-profile/{locale_slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_company_profile(locale_slug: str, session: AsyncSession = Depends(get_session)) -> ApiResponse[dict[str, Any]]:
+    """返回由真实 Company Profile 驱动的 About/Organization 数据。"""
+    return success_response(await get_public_company_profile(session, locale_slug))
 
 
 @router.get("/redirects/resolve", response_class=RedirectResponse, include_in_schema=False)
@@ -103,6 +117,17 @@ async def public_expert(
     输出：ApiResponse，供 Nuxt Expert SSR 使用的人物与 Person Schema 数据。
     """
     return success_response(await get_public_expert(session, locale_slug, slug))
+
+
+@router.get("/trust/{resource}/{locale_slug}/{slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_trust(resource: str, locale_slug: str, slug: str, session: AsyncSession = Depends(get_session)) -> ApiResponse[dict[str, Any]]:
+    """返回公开 Company Trust DTO；设备不提供独立页面。"""
+    owner_types = {"capabilities": "manufacturing_capability", "certificates": "certificate", "patents": "patent", "honors": "honor", "exhibitions": "exhibition"}
+    owner_type = owner_types.get(resource)
+    if owner_type is None:
+        from app.core.exceptions.handlers import AppException
+        raise AppException(404, "public_content_not_found", "公开 Trust 内容不存在")
+    return success_response(await get_public_trust(session, owner_type, locale_slug, slug))
 
 
 @router.get(

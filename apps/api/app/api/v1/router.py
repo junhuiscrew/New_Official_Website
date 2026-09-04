@@ -8,8 +8,13 @@ from app.api.v1.catalog import router as catalog_router
 from app.api.v1.discovery import router as discovery_router
 from app.api.v1.health import router as health_router
 from app.api.v1.locales import router as locales_router
+from app.api.v1.media import public_router as public_media_router
+from app.api.v1.media import router as media_router
 from app.api.v1.public import router as public_router
 from app.api.v1.rbac import router as rbac_router
+from app.api.v1.rfq import public_router as public_rfq_router
+from app.api.v1.rfq import router as rfq_router
+from app.api.v1.trust import router as trust_router
 from app.api.v1.users import router as users_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -22,3 +27,8 @@ api_v1_router.include_router(catalog_router)
 api_v1_router.include_router(authority_router)
 api_v1_router.include_router(discovery_router)
 api_v1_router.include_router(public_router)
+api_v1_router.include_router(trust_router)
+api_v1_router.include_router(media_router)
+api_v1_router.include_router(public_media_router)
+api_v1_router.include_router(rfq_router)
+api_v1_router.include_router(public_rfq_router)

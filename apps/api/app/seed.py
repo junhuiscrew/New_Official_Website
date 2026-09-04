@@ -153,6 +153,36 @@ PERMISSION_CODES: tuple[str, ...] = (
     "expert.archive",
     "source.read",
     "source.manage",
+    "company.read",
+    "company.update",
+    "capability.read",
+    "capability.create",
+    "capability.update",
+    "capability.archive",
+    "equipment.read",
+    "equipment.create",
+    "equipment.update",
+    "equipment.archive",
+    "certificate.read",
+    "certificate.create",
+    "certificate.update",
+    "certificate.archive",
+    "patent.read",
+    "patent.create",
+    "patent.update",
+    "patent.archive",
+    "honor.read",
+    "honor.create",
+    "honor.update",
+    "honor.archive",
+    "exhibition.read",
+    "exhibition.create",
+    "exhibition.update",
+    "exhibition.archive",
+    "download.read",
+    "download.create",
+    "download.update",
+    "download.archive",
 )
 
 PERMISSIONS: tuple[dict[str, object], ...] = tuple(
@@ -309,6 +339,13 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
     "sales": RFQ_PERMISSIONS,
     "media_manager": MEDIA_PERMISSIONS,
 }
+
+# Trust/Download 权限集合在定义矩阵后补充，保持旧角色声明清晰且 Seed 幂等。
+TRUST_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith(("company.", "capability.", "equipment.", "certificate.", "patent.", "honor.", "exhibition.", "download.")))
+ROLE_PERMISSION_MATRIX["content_admin"] = ROLE_PERMISSION_MATRIX["content_admin"] | TRUST_PERMISSIONS
+ROLE_PERMISSION_MATRIX["editor"] = ROLE_PERMISSION_MATRIX["editor"] | frozenset({"company.read", "capability.read", "equipment.read", "certificate.read", "patent.read", "honor.read", "exhibition.read", "download.read"})
+ROLE_PERMISSION_MATRIX["sales"] = RFQ_PERMISSIONS
+ROLE_PERMISSION_MATRIX["media_manager"] = MEDIA_PERMISSIONS | frozenset({"download.read", "download.create", "download.update", "download.archive"})
 
 
 async def _seed_by_unique_field(

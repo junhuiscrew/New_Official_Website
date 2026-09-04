@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     analytics_enabled: bool = False
     marketing_email_enabled: bool = False
     trusted_proxy_cidrs: list[str] = []
+    public_media_max_file_bytes: int = 25 * 1024 * 1024
+    rfq_max_file_bytes: int = 25 * 1024 * 1024
+    rfq_max_total_file_bytes: int = 100 * 1024 * 1024
+    rfq_max_files: int = 10
+    rfq_rate_limit_per_hour: int = 5
+    rfq_rate_limit_per_day: int = 20
+    rfq_retention_days: int = 730
+    malware_scanner_enabled: bool = False
 
     @field_validator("app_env", mode="before")
     @classmethod

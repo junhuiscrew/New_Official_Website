@@ -7,7 +7,7 @@
 
 - Base SHA：`9d94ada04748e0ff04ca601387df84d5125f130e`
 - Branch：`phase-3.3-fix`
-- Final SHA：当前修复成果仍位于工作树，尚未创建提交；提交后应以 `git rev-parse HEAD` 回填。本报告不把 base SHA 冒充为修复后的 final SHA。
+- Final SHA（实现提交）：`054f7c1`（`fix: complete phase 3.3 remediation`）。报告元数据更新随后作为独立文档提交；分支最新 SHA 以远端 `phase-3.3-fix` 为准。
 - 范围：仅 Phase 3.3 Remediation；未进入 Phase 3.4。
 
 ## 2. 修复文件树
@@ -201,7 +201,7 @@ API `live` 与 `ready` 均返回 HTTP 200。Docker Compose 版本：`v5.3.1`。
 
 ## 20. 已知问题
 
-- 当前工作树尚未提交，因此没有可诚实填写的 remediation Final SHA；不影响代码与运行验证，但 Git 交付时必须回填。
+- 实现提交已创建；本报告的 Final SHA 指向包含全部修复代码、测试、migration 与首次报告的实现提交 `054f7c1`。
 - 测试仍显示上游 Starlette/AnyIO 弃用 warning；本轮无功能失败。
 - Admin 是用于验证 Structured Core 与工作流的最小 CRUD，不是最终视觉、完整 CMS 或 Page Builder。
 - 尚未加入浏览器级 E2E；当前覆盖为 API integration、Admin/Vitest contract、typecheck、production build 与容器 HTTP 健康验证。

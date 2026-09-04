@@ -29,7 +29,7 @@ def test_health_endpoint_returns_standard_response() -> None:
         "data": {
             "status": "healthy",
             "service": "Junhui Global Website API",
-            "version": "0.2.0",
+                "version": "0.4.0",
         },
         "error": None,
     }

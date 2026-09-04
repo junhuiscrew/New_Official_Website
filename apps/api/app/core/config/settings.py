@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "staging", "production"] = "development"
     app_name: str = "Junhui Global Website API"
-    app_version: str = "0.2.0"
+    app_version: str = "0.4.0"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     public_sitemap_enabled: bool = True
+    llms_txt_enabled: bool = True
+    faq_schema_enabled: bool = False
     analytics_enabled: bool = False
     marketing_email_enabled: bool = False
     trusted_proxy_cidrs: list[str] = []

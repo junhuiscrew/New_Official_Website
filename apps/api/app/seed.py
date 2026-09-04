@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.modules.authority.models import KnowledgeCategory, KnowledgeCategoryTranslation
 from app.modules.localization.models import Locale
 from app.modules.users.models import Permission, Role, RolePermission
 
@@ -43,6 +44,30 @@ ROLES: tuple[dict[str, object], ...] = (
     {"name": "sales", "display_name": "销售", "description": "处理询盘与客户沟通"},
     {"name": "media_manager", "display_name": "媒体管理员", "description": "管理公开媒体资产"},
 )
+
+KNOWLEDGE_CATEGORY_SLUGS: tuple[str, ...] = (
+    "technical-guides",
+    "material-guides",
+    "selection-guides",
+    "troubleshooting",
+    "comparisons",
+    "faq",
+    "industry-knowledge",
+    "company-news",
+    "exhibitions",
+)
+
+_KNOWLEDGE_CATEGORY_NAMES: dict[str, tuple[str, str]] = {
+    "technical-guides": ("技术指南", "Technical Guides"),
+    "material-guides": ("材料指南", "Material Guides"),
+    "selection-guides": ("选型指南", "Selection Guides"),
+    "troubleshooting": ("故障排查", "Troubleshooting"),
+    "comparisons": ("对比分析", "Comparisons"),
+    "faq": ("常见问题", "FAQ"),
+    "industry-knowledge": ("行业知识", "Industry Knowledge"),
+    "company-news": ("公司新闻", "Company News"),
+    "exhibitions": ("展会信息", "Exhibitions"),
+}
 
 PERMISSION_CODES: tuple[str, ...] = (
     "user.read",
@@ -103,6 +128,31 @@ PERMISSION_CODES: tuple[str, ...] = (
     "solution.create",
     "solution.update",
     "solution.archive",
+    "case.read",
+    "case.create",
+    "case.update",
+    "case.review",
+    "case.publish",
+    "case.archive",
+    "knowledge.read",
+    "knowledge.create",
+    "knowledge.update",
+    "knowledge.review",
+    "knowledge.publish",
+    "knowledge.archive",
+    "faq.read",
+    "faq.create",
+    "faq.update",
+    "faq.review",
+    "faq.publish",
+    "faq.archive",
+    "expert.read",
+    "expert.create",
+    "expert.update",
+    "expert.publish",
+    "expert.archive",
+    "source.read",
+    "source.manage",
 )
 
 PERMISSIONS: tuple[dict[str, object], ...] = tuple(
@@ -129,6 +179,11 @@ STRUCTURED_CONTENT_PERMISSIONS = frozenset(
     for code in PERMISSION_CODES
     if code.startswith(("material.", "technology.", "application.", "solution."))
 )
+AUTHORITY_PERMISSIONS = frozenset(
+    code
+    for code in PERMISSION_CODES
+    if code.startswith(("case.", "knowledge.", "faq.", "expert.", "source."))
+)
 
 # 角色矩阵只声明系统基线；Seed 只补充缺失关系，不删除管理员后续添加的自定义映射。
 ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
@@ -139,6 +194,7 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
     | CATALOG_PERMISSIONS
     | SPECIFICATION_PERMISSIONS
     | STRUCTURED_CONTENT_PERMISSIONS
+    | AUTHORITY_PERMISSIONS
     | frozenset(
         {
             "user.read",
@@ -171,6 +227,16 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "technology.read",
             "application.read",
             "solution.read",
+            "case.read",
+            "case.create",
+            "case.update",
+            "knowledge.read",
+            "knowledge.create",
+            "knowledge.update",
+            "faq.read",
+            "faq.create",
+            "faq.update",
+            "expert.read",
         }
     ),
     "translator": frozenset(
@@ -180,6 +246,10 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "translation.read",
             "translation.create",
             "translation.update",
+            "case.read",
+            "knowledge.read",
+            "faq.read",
+            "expert.read",
         }
     ),
     "reviewer": frozenset(
@@ -197,6 +267,17 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "technology.read",
             "application.read",
             "solution.read",
+            "case.read",
+            "case.review",
+            "case.publish",
+            "knowledge.read",
+            "knowledge.review",
+            "knowledge.publish",
+            "faq.read",
+            "faq.review",
+            "faq.publish",
+            "expert.read",
+            "expert.publish",
         }
     ),
     "seo_manager": frozenset(
@@ -217,6 +298,12 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "redirect.read",
             "redirect.manage",
             "audit.read",
+            "case.read",
+            "knowledge.read",
+            "faq.read",
+            "expert.read",
+            "source.read",
+            "source.manage",
         }
     ),
     "sales": RFQ_PERMISSIONS,
@@ -280,3 +367,44 @@ async def seed_database(session_factory: async_sessionmaker[AsyncSession]) -> No
                 if pair not in existing_pairs:
                     session.add(RolePermission(role_id=role.id, permission_id=permission.id))
                     existing_pairs.add(pair)
+        await _seed_knowledge_categories(session)
+
+
+async def _seed_knowledge_categories(session: AsyncSession) -> None:
+    """
+    幂等写入 Knowledge Center 冻结分类与中英文名称。
+
+    输入：
+        session: AsyncSession，当前 Seed 事务会话。
+
+    输出：None；只补充缺失分类和翻译，不覆盖管理员已有内容。
+    """
+    locales = {locale.code: locale for locale in (await session.scalars(select(Locale))).all()}
+    existing = {
+        category.slug: category
+        for category in (await session.scalars(select(KnowledgeCategory))).all()
+    }
+    for sort_order, slug in enumerate(KNOWLEDGE_CATEGORY_SLUGS, start=1):
+        category = existing.get(slug)
+        if category is None:
+            category = KnowledgeCategory(slug=slug, status="enabled", sort_order=sort_order * 10)
+            session.add(category)
+            await session.flush()
+            existing[slug] = category
+        names = _KNOWLEDGE_CATEGORY_NAMES[slug]
+        for locale_code, name in (("zh-CN", names[0]), ("en", names[1])):
+            locale = locales[locale_code]
+            translation = await session.scalar(
+                select(KnowledgeCategoryTranslation).where(
+                    KnowledgeCategoryTranslation.category_id == category.id,
+                    KnowledgeCategoryTranslation.locale_id == locale.id,
+                )
+            )
+            if translation is None:
+                session.add(
+                    KnowledgeCategoryTranslation(
+                        category_id=category.id,
+                        locale_id=locale.id,
+                        name=name,
+                    )
+                )

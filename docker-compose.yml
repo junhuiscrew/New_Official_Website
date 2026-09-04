@@ -73,7 +73,7 @@ services:
     environment:
       APP_ENV: development
       APP_NAME: Junhui Global Website API
-      APP_VERSION: 0.2.0
+      APP_VERSION: 0.4.0
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-junhui}:${POSTGRES_PASSWORD:-junhui-local-dev}@postgres:5432/${POSTGRES_DB:-junhui}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
@@ -86,6 +86,9 @@ services:
       JWT_SIGNING_SECRET: ${JWT_SIGNING_SECRET:-change-me-jwt-local-only}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-change-me-refresh-local-only}
       AUTH_COOKIE_SECURE: 'false'
+      PUBLIC_SITEMAP_ENABLED: 'true'
+      LLMS_TXT_ENABLED: 'true'
+      FAQ_SCHEMA_ENABLED: 'false'
     command: >-
       sh -c "alembic upgrade head && python -m app.cli seed &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -212,7 +215,7 @@ services:
       target: test
     environment:
       APP_ENV: test
-      APP_VERSION: 0.2.0
+      APP_VERSION: 0.4.0
       DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test
       TEST_DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test
       REDIS_URL: redis://redis-test:6379/0

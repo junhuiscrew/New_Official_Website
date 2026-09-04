@@ -17,7 +17,7 @@ from app.modules.content import models as content_models  # noqa: F401
 from app.modules.localization import models as localization_models  # noqa: F401
 from app.modules.users.bootstrap import create_super_admin
 from app.modules.users.models import Permission, Role, RolePermission, User, UserRole
-from app.seed import seed_database
+from app.seed import PERMISSION_CODES, seed_database
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ async def test_admin_can_view_eight_roles_and_permissions(
     assert response.status_code == 200
     assert len(response.json()["data"]) == 8
     super_admin = next(item for item in response.json()["data"] if item["name"] == "super_admin")
-    assert len(super_admin["permissions"]) == 58
+    assert len(super_admin["permissions"]) == len(PERMISSION_CODES)
 
 
 async def test_user_email_duplicate_is_case_insensitive(

@@ -39,7 +39,7 @@ python -m app.cli seed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Seed 可重复执行，只补充缺失的 2 个 Locale、8 个系统 Role、36 个 Permission 和缺失的系统映射，不删除后续自定义映射。
+Seed 可重复执行，只补充缺失的 2 个 Locale、8 个系统 Role、完整 Permission Matrix、9 个 Knowledge Category 和缺失的系统映射，不删除后续自定义映射。
 
 | 服务 | 地址 / 端口 |
 | --- | --- |
@@ -123,6 +123,16 @@ docker compose down
 ```
 
 `docker compose down` 保留 named volumes；只有明确需要清空本地数据时才使用 `docker compose down -v`。
+
+## Phase 3.4 Authority 与 Discovery
+
+- Admin 最小真实 CRUD：`/cases`、`/knowledge`、`/faqs`、`/experts`。
+- SSR 公开模板：`/{lang}/products/{category}/{slug}`、`/{lang}/case-studies/{slug}`、`/{lang}/knowledge/{category}/{slug}`。
+- 公开发现文件：`/sitemap.xml`、`/robots.txt`，以及由 `LLMS_TXT_ENABLED` 控制的 `/llms.txt`。
+- Public DTO 只返回同时满足 Entity、Locale、Translation、Publication、canonical Route 与 SEO robots_index 门槛的内容。
+- FAQPage Schema 由 `FAQ_SCHEMA_ENABLED` 控制，默认关闭；系统不会生成虚构 Offer、价格、Review、Rating 或人物。
+- Redirect Manager 使用精确 host/path 规则，并拒绝 self、loop、chain、duplicate 与不安全目标；已发布 URL 必须通过单事务 URL Change API 变更。
+- Case 客户名称、地址、Logo 采用逐字段公开许可；未获许可的数据不会进入 Public DTO、Schema、SEO 或 GEO。
 
 ## Phase 3.2 文档
 

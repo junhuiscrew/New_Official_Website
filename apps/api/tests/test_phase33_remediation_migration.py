@@ -10,7 +10,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-def test_phase33_remediation_migration_is_new_head() -> None:
+def test_phase33_remediation_migration_remains_in_linear_history() -> None:
     """
     验证 Remediation 通过 0005 新迁移实现，不修改既有历史。
 
@@ -19,7 +19,8 @@ def test_phase33_remediation_migration_is_new_head() -> None:
     """
     api_root = Path(__file__).resolve().parents[1]
     script = ScriptDirectory(str(api_root / "alembic"))
-    assert script.get_current_head() == "20260904_0005"
+    revision_ids = {revision.revision for revision in script.walk_revisions()}
+    assert "20260904_0005" in revision_ids
     assert (api_root / "alembic/versions/20260904_0005_phase33_remediation.py").is_file()
 
 

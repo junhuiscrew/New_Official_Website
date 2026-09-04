@@ -53,3 +53,32 @@ nav {
 a {
   color: #174f8a;
 }
+
+/* Phase 3.4 最小 SSR 内容布局，仅保证可读语义，不定义最终视觉。 */
+.public-content-page {
+  width: min(100% - 2rem, 64rem);
+  margin: 0 auto;
+  padding: 2rem 0 4rem;
+}
+
+.public-breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.public-breadcrumb li:not(:last-child)::after {
+  margin-left: 0.5rem;
+  content: '/';
+}
+
+.public-geo,
+.public-content-page section {
+  margin-top: 2rem;
+}
+
+.body-markdown {
+  white-space: pre-wrap;
+}

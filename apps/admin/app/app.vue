@@ -35,6 +35,14 @@ async function handleLogout() {
         to="/catalog"
         >Catalog</NuxtLink
       >
+      <NuxtLink v-if="currentUser.permissions.includes('case.read')" to="/cases">Cases</NuxtLink>
+      <NuxtLink v-if="currentUser.permissions.includes('knowledge.read')" to="/knowledge"
+        >Knowledge</NuxtLink
+      >
+      <NuxtLink v-if="currentUser.permissions.includes('faq.read')" to="/faqs">FAQ</NuxtLink>
+      <NuxtLink v-if="currentUser.permissions.includes('expert.read')" to="/experts"
+        >Experts</NuxtLink
+      >
     </nav>
     <span>{{ currentUser.display_name || currentUser.email }}</span>
     <button type="button" @click="handleLogout">Logout</button>

@@ -37,7 +37,7 @@ async def test_permission_and_role_matrix_seed_is_idempotent(
     seed_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """
-    验证 36 个权限与 8 个角色映射重复 Seed 不产生重复记录。
+    验证结构化内容权限与 8 个角色映射重复 Seed 不产生重复记录。
 
     输入：seed_session_factory，测试数据库工厂。
 
@@ -60,7 +60,7 @@ async def test_permission_and_role_matrix_seed_is_idempotent(
             ).all()
         )
 
-    assert permission_count == len(PERMISSIONS) == 36
+    assert permission_count == len(PERMISSIONS)
     assert set(role_by_name) == set(ROLE_PERMISSION_MATRIX)
     assert len(pairs) == sum(len(codes) for codes in ROLE_PERMISSION_MATRIX.values())
     assert (role_by_name["sales"].id, permission_by_code["seo.update"].id) not in pairs

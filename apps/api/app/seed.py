@@ -81,6 +81,28 @@ PERMISSION_CODES: tuple[str, ...] = (
     "settings.read",
     "settings.update",
     "audit.read",
+    "catalog.read",
+    "catalog.create",
+    "catalog.update",
+    "catalog.archive",
+    "specification.read",
+    "specification.manage",
+    "material.read",
+    "material.create",
+    "material.update",
+    "material.archive",
+    "technology.read",
+    "technology.create",
+    "technology.update",
+    "technology.archive",
+    "application.read",
+    "application.create",
+    "application.update",
+    "application.archive",
+    "solution.read",
+    "solution.create",
+    "solution.update",
+    "solution.archive",
 )
 
 PERMISSIONS: tuple[dict[str, object], ...] = tuple(
@@ -98,6 +120,15 @@ TRANSLATION_PERMISSIONS = frozenset(
 )
 MEDIA_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("media."))
 RFQ_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("rfq."))
+CATALOG_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith("catalog."))
+SPECIFICATION_PERMISSIONS = frozenset(
+    code for code in PERMISSION_CODES if code.startswith("specification.")
+)
+STRUCTURED_CONTENT_PERMISSIONS = frozenset(
+    code
+    for code in PERMISSION_CODES
+    if code.startswith(("material.", "technology.", "application.", "solution."))
+)
 
 # 角色矩阵只声明系统基线；Seed 只补充缺失关系，不删除管理员后续添加的自定义映射。
 ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
@@ -105,6 +136,9 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
     "content_admin": CONTENT_PERMISSIONS
     | TRANSLATION_PERMISSIONS
     | MEDIA_PERMISSIONS
+    | CATALOG_PERMISSIONS
+    | SPECIFICATION_PERMISSIONS
+    | STRUCTURED_CONTENT_PERMISSIONS
     | frozenset(
         {
             "user.read",
@@ -129,6 +163,8 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "translation.read",
             "media.read",
             "media.upload",
+            "catalog.create",
+            "catalog.update",
         }
     ),
     "translator": frozenset(
@@ -149,6 +185,12 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "translation.review",
             "translation.publish",
             "audit.read",
+            "catalog.read",
+            "specification.read",
+            "material.read",
+            "technology.read",
+            "application.read",
+            "solution.read",
         }
     ),
     "seo_manager": frozenset(
@@ -156,6 +198,12 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "content.read",
             "translation.read",
             "locale.read",
+            "catalog.read",
+            "specification.read",
+            "material.read",
+            "technology.read",
+            "application.read",
+            "solution.read",
             "seo.read",
             "seo.update",
             "geo.read",

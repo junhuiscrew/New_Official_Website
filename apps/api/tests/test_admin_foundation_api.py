@@ -104,7 +104,7 @@ async def test_admin_can_view_eight_roles_and_permissions(
     assert response.status_code == 200
     assert len(response.json()["data"]) == 8
     super_admin = next(item for item in response.json()["data"] if item["name"] == "super_admin")
-    assert len(super_admin["permissions"]) == 36
+    assert len(super_admin["permissions"]) == 58
 
 
 async def test_user_email_duplicate_is_case_insensitive(

@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.database import Base
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
+from app.modules.catalog import models as catalog_models  # noqa: F401
 from app.modules.content import models as content_models  # noqa: F401
 from app.modules.localization import models as localization_models  # noqa: F401
 from app.modules.users import models as user_models  # noqa: F401

@@ -11,6 +11,8 @@ from app.core.exceptions.handlers import AppException
 from app.modules.audit import models as audit_models  # noqa: F401
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.content import models as content_models  # noqa: F401
+from app.modules.content.models import ContentPublication
+from app.modules.content.services.indexable import list_indexable_routes
 from app.modules.content.services.routes import create_content_route, validate_content_path
 from app.modules.localization.models import Locale
 from app.modules.users import models as user_models  # noqa: F401
@@ -74,3 +76,25 @@ async def test_owner_locale_has_only_one_canonical_route(
         with pytest.raises(AppException) as raised:
             await create_content_route(session, "page", owner_id, locale, "/en/about-alt/")
     assert raised.value.code == "canonical_route_conflict"
+
+
+async def test_indexable_route_source_requires_published_active_canonical_route(
+    route_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证 SEO/GEO 索引源只返回已发布且启用语言的结构化规范路由。"""
+    async with route_session_factory() as session, session.begin():
+        locale = await session.scalar(__import__("sqlalchemy").select(Locale))
+        route = await create_content_route(session, "product", uuid.uuid4(), locale, "/en/products/demo/")
+        session.add(
+            ContentPublication(
+                owner_type=route.owner_type,
+                owner_id=route.owner_id,
+                locale_id=route.locale_id,
+                status="published",
+            )
+        )
+        route.active = True
+        route.indexable = True
+    async with route_session_factory() as session:
+        routes = await list_indexable_routes(session)
+    assert [item.path for item in routes] == ["/en/products/demo/"]

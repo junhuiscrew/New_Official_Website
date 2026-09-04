@@ -38,7 +38,7 @@ pytestmark = [
 
 async def test_postgresql_schema_seed_and_case_insensitive_email() -> None:
     """
-    验证真实 PostgreSQL schema、36 权限、单默认语言和 CITEXT 唯一性。
+    验证真实 PostgreSQL schema、完整权限、单默认语言和 CITEXT 唯一性。
 
     输入：TEST_DATABASE_URL 环境变量。
 
@@ -60,7 +60,9 @@ async def test_postgresql_schema_seed_and_case_insensitive_email() -> None:
         default_count = await session.scalar(
             select(func.count()).select_from(Locale).where(Locale.is_default.is_(True))
         )
-    assert permission_count == 36
+    from app.seed import PERMISSIONS
+
+    assert permission_count == len(PERMISSIONS)
     assert default_count == 1
 
     async with factory() as session, session.begin():

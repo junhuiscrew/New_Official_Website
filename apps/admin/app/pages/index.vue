@@ -22,6 +22,8 @@ useHead({
         Authentication, RBAC, localization and publication foundations are available for
         verification.
       </p>
+      <!-- Phase 3.3 Catalog 验证入口；各页面仅用于模型与工作流检查。 -->
+      <NuxtLink to="/catalog">Open Structured Core Catalog</NuxtLink>
     </section>
   </main>
 </template>

@@ -159,28 +159,66 @@ async def test_server_visible_text_supports_product_knowledge_and_expert(
     from app.modules.localization.models import Locale
 
     async with remediation_factory() as session, session.begin():
-        locale = Locale(code="en", slug="en", name="English", native_name="English", is_default=True, is_enabled=True)
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
         product_category = ProductCategory(slug="screws")
         knowledge_category = KnowledgeCategory(slug="guides")
-        expert = AuthorExpert(slug="engineer", role_type="expert", is_real_person_verified=True, public_profile_enabled=True, years_experience=12)
+        expert = AuthorExpert(
+            slug="engineer",
+            role_type="expert",
+            is_real_person_verified=True,
+            public_profile_enabled=True,
+            years_experience=12,
+        )
         session.add_all([locale, product_category, knowledge_category, expert])
         await session.flush()
         product = Product(category_id=product_category.id, slug="screw")
-        article = KnowledgeArticle(category_id=knowledge_category.id, slug="guide", author_id=expert.id)
+        article = KnowledgeArticle(
+            category_id=knowledge_category.id, slug="guide", author_id=expert.id
+        )
         session.add_all([product, article])
         await session.flush()
         session.add_all(
             [
-                ProductTranslation(product_id=product.id, locale_id=locale.id, name="Screw", description="Visible product fact"),
-                KnowledgeArticleTranslation(article_id=article.id, locale_id=locale.id, title="Guide", summary="Visible article fact", body_markdown="Body evidence"),
-                AuthorExpertTranslation(author_expert_id=expert.id, locale_id=locale.id, name="Engineer", short_bio="Visible expert fact", expertise_json=["wear"]),
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="Screw",
+                    description="Visible product fact",
+                ),
+                KnowledgeArticleTranslation(
+                    article_id=article.id,
+                    locale_id=locale.id,
+                    title="Guide",
+                    summary="Visible article fact",
+                    body_markdown="Body evidence",
+                ),
+                AuthorExpertTranslation(
+                    author_expert_id=expert.id,
+                    locale_id=locale.id,
+                    name="Engineer",
+                    short_bio="Visible expert fact",
+                    expertise_json=["wear"],
+                ),
             ]
         )
         await session.flush()
 
-        assert "Visible product fact" in await build_visible_source_text(session, "product", product.id, locale.id)
-        assert "Visible article fact" in await build_visible_source_text(session, "knowledge_article", article.id, locale.id)
-        assert "Visible expert fact" in await build_visible_source_text(session, "author_expert", expert.id, locale.id)
+        assert "Visible product fact" in await build_visible_source_text(
+            session, "product", product.id, locale.id
+        )
+        assert "Visible article fact" in await build_visible_source_text(
+            session, "knowledge_article", article.id, locale.id
+        )
+        assert "Visible expert fact" in await build_visible_source_text(
+            session, "author_expert", expert.id, locale.id
+        )
 
 
 @pytest.mark.asyncio
@@ -221,9 +259,7 @@ async def test_geo_uses_server_visible_case_content_and_excludes_private_identit
         )
         await session.flush()
 
-        visible = await build_visible_source_text(
-            session, "case_study", case.id, locale.id
-        )
+        visible = await build_visible_source_text(session, "case_study", case.id, locale.id)
         assert "Service life improved by 80 percent" in visible
         assert "Private Client Ltd" not in visible
 
@@ -270,18 +306,51 @@ async def test_non_self_canonical_is_excluded_from_sitemap_and_hreflang(
     from app.modules.localization.models import Locale
 
     async with remediation_factory() as session, session.begin():
-        locale = Locale(code="en", slug="en", name="English", native_name="English", is_default=True, is_enabled=True)
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
         case = CaseStudy(slug="canonical-case", status="enabled")
         session.add_all([locale, case])
         await session.flush()
         path = "/en/case-studies/canonical-case/"
         session.add_all(
             [
-                CaseStudyTranslation(case_study_id=case.id, locale_id=locale.id, title="Canonical case"),
-                TranslationStatus(owner_type="case_study", owner_id=case.id, locale_id=locale.id, status="published"),
-                ContentPublication(owner_type="case_study", owner_id=case.id, locale_id=locale.id, status="published"),
-                ContentRoute(owner_type="case_study", owner_id=case.id, locale_id=locale.id, path=path, is_canonical=True, active=True, indexable=True),
-                SeoDocument(owner_type="case_study", owner_id=case.id, locale_id=locale.id, robots_index=True, canonical_override="https://junhuiscrewbarrel.com/en/case-studies/consolidated/"),
+                CaseStudyTranslation(
+                    case_study_id=case.id, locale_id=locale.id, title="Canonical case"
+                ),
+                TranslationStatus(
+                    owner_type="case_study",
+                    owner_id=case.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="case_study",
+                    owner_id=case.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="case_study",
+                    owner_id=case.id,
+                    locale_id=locale.id,
+                    path=path,
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
+                SeoDocument(
+                    owner_type="case_study",
+                    owner_id=case.id,
+                    locale_id=locale.id,
+                    robots_index=True,
+                    canonical_override="https://junhuiscrewbarrel.com/en/case-studies/consolidated/",
+                ),
             ]
         )
         await session.flush()
@@ -312,18 +381,48 @@ async def test_public_expert_has_person_schema_and_published_article_links(
     from app.modules.localization.models import Locale
 
     async with remediation_factory() as session, session.begin():
-        locale = Locale(code="en", slug="en", name="English", native_name="English", is_default=True, is_enabled=True)
-        expert = AuthorExpert(slug="real-expert", role_type="author_expert", status="enabled", is_real_person_verified=True, public_profile_enabled=True, years_experience=18)
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
+        expert = AuthorExpert(
+            slug="real-expert",
+            role_type="author_expert",
+            status="enabled",
+            is_real_person_verified=True,
+            public_profile_enabled=True,
+            years_experience=18,
+            public_email="engineer@example.net",
+        )
         category = KnowledgeCategory(slug="guides", status="enabled")
         session.add_all([locale, expert, category])
         await session.flush()
-        article = KnowledgeArticle(category_id=category.id, slug="wear-guide", status="enabled", author_id=expert.id)
+        article = KnowledgeArticle(
+            category_id=category.id, slug="wear-guide", status="enabled", author_id=expert.id
+        )
         session.add(article)
         await session.flush()
         session.add_all(
             [
-                AuthorExpertTranslation(author_expert_id=expert.id, locale_id=locale.id, name="Real Expert", job_title="Chief Engineer", short_bio="Screw barrel specialist.", expertise_json=["wear analysis"]),
-                KnowledgeArticleTranslation(article_id=article.id, locale_id=locale.id, title="Wear guide", summary="Published guide", body_markdown="Visible guide."),
+                AuthorExpertTranslation(
+                    author_expert_id=expert.id,
+                    locale_id=locale.id,
+                    name="Real Expert",
+                    job_title="Chief Engineer",
+                    short_bio="Screw barrel specialist.",
+                    expertise_json=["wear analysis"],
+                ),
+                KnowledgeArticleTranslation(
+                    article_id=article.id,
+                    locale_id=locale.id,
+                    title="Wear guide",
+                    summary="Published guide",
+                    body_markdown="Visible guide.",
+                ),
             ]
         )
         for owner_type, owner_id, path in (
@@ -332,15 +431,36 @@ async def test_public_expert_has_person_schema_and_published_article_links(
         ):
             session.add_all(
                 [
-                    TranslationStatus(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status="published"),
-                    ContentPublication(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status="published"),
-                    ContentRoute(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, path=path, is_canonical=True, active=True, indexable=True),
+                    TranslationStatus(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentPublication(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentRoute(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        path=path,
+                        is_canonical=True,
+                        active=True,
+                        indexable=True,
+                    ),
                 ]
             )
         await session.flush()
 
         payload = await get_public_expert(session, "en", "real-expert")
         assert payload["schema"][0]["@type"] == "Person"
+        assert payload["is_real_person_verified"] is True
+        assert payload["public_email"] == "engineer@example.net"
+        assert payload["profile_media"] is None
         assert payload["authored_knowledge"] == [
             {
                 "type": "knowledge_article",
@@ -373,7 +493,14 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
     from app.modules.localization.models import Locale
 
     async with remediation_factory() as session, session.begin():
-        locale = Locale(code="en", slug="en", name="English", native_name="English", is_default=True, is_enabled=True)
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
         category = ProductCategory(slug="screws", status="enabled")
         published_material = Material(slug="nitrided-steel", status="enabled")
         draft_material = Material(slug="draft-alloy", status="enabled")
@@ -384,10 +511,24 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
         await session.flush()
         session.add_all(
             [
-                ProductTranslation(product_id=product.id, locale_id=locale.id, name="Extrusion screw", short_description="Visible product"),
-                MaterialTranslation(material_id=published_material.id, locale_id=locale.id, name="Nitrided steel", definition="Wear-resistant material"),
-                MaterialTranslation(material_id=draft_material.id, locale_id=locale.id, name="Draft alloy"),
-                ProductMaterial(product_id=product.id, material_id=published_material.id, sort_order=1),
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="Extrusion screw",
+                    short_description="Visible product",
+                ),
+                MaterialTranslation(
+                    material_id=published_material.id,
+                    locale_id=locale.id,
+                    name="Nitrided steel",
+                    definition="Wear-resistant material",
+                ),
+                MaterialTranslation(
+                    material_id=draft_material.id, locale_id=locale.id, name="Draft alloy"
+                ),
+                ProductMaterial(
+                    product_id=product.id, material_id=published_material.id, sort_order=1
+                ),
                 ProductMaterial(product_id=product.id, material_id=draft_material.id, sort_order=2),
             ]
         )
@@ -398,9 +539,21 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
         ):
             session.add_all(
                 [
-                    TranslationStatus(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status=status),
-                    ContentPublication(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status=status),
-                    ContentRoute(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, path=path, is_canonical=True, active=status == "published", indexable=status == "published"),
+                    TranslationStatus(
+                        owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status=status
+                    ),
+                    ContentPublication(
+                        owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status=status
+                    ),
+                    ContentRoute(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        path=path,
+                        is_canonical=True,
+                        active=status == "published",
+                        indexable=status == "published",
+                    ),
                 ]
             )
         await session.flush()

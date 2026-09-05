@@ -79,6 +79,7 @@ async def _collection_response(
     category: str | None = None,
     material: str | None = None,
     application: str | None = None,
+    type_filter: str | None = None,
 ) -> ApiResponse[dict[str, Any]]:
     """
     统一调用公开分页查询，避免九个只读端点产生不同合同。
@@ -92,6 +93,7 @@ async def _collection_response(
         category: str | None，产品分类 slug 白名单筛选。
         material: str | None，产品材料 slug 白名单筛选。
         application: str | None，产品应用 slug 白名单筛选。
+        type_filter: str | None，人物类型白名单筛选。
 
     输出：
         ApiResponse[dict[str, Any]]，data 为统一公开集合 envelope。
@@ -106,6 +108,7 @@ async def _collection_response(
             category=category,
             material=material,
             application=application,
+            type_filter=type_filter,
         )
     )
 
@@ -237,16 +240,25 @@ async def public_knowledge_list(
     locale_slug: str,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=48),
+    category: str | None = Query(default=None, min_length=1, max_length=120),
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[dict[str, Any]]:
     """
     返回严格发布且作者在当前语言可渲染的知识文章卡片。
 
     输入：locale_slug: str，目标语言 slug；page: int，页码；page_size: int，每页数量；
+        category: str | None，Knowledge 分类 slug；
         session: AsyncSession，数据库会话。
     输出：ApiResponse[dict[str, Any]]，统一分页 envelope 与知识文章 Card DTO。
     """
-    return await _collection_response(session, "knowledge_article", locale_slug, page, page_size)
+    return await _collection_response(
+        session,
+        "knowledge_article",
+        locale_slug,
+        page,
+        page_size,
+        category=category,
+    )
 
 
 @router.get("/case-studies/{locale_slug}", response_model=ApiResponse[dict[str, Any]])
@@ -271,16 +283,28 @@ async def public_expert_list(
     locale_slug: str,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=24, ge=1, le=48),
+    type_filter: Literal["author", "expert", "author_expert"] | None = Query(
+        default=None,
+        alias="type",
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[dict[str, Any]]:
     """
     返回已核验且授权公开的专家卡片。
 
     输入：locale_slug: str，目标语言 slug；page: int，页码；page_size: int，每页数量；
+        type_filter: str | None，仅允许 author、expert 或 author_expert；
         session: AsyncSession，数据库会话。
     输出：ApiResponse[dict[str, Any]]，统一分页 envelope 与专家 Card DTO。
     """
-    return await _collection_response(session, "author_expert", locale_slug, page, page_size)
+    return await _collection_response(
+        session,
+        "author_expert",
+        locale_slug,
+        page,
+        page_size,
+        type_filter=type_filter,
+    )
 
 
 SearchType = Literal[

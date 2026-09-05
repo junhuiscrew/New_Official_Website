@@ -5,8 +5,9 @@ import { resolve } from 'node:path'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { PublicLinkDto } from '../app/types/public'
+import type { PublicFaqDto, PublicLinkDto } from '../app/types/public'
 
+import FAQAccordion from '../app/components/FAQAccordion.vue'
 import PaginationNav from '../app/components/PaginationNav.vue'
 
 enableAutoUnmount(afterEach)
@@ -284,5 +285,150 @@ describe('Phase 3.6 visible GEO answer', () => {
       },
     })
     expect(empty.find('section').exists()).toBe(false)
+  })
+})
+
+describe('Phase 3.6 authority content pages', () => {
+  it('builds published Knowledge, Case Study, and Expert indexes with scoped filters', () => {
+    const knowledge = sourceAt('app/pages/[lang]/knowledge/index.vue')
+    const cases = sourceAt('app/pages/[lang]/case-studies/index.vue')
+    const experts = sourceAt('app/pages/[lang]/experts/index.vue')
+
+    for (const [source, endpoint] of [
+      [knowledge, '/public/knowledge/'],
+      [cases, '/public/case-studies/'],
+      [experts, '/public/experts/'],
+    ]) {
+      expect(source).toContain('await useAsyncData')
+      expect(source).toContain(endpoint)
+      expect(source).toContain('<PaginationNav')
+      expect(source).toContain('<EmptyState')
+      expect(source).toContain('collection.value.seo.canonical')
+      expect(source).toContain('serializeJsonLd(collection.value.schema)')
+      expect(source).not.toContain('onMounted')
+      expect(source).not.toContain('<pre')
+      expect(source).not.toContain('JSON.stringify')
+    }
+
+    expect(knowledge).toContain('route.query.category')
+    expect(knowledge).toContain('category: selectedCategory')
+    expect(knowledge).toContain('<ArticleCard')
+    expect(cases).toContain('<CaseCard')
+    expect(experts).toContain('route.query.type')
+    expect(experts).toContain('type: selectedType')
+  })
+
+  it('renders Knowledge authority metadata, visible answers, real sources, relations, and RFQ', () => {
+    const source = sourceAt('app/pages/[lang]/knowledge/[category]/[slug].vue')
+
+    for (const field of [
+      'page.author.name',
+      'page.reviewer',
+      'page.published_at',
+      'page.updated_at',
+      'page.last_reviewed_at',
+      'source.publisher',
+      'source.publication_date',
+      'source.source_type',
+      'page.translation.body_markdown',
+    ])
+      expect(source).toContain(field)
+    expect(source).toContain('<GeoAnswer')
+    expect(source).toContain('<FAQAccordion')
+    expect(source).toContain('<RelationLinks')
+    expect(source).toContain('<RfqCta')
+    expect(source).toContain('source-type="knowledge_article"')
+    expect(source).toContain(':source-slug="page.slug"')
+    expect(source).toContain(':href="source.url"')
+    expect(source.indexOf('<GeoAnswer')).toBeLessThan(
+      source.indexOf('page.translation.body_markdown'),
+    )
+    expect(source).not.toContain('v-html')
+  })
+
+  it('renders only the Case DTO allowlisted customer identity and public engineering facts', () => {
+    const source = sourceAt('app/pages/[lang]/case-studies/[slug].vue')
+
+    expect(source).toContain('page.customer_identity')
+    expect(source).toContain('page.customer_identity.name')
+    expect(source).toContain('page.customer_identity.address')
+    expect(source).toContain('page.customer_identity.logo')
+    for (const field of [
+      'page.value.country_code',
+      'page.value.industry',
+      'page.value.machine_brand',
+      'page.value.machine_model',
+      'page.value.screw_diameter',
+      'page.value.filler_percentage',
+      'page.value.translation.problem',
+      'page.value.translation.analysis',
+      'page.value.translation.solution',
+      'page.value.translation.result',
+      'page.value.translation.engineer_comment',
+    ])
+      expect(source).toContain(field)
+    expect(source).not.toMatch(/page\.client_(?:name|address|logo)/)
+    expect(source).not.toContain('client_logo_media_id')
+    expect(source).toContain('source-type="case_study"')
+  })
+
+  it('renders only a verified public Person profile and authored published Knowledge links', () => {
+    const source = sourceAt('app/pages/[lang]/experts/[slug].vue')
+
+    for (const field of [
+      'page.name',
+      'page.job_title',
+      'page.short_bio',
+      'page.expertise',
+      'page.years_experience',
+      'page.linkedin_url',
+      'page.public_email',
+      'page.profile_media',
+      'page.authored_knowledge',
+    ])
+      expect(source).toContain(field)
+    expect(source).toContain('page.is_real_person_verified')
+    expect(source).toContain(':href="article.url"')
+    expect(source).toContain('source-type="author_expert"')
+    expect(source).not.toMatch(/AI Expert|fictional|placeholder/i)
+  })
+
+  it('keeps FAQ questions and answers visible from the exact list supplied to Schema', () => {
+    const items: PublicFaqDto[] = [
+      { question: 'Which evidence is public?', answer: 'Only reviewed published evidence.' },
+      { question: 'Does this match Schema?', answer: 'The same ordered DTO list is used.' },
+    ]
+    const wrapper = mount(FAQAccordion, { props: { locale: 'en', items } })
+    const componentPath = resolve(process.cwd(), 'app/components/FAQAccordion.vue')
+    expect(existsSync(componentPath)).toBe(true)
+    const source = sourceAt('app/components/FAQAccordion.vue')
+    expect(wrapper.findAll('summary').map((item) => item.text())).toEqual(
+      items.map((item) => item.question),
+    )
+    expect(wrapper.findAll('details p').map((item) => item.text())).toEqual(
+      items.map((item) => item.answer),
+    )
+    expect(source).toContain('defineProps<{ locale: LocaleSlug; items: PublicFaqDto[] }>()')
+    expect(source).toContain('data-schema-contract="same-items"')
+    expect(source).toContain('v-for="item in items"')
+    expect(source).toContain('{{ item.question }}')
+    expect(source).toContain('{{ item.answer }}')
+    expect(source).toContain('<details')
+    expect(source).not.toContain('v-html')
+  })
+
+  it('distinguishes Authority 404 and 500 while consuming backend SEO and Schema only', () => {
+    for (const path of [
+      'app/pages/[lang]/knowledge/[category]/[slug].vue',
+      'app/pages/[lang]/case-studies/[slug].vue',
+      'app/pages/[lang]/experts/[slug].vue',
+    ]) {
+      const source = sourceAt(path)
+      expect(source).toContain('error.value?.statusCode === 404 ? 404 : 500')
+      expect(source).toContain('page.value.seo.canonical')
+      expect(source).toContain('page.value.alternates')
+      expect(source).toContain('serializeJsonLd(page.value.schema)')
+      expect(source).not.toMatch(/['"]@type['"]\s*:/)
+    }
   })
 })

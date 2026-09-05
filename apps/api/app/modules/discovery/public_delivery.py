@@ -34,6 +34,7 @@ from app.modules.authority.models import (
     KnowledgeArticle,
     KnowledgeArticleTranslation,
     KnowledgeCategory,
+    KnowledgeCategoryTranslation,
 )
 from app.modules.authority.public import serialize_public_case
 from app.modules.catalog.models import (
@@ -1242,6 +1243,33 @@ async def get_public_case(session: AsyncSession, locale_slug: str, slug: str) ->
     if translation is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     public_case = serialize_public_case(case, _columns(translation))
+    # Serializer 的许可判断是唯一身份门禁；此处把放行值重组为 SSR 专用嵌套 DTO。
+    allowed_name = public_case.pop("client_name", None)
+    allowed_address = public_case.pop("client_address", None)
+    allowed_logo_id = public_case.pop("client_logo_media_id", None)
+    public_case.pop("primary_media_id", None)
+    primary_media = await _public_media(
+        session,
+        case.primary_media_id,
+        locale.id,
+        translation.title,
+        loading="eager",
+    )
+    customer_logo = await _public_media(
+        session,
+        case.client_logo_media_id if allowed_logo_id else None,
+        locale.id,
+        allowed_name or translation.title,
+    )
+    customer_identity = (
+        {
+            "name": allowed_name,
+            "address": allowed_address,
+            "logo": customer_logo.model_dump() if customer_logo else None,
+        }
+        if allowed_name or allowed_address or customer_logo
+        else None
+    )
     relations: dict[str, list[dict[str, str]]] = {}
     for field_name, relation_model, target_column, target_type in (
         ("products", CaseProduct, "product_id", "product"),
@@ -1277,6 +1305,8 @@ async def get_public_case(session: AsyncSession, locale_slug: str, slug: str) ->
         {"name": translation.title, "url": url},
     ]
     public_case.update(
+        media=primary_media.model_dump() if primary_media else None,
+        customer_identity=customer_identity,
         relations=relations,
         faqs=faqs,
         knowledge=knowledge,
@@ -1340,6 +1370,25 @@ async def get_public_knowledge(
         or author_translation is None
         or not author.is_real_person_verified
     ):
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
+    category = await session.get(KnowledgeCategory, article.category_id)
+    category_translation = await session.scalar(
+        select(KnowledgeCategoryTranslation).where(
+            KnowledgeCategoryTranslation.category_id == article.category_id,
+            KnowledgeCategoryTranslation.locale_id == locale.id,
+        )
+    )
+    if category is None or category_translation is None or category.status != "enabled":
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
+    publication = await session.scalar(
+        select(ContentPublication).where(
+            ContentPublication.owner_type == "knowledge_article",
+            ContentPublication.owner_id == article.id,
+            ContentPublication.locale_id == locale.id,
+            ContentPublication.status == "published",
+        )
+    )
+    if publication is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     reviewer = None
     if article.reviewer_id:
@@ -1410,6 +1459,11 @@ async def get_public_knowledge(
     return {
         "slug": article.slug,
         "category_slug": category_slug,
+        "category": {
+            "slug": category.slug,
+            "name": category_translation.name,
+            "url": f"/{locale.slug}/knowledge/?category={category.slug}",
+        },
         "translation": {
             "title": translation.title,
             "summary": translation.summary,
@@ -1417,6 +1471,9 @@ async def get_public_knowledge(
         },
         "author": author_payload,
         "reviewer": reviewer,
+        "published_at": publication.published_at,
+        "updated_at": article.updated_at,
+        "last_reviewed_at": article.last_reviewed_at,
         "sources": [
             {
                 "title": item.title,
@@ -1494,9 +1551,17 @@ async def get_public_expert(
         "role_type": expert.role_type,
         "years_experience": expert.years_experience,
         "linkedin_url": expert.linkedin_url,
+        "public_email": expert.public_email,
         "is_real_person_verified": True,
         "url": url,
     }
+    profile_media = await _public_media(
+        session,
+        expert.profile_media_id,
+        locale.id,
+        translation.name,
+        loading="eager",
+    )
     breadcrumb = [
         {"name": "Home", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
         {"name": "Experts", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/experts/"},
@@ -1504,6 +1569,7 @@ async def get_public_expert(
     ]
     return {
         **person,
+        "profile_media": profile_media.model_dump() if profile_media else None,
         "authored_knowledge": authored_knowledge,
         "seo": _seo_payload(seo, route, translation.name, translation.short_bio),
         "geo": _geo_payload(geo),

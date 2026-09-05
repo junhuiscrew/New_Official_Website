@@ -52,12 +52,23 @@ export interface PublicSpecDto {
 export interface PublicCardDto extends PublicLinkDto {
   media?: PublicMediaDto | null
   specifications?: PublicSpecDto[]
-  category?: PublicLinkDto | null
+  category?: PublicLinkDto | PublicKnowledgeCategoryDto | null
   author?: string | null
   reviewer?: string | null
   published_at?: string | null
   updated_at?: string | null
+  role_type?: PublicPersonRole | null
 }
+
+/** Knowledge 分类仅用于已发布文章筛选，不伪装成独立详情实体。 */
+export interface PublicKnowledgeCategoryDto {
+  slug: string
+  name: string
+  url: string
+}
+
+/** 后端 AuthorExpert 模型允许公开的人物职责类型。 */
+export type PublicPersonRole = 'author' | 'expert' | 'author_expert'
 
 /** 导航 API 中允许公开显示的公司联系方式。 */
 export interface NavigationCompanyDto {
@@ -212,10 +223,18 @@ export interface PublicCollectionDto<T extends PublicLinkDto = PublicCardDto> {
   page_size: number
   total: number
   pages: number
-  filters: { [Key in keyof ProductFilters]: string | null }
+  filters: PublicCollectionFilters
   seo?: SeoDto
   schema?: unknown
   breadcrumb?: PublicBreadcrumbDto[]
+}
+
+/** 所有公开集合共用的白名单筛选回显。 */
+export interface PublicCollectionFilters {
+  category: string | null
+  material: string | null
+  application: string | null
+  type?: PublicPersonRole | null
 }
 
 /** 产品列表 URL 中允许出现的三项业务筛选。 */
@@ -272,6 +291,109 @@ export interface PublicProductDetailDto {
   cases: PublicLinkDto[]
   knowledge: PublicLinkDto[]
   trust_summary: PublicTrustSummaryDto | null
+  seo: SeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+  alternates?: Record<string, string>
+}
+
+/** 与后端 FAQPage Schema 使用同一数组的可见问答 DTO。 */
+export interface PublicFaqDto {
+  question: string
+  answer: string
+}
+
+/** Knowledge 来源引用的公开可核验字段。 */
+export interface PublicSourceCitationDto {
+  title: string
+  url: string
+  publisher: string | null
+  publication_date: string | null
+  source_type: string
+}
+
+/** Knowledge Article 详情端点的权威公开 DTO。 */
+export interface PublicKnowledgeDetailDto {
+  slug: string
+  category_slug: string
+  category: PublicKnowledgeCategoryDto
+  translation: {
+    title: string
+    summary: string | null
+    body_markdown: string
+  }
+  author: {
+    name: string
+    job_title: string | null
+    short_bio: string | null
+    is_real_person_verified: true
+  }
+  reviewer: { name: string; job_title: string | null } | null
+  published_at: string | null
+  updated_at: string | null
+  last_reviewed_at: string | null
+  sources: PublicSourceCitationDto[]
+  faqs: PublicFaqDto[]
+  relations: Partial<Record<CatalogRelationGroup, PublicLinkDto[]>>
+  seo: SeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+  alternates?: Record<string, string>
+}
+
+/** Case 仅在后端逐项许可后才返回的客户身份。 */
+export interface PublicCustomerIdentityDto {
+  name: string | null
+  address: string | null
+  logo: PublicMediaDto | null
+}
+
+/** Case Study 详情端点的隐私安全 DTO。 */
+export interface PublicCaseDetailDto {
+  slug: string
+  country_code: string | null
+  industry: string | null
+  machine_brand: string | null
+  machine_model: string | null
+  screw_diameter: string | null
+  filler_percentage: string | null
+  media: PublicMediaDto | null
+  customer_identity: PublicCustomerIdentityDto | null
+  translation: {
+    title: string
+    summary: string | null
+    client_description: string | null
+    problem: string | null
+    analysis: string | null
+    solution: string | null
+    result: string | null
+    engineer_comment: string | null
+  }
+  faqs: PublicFaqDto[]
+  relations: Partial<Record<CatalogRelationGroup, PublicLinkDto[]>>
+  seo: SeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+  alternates?: Record<string, string>
+}
+
+/** 仅代表已经由后端核验并授权公开的真实人物详情。 */
+export interface PublicExpertDetailDto {
+  slug: string
+  name: string
+  job_title: string | null
+  short_bio: string | null
+  expertise: string[]
+  role_type: PublicPersonRole
+  years_experience: number | null
+  linkedin_url: string | null
+  public_email: string | null
+  is_real_person_verified: true
+  profile_media: PublicMediaDto | null
+  authored_knowledge: PublicLinkDto[]
   seo: SeoDto
   geo: GeoDto | null
   breadcrumb: PublicBreadcrumbDto[]

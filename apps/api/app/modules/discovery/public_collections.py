@@ -19,6 +19,7 @@ from app.modules.authority.models import (
     KnowledgeArticle,
     KnowledgeArticleTranslation,
     KnowledgeCategory,
+    KnowledgeCategoryTranslation,
 )
 from app.modules.catalog.models import (
     Application,
@@ -199,6 +200,22 @@ _CATALOG_LISTING_LABELS: dict[str, dict[str, tuple[str, str]]] = {
     "solution": {
         "en": ("Solutions", "Browse published problem analysis and recommended approaches."),
         "zh-cn": ("解决方案", "浏览已发布的问题分析与建议方案。"),
+    },
+}
+
+# Authority 列表标题仅描述页面用途；文章、案例与人物事实仍全部来自发布 DTO。
+_AUTHORITY_LISTING_LABELS: dict[str, dict[str, tuple[str, str]]] = {
+    "knowledge_article": {
+        "en": ("Knowledge", "Browse published technical guidance and engineering articles."),
+        "zh-cn": ("技术知识", "浏览已发布的技术指南与工程文章。"),
+    },
+    "case_study": {
+        "en": ("Case Studies", "Browse engineering cases approved for public sharing."),
+        "zh-cn": ("案例研究", "浏览已获公开许可的工程案例。"),
+    },
+    "author_expert": {
+        "en": ("Experts", "Meet verified people with public professional profiles."),
+        "zh-cn": ("专家", "查看已核验并获准公开的专业人员资料。"),
     },
 }
 
@@ -441,6 +458,110 @@ async def _product_card_payloads(
     return cards
 
 
+async def _authority_card_payloads(
+    session: AsyncSession,
+    owner_type: str,
+    locale: Locale,
+    rows: list[tuple[Any, Any, ContentRoute]],
+) -> list[dict[str, Any]]:
+    """
+    批量补充 Knowledge 与 Expert 列表所需的公开权威元数据。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_type: str，仅允许 knowledge_article 或 author_expert。
+        locale: Locale，当前已启用语言。
+        rows: list，已通过统一发布门禁的实体、翻译和 canonical 路由。
+
+    输出：
+        list[dict[str, Any]]，不包含人物 ID、分类 ID 或生命周期内部字段。
+    """
+    cards = [
+        _card_payload(owner_type, entity, translation, route) for entity, translation, route in rows
+    ]
+    if not rows:
+        return cards
+    if owner_type == "author_expert":
+        for card, (expert, _translation, _route) in zip(cards, rows, strict=True):
+            card["role_type"] = expert.role_type
+        return cards
+    if owner_type != "knowledge_article":
+        return cards
+
+    articles = [row[0] for row in rows]
+    article_ids = [article.id for article in articles]
+    category_ids = list({article.category_id for article in articles})
+    person_ids = list(
+        {
+            person_id
+            for article in articles
+            for person_id in (article.author_id, article.reviewer_id)
+            if person_id is not None
+        }
+    )
+    category_rows = (
+        await session.execute(
+            select(KnowledgeCategory, KnowledgeCategoryTranslation)
+            .join(
+                KnowledgeCategoryTranslation,
+                (KnowledgeCategoryTranslation.category_id == KnowledgeCategory.id)
+                & (KnowledgeCategoryTranslation.locale_id == locale.id),
+            )
+            .where(
+                KnowledgeCategory.id.in_(category_ids),
+                KnowledgeCategory.status == "enabled",
+            )
+        )
+    ).all()
+    categories = {
+        category.id: {
+            "slug": category.slug,
+            "name": translation.name,
+            "url": f"/{locale.slug}/knowledge/?category={category.slug}",
+        }
+        for category, translation in category_rows
+    }
+    person_rows = (
+        await session.execute(
+            select(AuthorExpert, AuthorExpertTranslation)
+            .join(
+                AuthorExpertTranslation,
+                (AuthorExpertTranslation.author_expert_id == AuthorExpert.id)
+                & (AuthorExpertTranslation.locale_id == locale.id),
+            )
+            .where(
+                AuthorExpert.id.in_(person_ids),
+                AuthorExpert.status == "enabled",
+                AuthorExpert.is_real_person_verified.is_(True),
+            )
+        )
+    ).all()
+    people = {person.id: translation.name for person, translation in person_rows}
+    publication_rows = (
+        await session.execute(
+            select(ContentPublication.owner_id, ContentPublication.published_at).where(
+                ContentPublication.owner_type == "knowledge_article",
+                ContentPublication.owner_id.in_(article_ids),
+                ContentPublication.locale_id == locale.id,
+                ContentPublication.status == "published",
+            )
+        )
+    ).all()
+    published_at = {row.owner_id: row.published_at for row in publication_rows}
+
+    for card, (article, _translation, _route) in zip(cards, rows, strict=True):
+        card.update(
+            {
+                "category": categories.get(article.category_id),
+                "author": people.get(article.author_id),
+                "reviewer": people.get(article.reviewer_id),
+                "published_at": published_at.get(article.id),
+                "updated_at": article.updated_at,
+            }
+        )
+    return cards
+
+
 def _listing_query_suffix(
     *,
     category: str | None,
@@ -449,6 +570,7 @@ def _listing_query_suffix(
     page: int,
     page_size: int,
     category_in_path: bool,
+    type_filter: str | None = None,
 ) -> str:
     """
     按固定顺序生成产品集合的等价 canonical 查询字符串。
@@ -463,6 +585,8 @@ def _listing_query_suffix(
         parameters.append(("material", material))
     if application:
         parameters.append(("application", application))
+    if type_filter:
+        parameters.append(("type", type_filter))
     if page > 1:
         parameters.append(("page", page))
     if page_size != 24:
@@ -566,35 +690,48 @@ async def _catalog_listing_metadata(
     owner_type: str,
     page: int,
     page_size: int,
+    category: str | None = None,
+    type_filter: str | None = None,
 ) -> dict[str, Any] | None:
     """
-    为四类 Catalog 集合生成稳定的后端 SEO、Breadcrumb 与 Schema。
+    为 Catalog 与 Authority 集合生成稳定的后端 SEO、Breadcrumb 与 Schema。
 
     输入：
         session: AsyncSession，数据库会话。
         locale: Locale，当前已启用语言。
-        owner_type: str，material/technology/application/solution 之一。
+        owner_type: str，受支持的 Catalog 或 Authority 内容族。
         page: int，当前页码。
         page_size: int，每页条数。
+        category: str | None，Knowledge 分类筛选。
+        type_filter: str | None，Expert 人物类型筛选。
 
     输出：
-        dict[str, Any] | None，列表元数据；非 Catalog 内容族返回 None。
+        dict[str, Any] | None，列表元数据；不支持的内容族返回 None。
     """
-    locale_labels = _CATALOG_LISTING_LABELS.get(owner_type)
+    locale_labels = _CATALOG_LISTING_LABELS.get(owner_type) or _AUTHORITY_LISTING_LABELS.get(
+        owner_type
+    )
     if locale_labels is None:
         return None
-    resource = f"{owner_type}s" if owner_type != "technology" else "technologies"
-    if owner_type == "application":
-        resource = "applications"
+    resource = {
+        "material": "materials",
+        "technology": "technologies",
+        "application": "applications",
+        "solution": "solutions",
+        "knowledge_article": "knowledge",
+        "case_study": "case-studies",
+        "author_expert": "experts",
+    }[owner_type]
     labels = locale_labels["zh-cn" if locale.slug == "zh-cn" else "en"]
     title, description = labels
     suffix = _listing_query_suffix(
-        category=None,
+        category=category if owner_type == "knowledge_article" else None,
         material=None,
         application=None,
         page=page,
         page_size=page_size,
         category_in_path=False,
+        type_filter=type_filter if owner_type == "author_expert" else None,
     )
     canonical = f"{OFFICIAL_ORIGIN}/{locale.slug}/{resource}/{suffix}"
     locale_rows = list(
@@ -886,6 +1023,7 @@ async def get_public_listing(
     category: str | None = None,
     material: str | None = None,
     application: str | None = None,
+    type_filter: str | None = None,
 ) -> dict[str, Any]:
     """
     返回统一分页 envelope 的严格公开卡片列表。
@@ -899,9 +1037,10 @@ async def get_public_listing(
         category: str | None，产品分类 slug 白名单筛选。
         material: str | None，产品材料关系 slug 白名单筛选。
         application: str | None，产品应用关系 slug 白名单筛选。
+        type_filter: str | None，Expert 的公开人物类型白名单筛选。
 
     输出：
-        dict[str, Any]，包含 items、分页元数据和三项白名单筛选回显。
+        dict[str, Any]，包含 items、分页元数据和适用于当前集合的白名单筛选回显。
     """
     locale = await _locale(session, locale_slug)
     config = _COLLECTION_CONFIG.get(owner_type)
@@ -934,6 +1073,10 @@ async def get_public_listing(
                     Application.status == "enabled",
                 )
             )
+    elif owner_type == "knowledge_article" and category:
+        statement = statement.where(KnowledgeCategory.slug == category)
+    elif owner_type == "author_expert" and type_filter:
+        statement = statement.where(AuthorExpert.role_type == type_filter)
 
     count_statement = select(func.count()).select_from(statement.subquery())
     total = int(await session.scalar(count_statement) or 0)
@@ -946,25 +1089,29 @@ async def get_public_listing(
             statement.order_by(*order_columns).offset((page - 1) * page_size).limit(page_size)
         )
     ).all()
-    items = (
-        await _product_card_payloads(session, locale, rows)
-        if owner_type == "product"
-        else [
+    if owner_type == "product":
+        items = await _product_card_payloads(session, locale, rows)
+    elif owner_type in {"knowledge_article", "author_expert"}:
+        items = await _authority_card_payloads(session, owner_type, locale, rows)
+    else:
+        items = [
             _card_payload(owner_type, entity, translation, route)
             for entity, translation, route in rows
         ]
-    )
+    filters = {
+        "category": category,
+        "material": material,
+        "application": application,
+    }
+    if owner_type == "author_expert":
+        filters["type"] = type_filter
     payload: dict[str, Any] = {
         "items": items,
         "page": page,
         "page_size": page_size,
         "total": total,
         "pages": max(1, ceil(total / page_size)),
-        "filters": {
-            "category": category,
-            "material": material,
-            "application": application,
-        },
+        "filters": filters,
     }
     if owner_type == "product":
         seo = await _product_listing_seo(
@@ -1014,6 +1161,8 @@ async def get_public_listing(
             owner_type,
             page,
             page_size,
+            category,
+            type_filter,
         )
         if catalog_metadata is not None:
             payload.update(catalog_metadata)

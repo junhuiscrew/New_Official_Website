@@ -1084,6 +1084,14 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         category_detail_response = await client.get(
             "/api/v1/public/product-categories/en/components"
         )
+        filtered_knowledge = await client.get(
+            "/api/v1/public/knowledge/en", params={"category": "guides"}
+        )
+        missing_category = await client.get(
+            "/api/v1/public/knowledge/en", params={"category": "missing-guides"}
+        )
+        filtered_experts = await client.get("/api/v1/public/experts/en", params={"type": "expert"})
+        wrong_expert_type = await client.get("/api/v1/public/experts/en", params={"type": "author"})
 
     for resource, response in responses.items():
         assert response.status_code == 200, resource
@@ -1101,6 +1109,9 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             "technologies",
             "applications",
             "solutions",
+            "knowledge",
+            "case-studies",
+            "experts",
         }:
             expected_envelope_keys.update({"seo", "schema", "breadcrumb"})
         assert set(envelope) == expected_envelope_keys
@@ -1108,9 +1119,27 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         expected_item_keys = {"type", "slug", "name", "url", "summary"}
         if resource == "products":
             expected_item_keys.update({"media", "category", "specifications"})
+        elif resource == "knowledge":
+            expected_item_keys.update(
+                {
+                    "category",
+                    "author",
+                    "reviewer",
+                    "published_at",
+                    "updated_at",
+                }
+            )
+        elif resource == "experts":
+            expected_item_keys.update({"role_type"})
         assert set(envelope["items"][0]) == expected_item_keys
     assert responses["experts"].json()["data"]["items"][0]["slug"] == "verified-engineer"
     assert "private-engineer" not in repr(responses["experts"].json())
+    assert filtered_knowledge.json()["data"]["total"] == 1
+    assert missing_category.json()["data"]["items"] == []
+    assert filtered_experts.json()["data"]["total"] == 1
+    assert wrong_expert_type.json()["data"]["items"] == []
+    assert filtered_knowledge.json()["data"]["filters"]["category"] == "guides"
+    assert filtered_experts.json()["data"]["filters"]["type"] == "expert"
     assert category_detail_response.status_code == 200
     category_detail = category_detail_response.json()["data"]
     assert category_detail["relations"] == {}

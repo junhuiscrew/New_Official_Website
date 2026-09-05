@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+
 import pytest
 from sqlalchemy import func, select
 
@@ -38,8 +40,24 @@ async def authority_factory(sqlite_database_url: str):
     async with factory() as session, session.begin():
         session.add_all(
             [
-                Locale(code="zh-CN", slug="zh-cn", name="Chinese", native_name="中文", is_default=True, is_enabled=True, sort_order=10),
-                Locale(code="en", slug="en", name="English", native_name="English", is_default=False, is_enabled=True, sort_order=20),
+                Locale(
+                    code="zh-CN",
+                    slug="zh-cn",
+                    name="Chinese",
+                    native_name="中文",
+                    is_default=True,
+                    is_enabled=True,
+                    sort_order=10,
+                ),
+                Locale(
+                    code="en",
+                    slug="en",
+                    name="English",
+                    native_name="English",
+                    is_default=False,
+                    is_enabled=True,
+                    sort_order=20,
+                ),
             ]
         )
     yield factory
@@ -68,9 +86,15 @@ async def test_case_creation_reuses_translation_publication_route_revision(
                 ],
             ),
         )
-        publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_id == case.id))
+        publication = await session.scalar(
+            select(ContentPublication).where(ContentPublication.owner_id == case.id)
+        )
         route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == case.id))
-        revision_count = await session.scalar(select(func.count()).select_from(ContentRevision).where(ContentRevision.owner_id == case.id))
+        revision_count = await session.scalar(
+            select(func.count())
+            .select_from(ContentRevision)
+            .where(ContentRevision.owner_id == case.id)
+        )
         assert publication is not None and publication.status == "draft"
         assert route is not None and route.path == "/zh-cn/case-studies/anonymous-wear-case/"
         assert route.active is False and route.indexable is False
@@ -89,12 +113,30 @@ async def test_faq_creation_has_translation_status_but_no_public_route(
         faq = await create_faq(
             session,
             FAQCreate(
-                translations=[AuthorityTranslationInput(locale_id=locale.id, fields={"question": "如何选型？", "answer": "请根据材料与工艺选型。"})]
+                translations=[
+                    AuthorityTranslationInput(
+                        locale_id=locale.id,
+                        fields={"question": "如何选型？", "answer": "请根据材料与工艺选型。"},
+                    )
+                ]
             ),
         )
-        assert await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_id == faq.id)) is not None
-        assert await session.scalar(select(ContentPublication).where(ContentPublication.owner_id == faq.id)) is None
-        assert await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == faq.id)) is None
+        assert (
+            await session.scalar(
+                select(TranslationStatus).where(TranslationStatus.owner_id == faq.id)
+            )
+            is not None
+        )
+        assert (
+            await session.scalar(
+                select(ContentPublication).where(ContentPublication.owner_id == faq.id)
+            )
+            is None
+        )
+        assert (
+            await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == faq.id))
+            is None
+        )
 
 
 async def test_author_expert_requires_verified_real_person(authority_factory) -> None:
@@ -132,10 +174,14 @@ async def test_knowledge_article_route_uses_category_and_real_author(authority_f
 
     async with authority_factory() as session, session.begin():
         locale = await session.scalar(select(Locale).where(Locale.code == "en"))
-        category = await create_knowledge_category(session, KnowledgeCategoryCreate(slug="technical-guides"))
+        category = await create_knowledge_category(
+            session, KnowledgeCategoryCreate(slug="technical-guides")
+        )
         author = await create_author_expert(
             session,
-            AuthorExpertCreate(slug="real-engineer", role_type="author_expert", is_real_person_verified=True),
+            AuthorExpertCreate(
+                slug="real-engineer", role_type="author_expert", is_real_person_verified=True
+            ),
         )
         article = await create_knowledge_article(
             session,
@@ -143,10 +189,20 @@ async def test_knowledge_article_route_uses_category_and_real_author(authority_f
                 category_id=category.id,
                 author_id=author.id,
                 slug="screw-wear-guide",
-                translations=[AuthorityTranslationInput(locale_id=locale.id, fields={"title": "Screw wear guide", "body_markdown": "Visible technical guidance."})],
+                translations=[
+                    AuthorityTranslationInput(
+                        locale_id=locale.id,
+                        fields={
+                            "title": "Screw wear guide",
+                            "body_markdown": "Visible technical guidance.",
+                        },
+                    )
+                ],
             ),
         )
-        route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == article.id))
+        route = await session.scalar(
+            select(ContentRoute).where(ContentRoute.owner_id == article.id)
+        )
         assert route is not None
         assert route.path == "/en/knowledge/technical-guides/screw-wear-guide/"
 
@@ -166,11 +222,22 @@ async def test_published_authority_translation_edit_withdraws_and_records_revisi
         locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
         case = await create_case_study(
             session,
-            CaseStudyCreate(slug="published-case", translations=[AuthorityTranslationInput(locale_id=locale.id, fields={"title": "原标题"})]),
+            CaseStudyCreate(
+                slug="published-case",
+                translations=[
+                    AuthorityTranslationInput(locale_id=locale.id, fields={"title": "原标题"})
+                ],
+            ),
         )
-        publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_id == case.id))
+        publication = await session.scalar(
+            select(ContentPublication).where(ContentPublication.owner_id == case.id)
+        )
         route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == case.id))
-        status = await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_id == case.id, TranslationStatus.locale_id == locale.id))
+        status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_id == case.id, TranslationStatus.locale_id == locale.id
+            )
+        )
         publication.status = "published"
         status.status = "published"
         route.active = True
@@ -178,9 +245,17 @@ async def test_published_authority_translation_edit_withdraws_and_records_revisi
         await update_case_study(
             session,
             case.id,
-            CaseStudyUpdate(translations=[AuthorityTranslationInput(locale_id=locale.id, fields={"title": "新标题"})]),
+            CaseStudyUpdate(
+                translations=[
+                    AuthorityTranslationInput(locale_id=locale.id, fields={"title": "新标题"})
+                ]
+            ),
         )
-        revision_count = await session.scalar(select(func.count()).select_from(ContentRevision).where(ContentRevision.owner_id == case.id))
+        revision_count = await session.scalar(
+            select(func.count())
+            .select_from(ContentRevision)
+            .where(ContentRevision.owner_id == case.id)
+        )
         assert publication.status == "review"
         assert status.status == "draft"
         assert route.active is False and route.indexable is False
@@ -249,7 +324,10 @@ async def test_public_case_dto_and_schema_never_leak_unconsented_identity(
                 translations=[
                     AuthorityTranslationInput(
                         locale_id=locale.id,
-                        fields={"title": "Anonymous wear case", "summary": "Published visible facts."},
+                        fields={
+                            "title": "Anonymous wear case",
+                            "summary": "Published visible facts.",
+                        },
                     )
                 ],
             ),
@@ -280,3 +358,200 @@ async def test_public_case_dto_and_schema_never_leak_unconsented_identity(
         assert secret_name not in rendered
         assert secret_address not in rendered
         assert "client_name" not in payload and "client_address" not in payload
+
+        # 同一公开 DTO 仅在逐项许可开启后输出嵌套身份；不把原始私有字段名带给 SSR。
+        case.client_name_public = True
+        case.client_address_public = True
+        await session.flush()
+        allowed_payload = await get_public_case(session, "en", "anonymous-public-case")
+        assert allowed_payload["customer_identity"] == {
+            "name": secret_name,
+            "address": secret_address,
+            "logo": None,
+        }
+        assert "client_name" not in allowed_payload
+        assert "client_address" not in allowed_payload
+        assert "client_logo_media_id" not in allowed_payload
+        assert "primary_media_id" not in allowed_payload
+
+
+async def test_public_knowledge_exposes_authority_dates_sources_and_matching_faq_schema(
+    authority_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+) -> None:
+    """
+    验证 Knowledge DTO 为可见权威信息提供完整只读字段，FAQ Schema 与正文同源。
+
+    输入：已发布文章、真实作者/审核人、真实来源、可见 GEO 与已发布 FAQ。
+    输出：None；缺少元数据、来源或 FAQ/Schema 不一致时失败。
+    """
+    from app.core.config import get_settings
+    from app.modules.authority.models import (
+        FAQ,
+        ArticleFAQ,
+        AuthorExpert,
+        AuthorExpertTranslation,
+        FAQTranslation,
+        KnowledgeArticle,
+        KnowledgeArticleTranslation,
+        KnowledgeCategory,
+        KnowledgeCategoryTranslation,
+    )
+    from app.modules.discovery.models import GeoDocument, SourceCitation
+    from app.modules.discovery.public_delivery import get_public_knowledge
+
+    published_at = datetime(2026, 8, 1, 8, 0, tzinfo=UTC)
+    reviewed_at = datetime(2026, 8, 2, 9, 30, tzinfo=UTC)
+    monkeypatch.setenv("FAQ_SCHEMA_ENABLED", "true")
+    # 即使断言失败，也要在环境恢复后清空测试专用配置缓存。
+    request.addfinalizer(get_settings.cache_clear)
+    get_settings.cache_clear()
+    async with authority_factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        category = KnowledgeCategory(slug="technical-guides", status="enabled")
+        author = AuthorExpert(
+            slug="real-author",
+            role_type="author",
+            status="enabled",
+            is_real_person_verified=True,
+        )
+        reviewer = AuthorExpert(
+            slug="real-reviewer",
+            role_type="expert",
+            status="enabled",
+            is_real_person_verified=True,
+        )
+        session.add_all([category, author, reviewer])
+        await session.flush()
+        article = KnowledgeArticle(
+            category_id=category.id,
+            slug="authority-guide",
+            status="enabled",
+            author_id=author.id,
+            reviewer_id=reviewer.id,
+            last_reviewed_at=reviewed_at,
+        )
+        faq = FAQ(status="enabled")
+        session.add_all([article, faq])
+        await session.flush()
+        session.add_all(
+            [
+                KnowledgeCategoryTranslation(
+                    category_id=category.id,
+                    locale_id=locale.id,
+                    name="Technical Guides",
+                ),
+                AuthorExpertTranslation(
+                    author_expert_id=author.id,
+                    locale_id=locale.id,
+                    name="Real Author",
+                    job_title="Engineer",
+                    short_bio="Published author profile.",
+                    expertise_json=["Wear"],
+                ),
+                AuthorExpertTranslation(
+                    author_expert_id=reviewer.id,
+                    locale_id=locale.id,
+                    name="Real Reviewer",
+                    job_title="Chief Engineer",
+                    expertise_json=["Review"],
+                ),
+                KnowledgeArticleTranslation(
+                    article_id=article.id,
+                    locale_id=locale.id,
+                    title="Authority guide",
+                    summary="Direct published summary.",
+                    body_markdown="Published body and cited evidence.",
+                ),
+                FAQTranslation(
+                    faq_id=faq.id,
+                    locale_id=locale.id,
+                    question="What is reviewed?",
+                    answer="The published engineering evidence.",
+                ),
+                ArticleFAQ(article_id=article.id, faq_id=faq.id),
+                TranslationStatus(
+                    owner_type="faq",
+                    owner_id=faq.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                TranslationStatus(
+                    owner_type="knowledge_article",
+                    owner_id=article.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="knowledge_article",
+                    owner_id=article.id,
+                    locale_id=locale.id,
+                    status="published",
+                    published_at=published_at,
+                ),
+                ContentRoute(
+                    owner_type="knowledge_article",
+                    owner_id=article.id,
+                    locale_id=locale.id,
+                    path="/en/knowledge/technical-guides/authority-guide/",
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
+            ]
+        )
+        await session.flush()
+        geo = GeoDocument(
+            owner_type="knowledge_article",
+            owner_id=article.id,
+            locale_id=locale.id,
+            direct_answer="Direct published summary.",
+            key_facts_json=["Published body"],
+            evidence_json=["cited evidence"],
+            related_questions_json=["What is reviewed?"],
+            last_reviewed_at=reviewed_at,
+        )
+        session.add(geo)
+        await session.flush()
+        session.add(
+            SourceCitation(
+                article_id=article.id,
+                title="Official technical source",
+                url="https://www.iso.org/standard/12345.html",
+                publisher="ISO",
+                publication_date=date(2026, 7, 1),
+                source_type="standard",
+            )
+        )
+        await session.flush()
+
+        payload = await get_public_knowledge(
+            session,
+            "en",
+            "technical-guides",
+            "authority-guide",
+        )
+        assert payload["category"] == {
+            "slug": "technical-guides",
+            "name": "Technical Guides",
+            "url": "/en/knowledge/?category=technical-guides",
+        }
+        # SQLite 测试驱动会丢失 timezone 标记；公开值仍须保持同一真实时刻内容。
+        assert payload["published_at"].replace(tzinfo=UTC) == published_at
+        assert payload["updated_at"] == article.updated_at
+        assert payload["last_reviewed_at"] == reviewed_at
+        assert payload["author"]["name"] == "Real Author"
+        assert payload["reviewer"]["name"] == "Real Reviewer"
+        assert payload["sources"] == [
+            {
+                "title": "Official technical source",
+                "url": "https://www.iso.org/standard/12345.html",
+                "publisher": "ISO",
+                "publication_date": date(2026, 7, 1),
+                "source_type": "standard",
+            }
+        ]
+        faq_schema = next(item for item in payload["schema"] if item["@type"] == "FAQPage")
+        assert faq_schema["mainEntity"][0]["name"] == payload["faqs"][0]["question"]
+        assert faq_schema["mainEntity"][0]["acceptedAnswer"]["text"] == payload["faqs"][0]["answer"]

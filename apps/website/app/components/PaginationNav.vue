@@ -3,7 +3,7 @@
 import { computed } from 'vue'
 
 import { ui } from '~/i18n/ui'
-import type { LocaleSlug, ProductFilters } from '~/types/public'
+import type { LocaleSlug, ProductFilters, PublicPersonRole } from '~/types/public'
 
 const props = defineProps<{
   locale: LocaleSlug
@@ -11,7 +11,7 @@ const props = defineProps<{
   page: number
   pages: number
   pageSize: number
-  query?: Partial<ProductFilters>
+  query?: Partial<ProductFilters> & { type?: PublicPersonRole | '' }
 }>()
 const labels = computed(() => ui[props.locale])
 const safePageSize = computed(() => Math.min(48, Math.max(1, Math.trunc(props.pageSize))))
@@ -44,7 +44,7 @@ const visiblePages = computed<PaginationItem[]>(() => {
 /** 为每个可索引分页生成稳定 href，不依赖客户端点击处理。 */
 function pageHref(page: number): string {
   const query = new URLSearchParams()
-  for (const key of ['category', 'material', 'application'] as const) {
+  for (const key of ['category', 'material', 'application', 'type'] as const) {
     const value = props.query?.[key]?.trim()
     if (value) query.set(key, value)
   }

@@ -589,7 +589,8 @@ async def test_postgresql_public_search_prefers_title_and_has_trigram_indexes() 
     engine = create_database_engine(TEST_DATABASE_URL or "")
     factory = create_session_factory(engine)
     unique = uuid.uuid4().hex
-    needle = f"precision{unique[:10]}"
+    # test profile 会保留 PostgreSQL volume；完整 UUID 可避免旧测试标题因公共前缀触发 trigram 模糊命中。
+    needle = f"precision{unique}"
     async with factory() as session, session.begin():
         locale = await session.scalar(select(Locale).where(Locale.code == "en"))
         assert locale is not None

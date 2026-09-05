@@ -20,6 +20,9 @@ node_modules/
 dist/
 .pnpm-store/
 
+# Git 隔离开发目录
+.worktrees/
+
 # IDE / OS
 .idea/
 .vscode/

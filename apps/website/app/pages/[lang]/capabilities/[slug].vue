@@ -45,6 +45,32 @@ useHead(() => ({
       <ul>
         <li v-for="fact in page.translation.key_facts_json || []" :key="fact">{{ fact }}</li>
       </ul>
+      <!-- 设备模块只消费后端按 TranslationStatus=published 过滤后的公开 DTO。 -->
+      <section v-if="page.equipment?.length">
+        <h2>Equipment</h2>
+        <article v-for="equipment in page.equipment" :key="equipment.slug">
+          <h3>{{ equipment.translation.name }}</h3>
+          <p>{{ equipment.translation.summary }}</p>
+          <p>{{ equipment.translation.description }}</p>
+          <dl>
+            <template v-if="equipment.manufacturer">
+              <dt>Manufacturer</dt>
+              <dd>{{ equipment.manufacturer }}</dd>
+            </template>
+            <template v-if="equipment.model">
+              <dt>Model</dt>
+              <dd>{{ equipment.model }}</dd>
+            </template>
+            <template v-if="equipment.quantity">
+              <dt>Quantity</dt>
+              <dd>{{ equipment.quantity }}</dd>
+            </template>
+          </dl>
+          <pre v-if="equipment.translation.public_specs_json">{{
+            equipment.translation.public_specs_json
+          }}</pre>
+        </article>
+      </section>
       <section v-if="page.geo">
         <h2>Technical answer</h2>
         <p>{{ page.geo.direct_answer }}</p>

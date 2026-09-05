@@ -84,7 +84,7 @@ async def test_publish_updates_content_translation_route_and_audit_together(
             translation=translation,
             route=route,
             target_status=PublicationStatus.REVIEW,
-            actor_permissions={"content.update"},
+            actor_permissions={"content.review"},
             actor_id=None,
             ip="203.0.113.24",
             user_agent="phase32-publication-test",

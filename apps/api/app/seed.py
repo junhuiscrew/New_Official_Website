@@ -344,6 +344,8 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
 TRUST_PERMISSIONS = frozenset(code for code in PERMISSION_CODES if code.startswith(("company.", "capability.", "equipment.", "certificate.", "patent.", "honor.", "exhibition.", "download.")))
 ROLE_PERMISSION_MATRIX["content_admin"] = ROLE_PERMISSION_MATRIX["content_admin"] | TRUST_PERMISSIONS
 ROLE_PERMISSION_MATRIX["editor"] = ROLE_PERMISSION_MATRIX["editor"] | frozenset({"company.read", "capability.read", "equipment.read", "certificate.read", "patent.read", "honor.read", "exhibition.read", "download.read"})
+# Reviewer 需要读取审核目标，但不会因此获得任何 Company/Trust update 权限。
+ROLE_PERMISSION_MATRIX["reviewer"] = ROLE_PERMISSION_MATRIX["reviewer"] | frozenset({"company.read", "capability.read", "equipment.read", "certificate.read", "patent.read", "honor.read", "exhibition.read"})
 ROLE_PERMISSION_MATRIX["sales"] = RFQ_PERMISSIONS
 ROLE_PERMISSION_MATRIX["media_manager"] = MEDIA_PERMISSIONS | frozenset({"download.read", "download.create", "download.update", "download.archive"})
 

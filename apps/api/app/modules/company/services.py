@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
 from app.modules.company.models import (
+    CapabilityEquipment,
     Certificate,
     CertificateTranslation,
     CompanyProfile,
@@ -329,6 +330,22 @@ async def update_trust_entity(session: AsyncSession, resource: str, entity_id: u
         for route in routes:
             route.active = False
             route.indexable = False
+    if old_status == "enabled" and entity.status in {"disabled", "retired"} and not has_route:
+        statuses = list(
+            (
+                await session.scalars(
+                    select(TranslationStatus).where(
+                        TranslationStatus.owner_type == owner_type,
+                        TranslationStatus.owner_id == entity.id,
+                    )
+                )
+            ).all()
+        )
+        for translation_status in statuses:
+            # Non-route Trust 下线后撤回翻译发布，重新启用时不得自动恢复公开。
+            translation_status.status = "draft"
+            translation_status.reviewed_by = None
+            translation_status.published_at = None
     if not saved_translations:
         default_locale = await session.scalar(select(Locale).where(Locale.is_default.is_(True)))
         if default_locale is not None:
@@ -409,6 +426,66 @@ async def _save_translations(session: AsyncSession, entity: Any, translation_mod
     return saved
 
 
+async def _public_capability_equipment(
+    session: AsyncSession,
+    capability_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> list[dict[str, Any]]:
+    """
+    查询能力页面可见的设备结构化模块。
+
+    输入：数据库会话、制造能力 ID 与语言 ID。
+    输出：list[dict]；仅返回 enabled 且 TranslationStatus=published 的关联设备。
+    """
+    rows = (
+        await session.execute(
+            select(CapabilityEquipment, Equipment, EquipmentTranslation)
+            .join(Equipment, CapabilityEquipment.equipment_id == Equipment.id)
+            .join(
+                EquipmentTranslation,
+                (EquipmentTranslation.equipment_id == Equipment.id)
+                & (EquipmentTranslation.locale_id == locale_id),
+            )
+            .join(
+                TranslationStatus,
+                (TranslationStatus.owner_type == "equipment")
+                & (TranslationStatus.owner_id == Equipment.id)
+                & (TranslationStatus.locale_id == locale_id),
+            )
+            .where(
+                CapabilityEquipment.capability_id == capability_id,
+                Equipment.status == "enabled",
+                TranslationStatus.status == "published",
+            )
+            .order_by(
+                CapabilityEquipment.sort_order,
+                Equipment.sort_order,
+                Equipment.created_at,
+            )
+        )
+    ).all()
+    result: list[dict[str, Any]] = []
+    for _relation, equipment, translation in rows:
+        result.append(
+            {
+                "slug": equipment.slug,
+                "equipment_type": equipment.equipment_type,
+                "manufacturer": equipment.manufacturer,
+                "model": equipment.model,
+                "quantity": equipment.quantity,
+                "commissioning_year": equipment.commissioning_year,
+                "precision_text": equipment.precision_text,
+                "capacity_text": equipment.capacity_text,
+                "featured": equipment.featured,
+                "translation": _translation_snapshot(
+                    translation,
+                    "equipment_id",
+                ),
+            }
+        )
+    return result
+
+
 async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: str, slug: str) -> dict[str, Any]:
     """按统一发布门槛返回公开 Trust DTO；Equipment 不允许独立公开页。"""
     if owner_type == "equipment":
@@ -439,6 +516,11 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
         {"hreflang": hreflang, "url": url}
         for hreflang, url in published_alternates.items()
     ]
+    equipment = (
+        await _public_capability_equipment(session, entity.id, locale.id)
+        if owner_type == "manufacturing_capability"
+        else None
+    )
     return {
         "type": owner_type,
         "slug": entity.slug,
@@ -447,6 +529,7 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
         "seo": {"title": seo.seo_title if seo else None, "description": seo.meta_description if seo else None, "canonical": canonical, "robots_index": bool(seo.robots_index) if seo else True, "hreflang": alternates},
         "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json, "evidence": geo.evidence_json} if geo else None,
         "schema": {"@context": "https://schema.org", "@type": "WebPage", "name": payload.get("name") or payload.get("title"), "url": canonical},
+        **({"equipment": equipment} if equipment is not None else {}),
     }
 
 

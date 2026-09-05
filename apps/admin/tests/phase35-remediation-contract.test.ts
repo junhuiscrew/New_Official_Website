@@ -56,6 +56,9 @@ describe('phase 3.5 remediation admin', () => {
       expect(source).toContain('published')
       expect(source).toContain('archived')
     }
+    expect(shared).toContain('hasIndependentRoute')
+    expect(shared).toContain('/translations/${localeId}/publish')
+    expect(shared).toContain("translationStatus.status === 'human_reviewed'")
   })
 
   it('links RFQ list to a detail page with files assignment and signed download', () => {

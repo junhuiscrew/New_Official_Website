@@ -422,7 +422,7 @@ async def test_company_profile_requires_full_publication_lifecycle(remediation_f
             translation=status,
             route=route,
             target_status=PublicationStatus.REVIEW,
-            actor_permissions={"content.update"},
+            actor_permissions={"content.review"},
             actor_id=None,
         )
         await transition_publication(
@@ -510,8 +510,9 @@ async def test_trust_review_publish_archive_api_reuses_publication_transaction(
         await session.commit()
         actor = SimpleNamespace(id=uuid.uuid4())
         permissions = {
-            "capability.update",
-            "content.update",
+            "translation.review",
+            "translation.publish",
+            "content.review",
             "content.publish",
             "content.archive",
         }
@@ -735,3 +736,550 @@ async def test_production_rejects_http_private_presigned_url(monkeypatch: pytest
     with pytest.raises(AppException) as raised:
         await adapter.presigned_get("private-rfq", "rfq/unsafe.pdf")
     assert raised.value.code == "insecure_presigned_url"
+
+
+async def test_certificate_translation_review_publish_controls_public_aggregate(
+    remediation_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """证书必须按 draft→human_reviewed→published 流程进入公开聚合页，且不创建独立路由。"""
+    from app.api.v1 import trust as trust_api
+    from app.core.pagination import PaginationParams
+    from app.modules.company.schemas import TrustEntityInput, TrustTranslation
+    from app.modules.company.services import (
+        create_trust_entity,
+        list_public_trust,
+        update_trust_entity,
+    )
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        certificate = await create_trust_entity(
+            session,
+            "certificates",
+            TrustEntityInput(
+                slug="iso-9001",
+                fields={"certificate_type": "quality", "issuer": "Accredited body"},
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={"name": "ISO 9001", "summary": "Quality management"},
+                    )
+                ],
+            ),
+            None,
+        )
+        await session.commit()
+        actor = SimpleNamespace(id=uuid.uuid4())
+        monkeypatch.setattr(
+            trust_api,
+            "collect_authorization",
+            lambda _user: (
+                set(),
+                {"certificate.read", "translation.review", "translation.publish"},
+            ),
+        )
+
+        assert await list_public_trust(session, "certificates", "en") == []
+        reviewed = await trust_api.review_trust_translation(
+            "certificates", certificate.id, locale.id, session, actor, None
+        )
+        assert reviewed.data == {"status": "human_reviewed"}
+        assert await list_public_trust(session, "certificates", "en") == []
+
+        published = await trust_api.publish_trust_translation(
+            "certificates", certificate.id, locale.id, session, actor, None
+        )
+        assert published.data == {"status": "published"}
+        assert [item["slug"] for item in await list_public_trust(session, "certificates", "en")] == [
+            "iso-9001"
+        ]
+        admin_list = await trust_api.list_trust(
+            "certificates",
+            PaginationParams(page=1, page_size=20),
+            session,
+            actor,
+        )
+        assert admin_list.data["items"][0]["translation_statuses"][0]["status"] == "published"
+        assert admin_list.data["items"][0]["publications"] == []
+        assert admin_list.data["items"][0]["routes"] == []
+        assert await session.scalar(
+            select(ContentPublication.id).where(
+                ContentPublication.owner_type == "certificate",
+                ContentPublication.owner_id == certificate.id,
+            )
+        ) is None
+        assert await session.scalar(
+            select(ContentRoute.id).where(
+                ContentRoute.owner_type == "certificate",
+                ContentRoute.owner_id == certificate.id,
+            )
+        ) is None
+
+        await update_trust_entity(
+            session,
+            "certificates",
+            certificate.id,
+            TrustEntityInput(slug="iso-9001", status="disabled"),
+            actor.id,
+        )
+        await session.commit()
+        assert await list_public_trust(session, "certificates", "en") == []
+        await update_trust_entity(
+            session,
+            "certificates",
+            certificate.id,
+            TrustEntityInput(slug="iso-9001", status="enabled"),
+            actor.id,
+        )
+        await session.commit()
+        assert await list_public_trust(session, "certificates", "en") == []
+
+
+@pytest.mark.parametrize(
+    ("resource", "owner_type", "slug", "title"),
+    [
+        ("patents", "patent", "patent-a", "Fastener patent"),
+        ("honors", "honor", "honor-a", "Manufacturing honor"),
+    ],
+)
+async def test_published_non_route_translation_edit_returns_to_draft_and_disappears(
+    remediation_factory,
+    monkeypatch: pytest.MonkeyPatch,
+    resource: str,
+    owner_type: str,
+    slug: str,
+    title: str,
+) -> None:
+    """已发布专利或荣誉翻译再次编辑后必须回到 draft，并立即退出公开聚合页。"""
+    from app.api.v1 import trust as trust_api
+    from app.modules.company.schemas import TrustEntityInput, TrustTranslation
+    from app.modules.company.services import (
+        create_trust_entity,
+        list_public_trust,
+        update_trust_entity,
+    )
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        entity = await create_trust_entity(
+            session,
+            resource,
+            TrustEntityInput(
+                slug=slug,
+                translations=[TrustTranslation(locale_id=locale.id, fields={"title": title})],
+            ),
+            None,
+        )
+        await session.commit()
+        actor = SimpleNamespace(id=uuid.uuid4())
+        monkeypatch.setattr(
+            trust_api,
+            "collect_authorization",
+            lambda _user: (set(), {"translation.review", "translation.publish"}),
+        )
+        await trust_api.review_trust_translation(
+            resource, entity.id, locale.id, session, actor, None
+        )
+        await trust_api.publish_trust_translation(
+            resource, entity.id, locale.id, session, actor, None
+        )
+        assert [item["slug"] for item in await list_public_trust(session, resource, "en")] == [
+            slug
+        ]
+
+        await update_trust_entity(
+            session,
+            resource,
+            entity.id,
+            TrustEntityInput(
+                slug=slug,
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={"title": f"{title} revised"},
+                    )
+                ],
+            ),
+            actor.id,
+        )
+        await session.commit()
+        status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == owner_type,
+                TranslationStatus.owner_id == entity.id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        assert status.status == "draft"
+        assert status.reviewed_by is None and status.published_at is None
+        assert await list_public_trust(session, resource, "en") == []
+        assert len(
+            list(
+                await session.scalars(
+                    select(ContentRevision.id).where(
+                        ContentRevision.owner_type == owner_type,
+                        ContentRevision.owner_id == entity.id,
+                    )
+                )
+            )
+        ) >= 2
+
+
+async def test_capability_only_exposes_equipment_with_published_translation(
+    remediation_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """能力公开 DTO 只能嵌入已发布且 enabled 的设备翻译。"""
+    from app.api.v1 import trust as trust_api
+    from app.modules.company.models import CapabilityEquipment
+    from app.modules.company.schemas import TrustEntityInput, TrustTranslation
+    from app.modules.company.services import (
+        create_trust_entity,
+        get_public_trust,
+        update_trust_entity,
+    )
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        capability = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug="turning",
+                fields={"capability_type": "machining"},
+                translations=[TrustTranslation(locale_id=locale.id, fields={"name": "Turning"})],
+            ),
+            None,
+        )
+        equipment = await create_trust_entity(
+            session,
+            "equipment",
+            TrustEntityInput(
+                slug="cnc-lathe",
+                fields={"equipment_type": "lathe", "manufacturer": "Verified maker"},
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={"name": "CNC lathe", "summary": "Precision turning"},
+                    )
+                ],
+            ),
+            None,
+        )
+        session.add(
+            CapabilityEquipment(
+                capability_id=capability.id,
+                equipment_id=equipment.id,
+                sort_order=10,
+            )
+        )
+        capability_publication = await session.scalar(
+            select(ContentPublication).where(ContentPublication.owner_id == capability.id)
+        )
+        capability_status = await session.scalar(
+            select(TranslationStatus).where(TranslationStatus.owner_id == capability.id)
+        )
+        capability_route = await session.scalar(
+            select(ContentRoute).where(ContentRoute.owner_id == capability.id)
+        )
+        capability_publication.status = "published"
+        capability_status.status = "published"
+        capability_route.active = True
+        capability_route.indexable = True
+        await session.commit()
+
+        draft_public = await get_public_trust(
+            session, "manufacturing_capability", "en", "turning"
+        )
+        assert draft_public["equipment"] == []
+
+        actor = SimpleNamespace(id=uuid.uuid4())
+        monkeypatch.setattr(
+            trust_api,
+            "collect_authorization",
+            lambda _user: (set(), {"translation.review", "translation.publish"}),
+        )
+        await trust_api.review_trust_translation(
+            "equipment", equipment.id, locale.id, session, actor, None
+        )
+        await trust_api.publish_trust_translation(
+            "equipment", equipment.id, locale.id, session, actor, None
+        )
+        published_public = await get_public_trust(
+            session, "manufacturing_capability", "en", "turning"
+        )
+        assert published_public["equipment"] == [
+            {
+                "slug": "cnc-lathe",
+                "equipment_type": "lathe",
+                "manufacturer": "Verified maker",
+                "model": None,
+                "quantity": None,
+                "commissioning_year": None,
+                "precision_text": None,
+                "capacity_text": None,
+                "featured": False,
+                "translation": {
+                    "name": "CNC lathe",
+                    "summary": "Precision turning",
+                    "description": None,
+                    "public_specs_json": None,
+                },
+            }
+        ]
+
+        await update_trust_entity(
+            session,
+            "equipment",
+            equipment.id,
+            TrustEntityInput(
+                slug="cnc-lathe",
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={"name": "CNC lathe revised"},
+                    )
+                ],
+            ),
+            actor.id,
+        )
+        await session.commit()
+        withdrawn_public = await get_public_trust(
+            session, "manufacturing_capability", "en", "turning"
+        )
+        assert withdrawn_public["equipment"] == []
+
+
+async def test_reviewer_can_review_trust_and_company_without_update_permissions(
+    remediation_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reviewer 仅凭 translation/content review 权限即可审核 Trust 与 Company。"""
+    from app.api.v1 import trust as trust_api
+    from app.modules.company.schemas import (
+        CompanyProfileInput,
+        TrustEntityInput,
+        TrustTranslation,
+    )
+    from app.modules.company.services import create_trust_entity, upsert_company_profile
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        capability = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug="reviewer-capability",
+                fields={"capability_type": "machining"},
+                translations=[
+                    TrustTranslation(locale_id=locale.id, fields={"name": "Reviewer capability"})
+                ],
+            ),
+            None,
+        )
+        profile = await upsert_company_profile(
+            session,
+            CompanyProfileInput(
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={
+                            "company_name": "Junhui",
+                            "short_intro": "Verified manufacturer",
+                            "full_intro": "Verified manufacturer profile",
+                        },
+                    )
+                ]
+            ),
+            None,
+        )
+        await session.commit()
+        reviewer = SimpleNamespace(id=uuid.uuid4())
+        reviewer_permissions = {
+            "translation.review",
+            "content.review",
+            "translation.publish",
+            "content.publish",
+        }
+        monkeypatch.setattr(
+            trust_api,
+            "collect_authorization",
+            lambda _user: (set(), reviewer_permissions),
+        )
+
+        trust_reviewed = await trust_api.review_trust_translation(
+            "capabilities", capability.id, locale.id, session, reviewer, None
+        )
+        company_reviewed = await trust_api.review_company_profile_translation(
+            profile.id, locale.id, session, reviewer, None
+        )
+        assert trust_reviewed.data["status"] == "human_reviewed"
+        assert company_reviewed.data["status"] == "human_reviewed"
+
+        published = await trust_api.transition_trust_publication(
+            "capabilities",
+            capability.id,
+            locale.id,
+            trust_api.PublicationStatus.PUBLISHED,
+            session,
+            reviewer,
+            None,
+        )
+        assert published.data == {"status": "published"}
+        company_published = await trust_api.transition_company_profile_publication(
+            profile.id,
+            locale.id,
+            trust_api.PublicationStatus.PUBLISHED,
+            session,
+            reviewer,
+            None,
+        )
+        assert company_published.data == {"status": "published"}
+
+
+async def test_editor_update_permissions_cannot_review_or_publish(
+    remediation_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Editor 的实体 update/content update 权限不得隐式授予 Review 或 Publish。"""
+    from app.api.v1 import trust as trust_api
+    from app.modules.company.schemas import (
+        CompanyProfileInput,
+        TrustEntityInput,
+        TrustTranslation,
+    )
+    from app.modules.company.services import create_trust_entity, upsert_company_profile
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        capability = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug="editor-forbidden",
+                fields={"capability_type": "machining"},
+                translations=[
+                    TrustTranslation(locale_id=locale.id, fields={"name": "Editor forbidden"})
+                ],
+            ),
+            None,
+        )
+        certificate = await create_trust_entity(
+            session,
+            "certificates",
+            TrustEntityInput(
+                slug="editor-certificate",
+                translations=[
+                    TrustTranslation(locale_id=locale.id, fields={"name": "Editor certificate"})
+                ],
+            ),
+            None,
+        )
+        certificate_status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == "certificate",
+                TranslationStatus.owner_id == certificate.id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        certificate_status.status = "human_reviewed"
+        profile = await upsert_company_profile(
+            session,
+            CompanyProfileInput(
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={
+                            "company_name": "Editor forbidden company",
+                            "short_intro": "Draft company profile",
+                            "full_intro": "Draft company profile for permission validation",
+                        },
+                    )
+                ]
+            ),
+            None,
+        )
+        profile_status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == "company_profile",
+                TranslationStatus.owner_id == profile.id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        profile_publication = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.owner_type == "company_profile",
+                ContentPublication.owner_id == profile.id,
+                ContentPublication.locale_id == locale.id,
+            )
+        )
+        profile_status.status = "human_reviewed"
+        profile_publication.status = "review"
+        await session.commit()
+        editor = SimpleNamespace(id=uuid.uuid4())
+        editor_permissions = {
+            "capability.update",
+            "certificate.update",
+            "content.update",
+        }
+        monkeypatch.setattr(
+            trust_api,
+            "collect_authorization",
+            lambda _user: (set(), editor_permissions),
+        )
+
+        with pytest.raises(AppException) as review_error:
+            await trust_api.review_trust_translation(
+                "capabilities", capability.id, locale.id, session, editor, None
+            )
+        assert review_error.value.status_code == 403
+        with pytest.raises(AppException) as publish_error:
+            await trust_api.publish_trust_translation(
+                "certificates", certificate.id, locale.id, session, editor, None
+            )
+        assert publish_error.value.status_code == 403
+        with pytest.raises(AppException) as company_review_error:
+            await trust_api.review_company_profile_translation(
+                profile.id, locale.id, session, editor, None
+            )
+        assert company_review_error.value.status_code == 403
+        with pytest.raises(AppException) as company_publish_error:
+            await trust_api.transition_company_profile_publication(
+                profile.id,
+                locale.id,
+                trust_api.PublicationStatus.PUBLISHED,
+                session,
+                editor,
+                None,
+            )
+        assert company_publish_error.value.status_code == 403
+
+
+def test_reviewer_seed_has_trust_read_but_no_update_permissions() -> None:
+    """Reviewer 可读取审核目标，但不会得到 Company/Trust 更新权限。"""
+    from app.seed import ROLE_PERMISSION_MATRIX
+
+    reviewer = ROLE_PERMISSION_MATRIX["reviewer"]
+    for permission in (
+        "company.read",
+        "capability.read",
+        "equipment.read",
+        "certificate.read",
+        "patent.read",
+        "honor.read",
+        "exhibition.read",
+    ):
+        assert permission in reviewer
+    assert not any(
+        permission in reviewer
+        for permission in (
+            "company.update",
+            "capability.update",
+            "equipment.update",
+            "certificate.update",
+            "patent.update",
+            "honor.update",
+            "exhibition.update",
+        )
+    )

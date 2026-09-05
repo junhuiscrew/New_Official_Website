@@ -13,6 +13,7 @@ interface TrustItem {
 
 const props = defineProps<{ title: string; resource: string }>()
 const api = useAuthorityApi()
+const hasIndependentRoute = computed(() => ['capabilities', 'exhibitions'].includes(props.resource))
 const items = ref<TrustItem[]>([])
 const editingId = ref<string | null>(null)
 const slug = ref('')
@@ -116,6 +117,12 @@ async function reviewTranslation(item: TrustItem, localeId: string) {
   await load()
 }
 
+// Non-route Trust 只发布 TranslationStatus，不创建 ContentPublication 或 ContentRoute。
+async function publishTranslation(item: TrustItem, localeId: string) {
+  await api.archive(`/trust/${props.resource}/${item.id}/translations/${localeId}/publish`)
+  await load()
+}
+
 async function transitionPublication(
   item: TrustItem,
   localeId: string,
@@ -170,25 +177,40 @@ onMounted(load)
               :key="translationStatus.locale_id"
             >
               <span>
-                {{ translationStatus.locale_id }} · translation {{ translationStatus.status }} ·
-                publication {{ publicationStatus(item, translationStatus.locale_id) }}
+                {{ translationStatus.locale_id }} · translation {{ translationStatus.status }}
+                <template v-if="hasIndependentRoute">
+                  · publication {{ publicationStatus(item, translationStatus.locale_id) }}
+                </template>
               </span>
               <button
-                v-if="publicationStatus(item, translationStatus.locale_id) !== 'published'"
+                v-if="translationStatus.status === 'draft'"
                 type="button"
                 @click="reviewTranslation(item, translationStatus.locale_id)"
               >
                 Review
               </button>
               <button
-                v-if="publicationStatus(item, translationStatus.locale_id) === 'review'"
+                v-if="
+                  hasIndependentRoute &&
+                  publicationStatus(item, translationStatus.locale_id) === 'review'
+                "
                 type="button"
                 @click="transitionPublication(item, translationStatus.locale_id, 'published')"
               >
                 Publish
               </button>
               <button
-                v-if="publicationStatus(item, translationStatus.locale_id) === 'published'"
+                v-if="!hasIndependentRoute && translationStatus.status === 'human_reviewed'"
+                type="button"
+                @click="publishTranslation(item, translationStatus.locale_id)"
+              >
+                Publish translation
+              </button>
+              <button
+                v-if="
+                  hasIndependentRoute &&
+                  publicationStatus(item, translationStatus.locale_id) === 'published'
+                "
                 type="button"
                 @click="transitionPublication(item, translationStatus.locale_id, 'archived')"
               >

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -55,6 +56,8 @@ async def _review_translation(
     输入：数据库会话、owner 标识、语言 ID 与当前用户。
     输出：None；Publication 状态迁移全部复用 transition_publication()。
     """
+    # Translation Review 与正文更新是不同职责；服务端必须先验证审核权限。
+    _permission(user, "translation.review")
     publication, translation, route = await _lifecycle_records(
         session, owner_type, owner_id, locale_id
     )
@@ -93,6 +96,33 @@ async def _review_translation(
         )
 
 
+async def _non_route_translation_status(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> TranslationStatus:
+    """
+    读取并锁定不拥有独立路由的 Trust 翻译状态。
+
+    输入：数据库会话、owner 类型/ID 与语言 ID。
+    输出：TranslationStatus；记录不存在时抛出 409。
+    """
+    status = await session.scalar(
+        select(TranslationStatus)
+        .where(
+            TranslationStatus.owner_type == owner_type,
+            TranslationStatus.owner_id == owner_id,
+            TranslationStatus.locale_id == locale_id,
+        )
+        .with_for_update()
+    )
+    if status is None:
+        raise AppException(409, "translation_status_missing", "翻译状态记录不存在")
+    return status
+
+
 @router.get("/company-profile", response_model=ApiResponse[dict[str, Any]])
 async def get_company_profile(session: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)) -> ApiResponse[dict[str, Any]]:
     """返回公司档案与翻译。"""
@@ -125,7 +155,6 @@ async def review_company_profile_translation(
     _csrf: None = Depends(require_csrf),
 ) -> ApiResponse[dict[str, str]]:
     """审核 Company Profile 翻译并将 Publication 提交审核。"""
-    _permission(user, "company.update")
     if await session.get(CompanyProfile, profile_id) is None:
         raise AppException(404, "company_profile_not_found", "Company Profile 不存在")
     await _review_translation(
@@ -151,6 +180,15 @@ async def transition_company_profile_publication(
     """发布或归档 Company Profile，状态切换复用统一事务服务。"""
     if target_status not in {PublicationStatus.PUBLISHED, PublicationStatus.ARCHIVED}:
         raise AppException(422, "unsupported_publication_target", "该接口只允许 published 或 archived")
+    if target_status is PublicationStatus.PUBLISHED:
+        # Route 内容发布会同步发布 TranslationStatus，因此必须同时具备翻译发布权限。
+        _permission(user, "translation.publish")
+    _permission(
+        user,
+        "content.publish"
+        if target_status is PublicationStatus.PUBLISHED
+        else "content.archive",
+    )
     publication, translation, route = await _lifecycle_records(
         session, "company_profile", profile_id, locale_id
     )
@@ -183,11 +221,15 @@ async def list_trust(resource: str, pagination: PaginationParams = Depends(), se
     for row in rows:
         translations = list((await session.scalars(select(translation_model).where(getattr(translation_model, owner_field) == row.id))).all())
         item = {**serialize(row), "translations": [serialize(item) for item in translations]}
+        statuses = list((await session.scalars(select(TranslationStatus).where(TranslationStatus.owner_type == config[3], TranslationStatus.owner_id == row.id))).all())
+        item["translation_statuses"] = [serialize(value) for value in statuses]
         if config[4]:
-            statuses = list((await session.scalars(select(TranslationStatus).where(TranslationStatus.owner_type == config[3], TranslationStatus.owner_id == row.id))).all())
             publications = list((await session.scalars(select(ContentPublication).where(ContentPublication.owner_type == config[3], ContentPublication.owner_id == row.id))).all())
             routes = list((await session.scalars(select(ContentRoute).where(ContentRoute.owner_type == config[3], ContentRoute.owner_id == row.id))).all())
-            item.update({"translation_statuses": [serialize(value) for value in statuses], "publications": [serialize(value) for value in publications], "routes": [serialize(value) for value in routes]})
+            item.update({"publications": [serialize(value) for value in publications], "routes": [serialize(value) for value in routes]})
+        else:
+            # Non-route Trust 只拥有 TranslationStatus，明确返回空数组防止 Admin 误判。
+            item.update({"publications": [], "routes": []})
         items.append(item)
     return success_response({"items": items, "page": pagination.page, "page_size": pagination.page_size, "total": total or 0})
 
@@ -221,22 +263,102 @@ async def review_trust_translation(
     user: User = Depends(get_current_user),
     _csrf: None = Depends(require_csrf),
 ) -> ApiResponse[dict[str, str]]:
-    """审核可独立公开 Trust 翻译并提交 Publication review。"""
+    """审核 Trust 翻译；独立页面同时把 Publication 提交 review。"""
     config = TRUST_CONFIG.get(resource)
-    if config is None or not config[4]:
-        raise AppException(409, "trust_not_publishable", "该 Trust 类型没有独立公开页面")
-    _permission(user, f"{config[3].replace('manufacturing_capability', 'capability')}.update")
-    if await session.get(config[0], entity_id) is None:
+    if config is None:
+        raise AppException(404, "trust_type_not_found", "未知 Trust 类型")
+    entity = await session.get(config[0], entity_id)
+    if entity is None:
         raise AppException(404, "trust_not_found", "Trust 实体不存在")
-    await _review_translation(
+    if config[4]:
+        await _review_translation(
+            session,
+            owner_type=config[3],
+            owner_id=entity_id,
+            locale_id=locale_id,
+            user=user,
+        )
+        response = {"status": "human_reviewed", "publication": "review"}
+    else:
+        _permission(user, "translation.review")
+        status = await _non_route_translation_status(
+            session,
+            owner_type=config[3],
+            owner_id=entity_id,
+            locale_id=locale_id,
+        )
+        if status.status != TranslationState.DRAFT.value:
+            raise AppException(
+                409,
+                "translation_not_reviewable",
+                "只有 draft 翻译可以人工审核",
+            )
+        status.status = TranslationState.HUMAN_REVIEWED.value
+        status.reviewed_by = user.id
+        status.published_at = None
+        write_audit_log(
+            session,
+            action="translation.review",
+            target_type=config[3],
+            target_id=str(entity_id),
+            user_id=user.id,
+            metadata={"locale_id": str(locale_id)},
+        )
+        response = {"status": "human_reviewed"}
+    await session.commit()
+    return success_response(response)
+
+
+@router.post("/{resource}/{entity_id}/translations/{locale_id}/publish", response_model=ApiResponse[dict[str, str]])
+async def publish_trust_translation(
+    resource: str,
+    entity_id: uuid.UUID,
+    locale_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, str]]:
+    """
+    发布无独立 Route/Publication 的 Trust 翻译。
+
+    输入：Trust 资源、实体/语言 ID、数据库会话与当前用户。
+    输出：ApiResponse；仅 human_reviewed 且 enabled 的翻译可发布。
+    """
+    config = TRUST_CONFIG.get(resource)
+    if config is None:
+        raise AppException(404, "trust_type_not_found", "未知 Trust 类型")
+    if config[4]:
+        raise AppException(409, "publication_required", "独立页面必须通过统一 Publication 发布")
+    _permission(user, "translation.publish")
+    entity = await session.get(config[0], entity_id)
+    if entity is None:
+        raise AppException(404, "trust_not_found", "Trust 实体不存在")
+    if entity.status != "enabled":
+        raise AppException(409, "trust_not_enabled", "禁用或退役 Trust 不能发布")
+    status = await _non_route_translation_status(
         session,
         owner_type=config[3],
         owner_id=entity_id,
         locale_id=locale_id,
-        user=user,
+    )
+    if status.status != TranslationState.HUMAN_REVIEWED.value:
+        raise AppException(
+            409,
+            "translation_not_reviewed",
+            "翻译完成人工审核后才能发布",
+        )
+    status.status = TranslationState.PUBLISHED.value
+    status.published_at = datetime.now(UTC)
+    write_audit_log(
+        session,
+        action="translation.publish",
+        target_type=config[3],
+        target_id=str(entity_id),
+        user_id=user.id,
+        metadata={"locale_id": str(locale_id)},
     )
     await session.commit()
-    return success_response({"status": "human_reviewed", "publication": "review"})
+    return success_response({"status": "published"})
 
 
 @router.post("/{resource}/{entity_id}/publications/{locale_id}/{target_status}", response_model=ApiResponse[dict[str, str]])
@@ -255,6 +377,15 @@ async def transition_trust_publication(
         raise AppException(409, "trust_not_publishable", "该 Trust 类型没有独立公开页面")
     if target_status not in {PublicationStatus.PUBLISHED, PublicationStatus.ARCHIVED}:
         raise AppException(422, "unsupported_publication_target", "该接口只允许 published 或 archived")
+    if target_status is PublicationStatus.PUBLISHED:
+        # 独立 Trust 页面沿用统一事务，并同时验证翻译与内容发布职责。
+        _permission(user, "translation.publish")
+    _permission(
+        user,
+        "content.publish"
+        if target_status is PublicationStatus.PUBLISHED
+        else "content.archive",
+    )
     publication, translation, route = await _lifecycle_records(
         session, config[3], entity_id, locale_id
     )

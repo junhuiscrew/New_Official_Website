@@ -52,4 +52,14 @@ describe('phase 3.5 remediation website', () => {
       expect(source).not.toContain('Verified certificates')
     }
   })
+
+  it('renders only server-approved equipment from the public Capability DTO', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/pages/[lang]/capabilities/[slug].vue'),
+      'utf8',
+    )
+    expect(source).toContain('page.equipment')
+    expect(source).toContain('equipment.translation.name')
+    expect(source).toContain('equipment.translation.public_specs_json')
+  })
 })

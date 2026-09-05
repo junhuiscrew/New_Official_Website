@@ -15,7 +15,8 @@ from app.modules.content.models import ContentPublication, ContentRoute, Transla
 from app.modules.localization.models import Locale
 
 _TRANSITION_PERMISSIONS: dict[tuple[str, str], str] = {
-    ("draft", "review"): "content.update",
+    # 提交审核本身属于审核职责，不能由正文更新权限隐式获得。
+    ("draft", "review"): "content.review",
     ("review", "scheduled"): "content.publish",
     ("review", "published"): "content.publish",
     ("scheduled", "published"): "content.publish",

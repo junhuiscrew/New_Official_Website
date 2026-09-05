@@ -112,4 +112,3 @@
 - [ ] Verify Docker Compose health without deleting volumes.
 - [ ] Run the opt-in content browser QA and link only sanitized committed evidence metadata or ignored local evidence paths.
 - [ ] Record exact branch, base SHA, implementation SHA, changed files, fresh commands/counts, evidence paths, blockers, limits, and known issues. Do not declare Phase 3.6 FINAL PASS.
-

@@ -62,6 +62,8 @@ from app.modules.catalog.models import (
 from app.modules.company.models import (
     CompanyProfile,
     CompanyProfileTranslation,
+    Exhibition,
+    ExhibitionTranslation,
     ManufacturingCapability,
     ManufacturingCapabilityTranslation,
 )
@@ -186,6 +188,24 @@ CATALOG_COLLECTION_PATHS: dict[str, str] = {
 
 # 单个关系分组限制公开链接数量，避免详情页响应与 SSR DOM 无界增长。
 PUBLIC_RELATION_LINK_LIMIT = 12
+
+# RFQ 来源只允许映射到已有公开详情实体；客户端不能传 ORM 表名或内部 ID。
+PUBLIC_RFQ_SOURCE_TYPES: dict[str, tuple[type, type, str]] = {
+    "product": (Product, ProductTranslation, "product_id"),
+    "material": (Material, MaterialTranslation, "material_id"),
+    "technology": (Technology, TechnologyTranslation, "technology_id"),
+    "application": (Application, ApplicationTranslation, "application_id"),
+    "solution": (Solution, SolutionTranslation, "solution_id"),
+    "case_study": (CaseStudy, CaseStudyTranslation, "case_study_id"),
+    "knowledge_article": (KnowledgeArticle, KnowledgeArticleTranslation, "article_id"),
+    "manufacturing_capability": (
+        ManufacturingCapability,
+        ManufacturingCapabilityTranslation,
+        "capability_id",
+    ),
+    "author_expert": (AuthorExpert, AuthorExpertTranslation, "author_expert_id"),
+    "exhibition": (Exhibition, ExhibitionTranslation, "exhibition_id"),
+}
 
 
 def _columns(entity: Any) -> dict[str, Any]:
@@ -342,20 +362,75 @@ async def resolve_public_product_source(
     输出：
         tuple[Product, ContentRoute]，真实 Product 与当前语言 canonical route；不可公开时抛出 404。
     """
+    entity, route = await resolve_public_rfq_source(session, locale_slug, "product", product_slug)
+    return entity, route
+
+
+async def resolve_public_rfq_source(
+    session: AsyncSession,
+    locale_slug: str,
+    source_type: str,
+    source_slug: str,
+) -> tuple[Any, ContentRoute]:
+    """
+    通过固定映射解析 RFQ 的公开来源，并复用完整发布与索引门禁。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale_slug: str，CTA 所在语言。
+        source_type: str，冻结白名单中的公开实体类型。
+        source_slug: str，公开稳定 slug。
+
+    输出：
+        tuple[Any, ContentRoute]，真实实体和当前语言 canonical route；不合格时抛出 404。
+    """
+    config = PUBLIC_RFQ_SOURCE_TYPES.get(source_type)
+    if config is None:
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
+    model, translation_model, owner_field = config
     locale = await _locale(session, locale_slug)
-    product = await session.scalar(
-        select(Product)
-        .join(ProductTranslation, ProductTranslation.product_id == Product.id)
+    owner_column = getattr(translation_model, owner_field)
+    statement = (
+        select(model)
+        .join(translation_model, owner_column == model.id)
         .where(
-            Product.slug == product_slug,
-            Product.status == "enabled",
-            ProductTranslation.locale_id == locale.id,
+            model.slug == source_slug,
+            model.status == "enabled",
+            translation_model.locale_id == locale.id,
         )
     )
-    if product is None:
+    if source_type == "product":
+        statement = statement.join(
+            ProductCategory, ProductCategory.id == Product.category_id
+        ).where(ProductCategory.status == "enabled")
+    elif source_type == "knowledge_article":
+        statement = (
+            statement.join(
+                KnowledgeCategory,
+                KnowledgeCategory.id == KnowledgeArticle.category_id,
+            )
+            .join(AuthorExpert, AuthorExpert.id == KnowledgeArticle.author_id)
+            .join(
+                AuthorExpertTranslation,
+                (AuthorExpertTranslation.author_expert_id == AuthorExpert.id)
+                & (AuthorExpertTranslation.locale_id == locale.id),
+            )
+            .where(
+                KnowledgeCategory.status == "enabled",
+                AuthorExpert.status == "enabled",
+                AuthorExpert.is_real_person_verified.is_(True),
+            )
+        )
+    elif source_type == "author_expert":
+        statement = statement.where(
+            AuthorExpert.public_profile_enabled.is_(True),
+            AuthorExpert.is_real_person_verified.is_(True),
+        )
+    entity = await session.scalar(statement)
+    if entity is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
-    route, _seo, _geo = await _public_route(session, "product", product.id, locale.id)
-    return product, route
+    route, _seo, _geo = await _public_route(session, source_type, entity.id, locale.id)
+    return entity, route
 
 
 async def _published_alternates(
@@ -929,8 +1004,7 @@ async def _published_links_for_ids(
             or_(
                 SeoDocument.id.is_(None),
                 SeoDocument.canonical_override.is_(None),
-                SeoDocument.canonical_override
-                == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
             ),
         )
     )

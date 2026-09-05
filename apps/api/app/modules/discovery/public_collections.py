@@ -47,7 +47,9 @@ from app.modules.content.models import ContentPublication, ContentRoute, Transla
 from app.modules.discovery.models import SeoDocument
 from app.modules.discovery.schema_generator import (
     build_breadcrumb_schema,
+    build_organization_schema,
     build_webpage_schema,
+    build_website_schema,
 )
 from app.modules.localization.models import Locale
 from app.modules.media.models import MediaAsset, MediaAssetTranslation
@@ -57,7 +59,6 @@ from .public_delivery import (
     _locale,
     _public_media,
     _public_route,
-    _published_alternates,
 )
 from .public_schemas import PublicMediaDto
 from .public_specs import serialize_public_specifications_for_products
@@ -559,7 +560,81 @@ async def _authority_card_payloads(
                 "updated_at": article.updated_at,
             }
         )
+    await _attach_card_media(session, locale, cards, rows, "primary_media_id")
     return cards
+
+
+async def _attach_card_media(
+    session: AsyncSession,
+    locale: Locale,
+    cards: list[dict[str, Any]],
+    rows: list[tuple[Any, Any, ContentRoute]],
+    media_field: str,
+) -> None:
+    """
+    批量为公开卡片附加真实 public-media，避免逐卡媒体查询。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale: Locale，当前语言。
+        cards: list[dict[str, Any]]，待增强的公开卡片。
+        rows: list，卡片对应的实体、翻译和路由行。
+        media_field: str，实体上的媒体外键字段名。
+
+    输出：
+        None，原地写入卡片的 media 字段；不合格媒体写入 None。
+    """
+    media_ids = [
+        media_id
+        for entity, _translation, _route in rows
+        if (media_id := getattr(entity, media_field, None)) is not None
+    ]
+    media_rows = (
+        (
+            await session.execute(
+                select(MediaAsset, MediaAssetTranslation)
+                .outerjoin(
+                    MediaAssetTranslation,
+                    (MediaAssetTranslation.media_asset_id == MediaAsset.id)
+                    & (MediaAssetTranslation.locale_id == locale.id),
+                )
+                .where(
+                    MediaAsset.id.in_(media_ids),
+                    MediaAsset.visibility == "public",
+                    MediaAsset.storage_bucket == "public-media",
+                    MediaAsset.upload_status == "ready",
+                )
+            )
+        ).all()
+        if media_ids
+        else []
+    )
+    media_by_id = {asset.id: (asset, translation) for asset, translation in media_rows}
+    for card, (entity, _translation, _route) in zip(cards, rows, strict=True):
+        media_row = media_by_id.get(getattr(entity, media_field, None))
+        card["media"] = None
+        if media_row is None:
+            continue
+        asset, media_translation = media_row
+        translated_alt = (
+            media_translation.alt_text.strip()
+            if media_translation and media_translation.alt_text
+            else ""
+        )
+        fallback_alt = str(card["name"]).strip()
+        alt = translated_alt or fallback_alt
+        if not alt:
+            continue
+        card["media"] = PublicMediaDto(
+            src=f"/api/v1/public/media/{asset.id}",
+            type=asset.media_type,
+            mime_type=asset.mime_type,
+            width=asset.width,
+            height=asset.height,
+            alt=alt,
+            caption=media_translation.caption if media_translation else None,
+            loading="lazy",
+        ).model_dump()
 
 
 def _listing_query_suffix(
@@ -602,6 +677,7 @@ async def _product_listing_seo(
     category: str | None,
     material: str | None,
     application: str | None,
+    total: int,
 ) -> dict[str, Any]:
     """
     返回全产品集合的稳定后端 SEO DTO，不在前端复制 canonical/index 规则。
@@ -614,6 +690,7 @@ async def _product_listing_seo(
     description: str | None = None
     category_in_path = False
     alternates: dict[str, str] = {}
+    category_entity: ProductCategory | None = None
 
     # 已发布分类使用自身 canonical 路径；分类筛选不再重复进入 query。
     if category:
@@ -645,11 +722,6 @@ async def _product_listing_seo(
                     title = translation.name
                     description = translation.short_description or translation.description
                     category_in_path = True
-                    alternates = await _published_alternates(
-                        session,
-                        "product_category",
-                        category_entity.id,
-                    )
 
     suffix = _listing_query_suffix(
         category=category,
@@ -659,7 +731,8 @@ async def _product_listing_seo(
         page_size=page_size,
         category_in_path=category_in_path,
     )
-    if not alternates:
+    temporary_view = bool(material or application or page_size != 24)
+    if not temporary_view and total > 0:
         locale_rows = list(
             (
                 await session.scalars(
@@ -669,19 +742,71 @@ async def _product_listing_seo(
                 )
             ).all()
         )
-        alternates = {item.code: f"{OFFICIAL_ORIGIN}/{item.slug}/products/" for item in locale_rows}
-        default_locale = next((item for item in locale_rows if item.is_default), None)
-        if default_locale is not None:
-            alternates["x-default"] = f"{OFFICIAL_ORIGIN}/{default_locale.slug}/products/"
+        for item in locale_rows:
+            other_statement = _public_collection_statement("product", item)
+            if other_statement is None:
+                continue
+            other_path = f"/{item.slug}/products/"
+            if category_entity is not None:
+                try:
+                    other_route, _other_seo, _other_geo = await _public_route(
+                        session,
+                        "product_category",
+                        category_entity.id,
+                        item.id,
+                    )
+                except AppException:
+                    continue
+                other_statement = other_statement.where(Product.category_id == category_entity.id)
+                other_path = other_route.path
+            other_total = int(
+                await session.scalar(select(func.count()).select_from(other_statement.subquery()))
+                or 0
+            )
+            if other_total <= (page - 1) * page_size:
+                continue
+            other_suffix = _listing_query_suffix(
+                category=None,
+                material=None,
+                application=None,
+                page=page,
+                page_size=page_size,
+                category_in_path=True,
+            )
+            alternates[item.code] = f"{OFFICIAL_ORIGIN}{other_path}{other_suffix}"
+        if "zh-CN" in alternates:
+            alternates["x-default"] = alternates["zh-CN"]
 
     canonical = f"{OFFICIAL_ORIGIN}{path}{suffix}"
     return {
         "title": title,
         "description": description,
         "canonical": canonical,
-        "robots": "index, follow",
-        "hreflang": {key: f"{value}{suffix}" for key, value in alternates.items()},
+        "robots": "index, follow" if total > 0 and not temporary_view else "noindex, follow",
+        "hreflang": alternates,
     }
+
+
+async def _require_public_filter(
+    session: AsyncSession,
+    owner_type: str,
+    locale: Locale,
+    slug: str,
+) -> tuple[Any, Any, ContentRoute]:
+    """
+    验证筛选资源本身在当前语言可公开访问。
+
+    输入：数据库会话、筛选实体类型、语言和公开 slug。
+    输出：(entity, translation, route)；不存在或未发布时抛出公开 404。
+    """
+    config = _COLLECTION_CONFIG[owner_type]
+    statement = _public_collection_statement(owner_type, locale)
+    if statement is None:
+        raise AppException(404, "public_filter_not_found", "公开筛选不存在")
+    row = (await session.execute(statement.where(config.model.slug == slug))).one_or_none()
+    if row is None:
+        raise AppException(404, "public_filter_not_found", "公开筛选不存在")
+    return row
 
 
 async def _catalog_listing_metadata(
@@ -692,6 +817,7 @@ async def _catalog_listing_metadata(
     page_size: int,
     category: str | None = None,
     type_filter: str | None = None,
+    total: int = 0,
 ) -> dict[str, Any] | None:
     """
     为 Catalog 与 Authority 集合生成稳定的后端 SEO、Breadcrumb 与 Schema。
@@ -734,21 +860,41 @@ async def _catalog_listing_metadata(
         type_filter=type_filter if owner_type == "author_expert" else None,
     )
     canonical = f"{OFFICIAL_ORIGIN}/{locale.slug}/{resource}/{suffix}"
-    locale_rows = list(
-        (
-            await session.scalars(
-                select(Locale)
-                .where(Locale.is_enabled.is_(True))
-                .order_by(Locale.sort_order, Locale.code)
+    temporary_view = bool(category or type_filter or page_size != 24)
+    hreflang: dict[str, str] = {}
+    if total > 0 and not temporary_view:
+        locale_rows = list(
+            (
+                await session.scalars(
+                    select(Locale)
+                    .where(Locale.is_enabled.is_(True))
+                    .order_by(Locale.sort_order, Locale.code)
+                )
+            ).all()
+        )
+        for item in locale_rows:
+            candidate_statement = _public_collection_statement(owner_type, item)
+            if candidate_statement is None:
+                continue
+            candidate_total = int(
+                await session.scalar(
+                    select(func.count()).select_from(candidate_statement.subquery())
+                )
+                or 0
             )
-        ).all()
-    )
-    hreflang = {
-        item.code: f"{OFFICIAL_ORIGIN}/{item.slug}/{resource}/{suffix}" for item in locale_rows
-    }
-    default_locale = next((item for item in locale_rows if item.is_default), None)
-    if default_locale is not None:
-        hreflang["x-default"] = f"{OFFICIAL_ORIGIN}/{default_locale.slug}/{resource}/{suffix}"
+            if candidate_total <= (page - 1) * page_size:
+                continue
+            candidate_suffix = _listing_query_suffix(
+                category=None,
+                material=None,
+                application=None,
+                page=page,
+                page_size=page_size,
+                category_in_path=False,
+            )
+            hreflang[item.code] = f"{OFFICIAL_ORIGIN}/{item.slug}/{resource}/{candidate_suffix}"
+        if "zh-CN" in hreflang:
+            hreflang["x-default"] = hreflang["zh-CN"]
     home_name = "首页" if locale.slug == "zh-cn" else "Home"
     breadcrumb = [
         {"name": home_name, "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
@@ -758,7 +904,7 @@ async def _catalog_listing_metadata(
         "title": title,
         "description": description,
         "canonical": canonical,
-        "robots": "index, follow",
+        "robots": "index, follow" if total > 0 and not temporary_view else "noindex, follow",
         "hreflang": hreflang,
     }
     return {
@@ -791,10 +937,29 @@ async def _published_rows(
     输出：
         list[dict[str, str]]，仅含类型、slug、名称、canonical 路径与摘要。
     """
+    rows = await _published_row_tuples(session, owner_type, locale, limit, featured_only)
+
+    return [
+        _card_payload(owner_type, entity, translation, route) for entity, translation, route in rows
+    ]
+
+
+async def _published_row_tuples(
+    session: AsyncSession,
+    owner_type: str,
+    locale: Locale,
+    limit: int,
+    featured_only: bool,
+) -> list[tuple[Any, Any, ContentRoute]]:
+    """
+    一次查询返回通过公开门禁的实体、翻译和 canonical 路由行。
+
+    输入：数据库会话、公开实体类型、语言、上限及推荐过滤标记。
+    输出：list，供基础 Link DTO 和完整卡片 serializer 共同复用。
+    """
     config = _COLLECTION_CONFIG.get(owner_type)
     if config is None or limit <= 0:
         return []
-
     model = config.model
     statement = _public_collection_statement(owner_type, locale)
     if statement is None:
@@ -804,17 +969,97 @@ async def _published_rows(
         if featured_column is None:
             return []
         statement = statement.where(featured_column.is_(True))
-
-    # 数据库内一次完成公开门禁和 limit，避免对每个候选重复查询生命周期。
     order_columns = []
     if hasattr(model, "sort_order"):
         order_columns.append(model.sort_order)
     order_columns.extend((model.created_at, model.slug))
-    rows = (await session.execute(statement.order_by(*order_columns).limit(limit))).all()
+    return list((await session.execute(statement.order_by(*order_columns).limit(limit))).all())
 
-    return [
-        _card_payload(owner_type, entity, translation, route) for entity, translation, route in rows
-    ]
+
+async def _home_locale_is_eligible(session: AsyncSession, locale: Locale) -> bool:
+    """
+    判断语言首页是否存在至少一项严格公开的实质内容。
+
+    输入：session 数据库会话；locale 已启用语言。
+    输出：bool，公司或任一首页内容族通过完整公开门禁时为 True。
+    """
+    if await _published_company(session, locale) is not None:
+        return True
+    for owner_type in (
+        "product_category",
+        "product",
+        "material",
+        "solution",
+        "manufacturing_capability",
+        "application",
+        "case_study",
+        "knowledge_article",
+    ):
+        if await _published_row_tuples(session, owner_type, locale, 1, False):
+            return True
+    return False
+
+
+async def _home_metadata(
+    session: AsyncSession,
+    locale: Locale,
+    company: dict[str, Any] | None,
+    has_content: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """
+    生成首页自引用 SEO 和适用 JSON-LD，不借用 About 生命周期。
+
+    输入：数据库会话、当前语言、已发布公司 DTO 与首页实质内容标记。
+    输出：(seo, schema)，空首页保持 200 但 noindex 且不生成事实 Schema。
+    """
+    is_zh = locale.slug == "zh-cn"
+    canonical = f"{OFFICIAL_ORIGIN}/{locale.slug}/"
+    title = "骏辉螺杆" if is_zh else "Junhui Screw"
+    fallback_description = (
+        "浏览骏辉已发布的螺杆机筒产品、材料、应用与制造知识。"
+        if is_zh
+        else "Explore Junhui's published screw and barrel products, materials, applications, and manufacturing knowledge."
+    )
+    description = str(company.get("short_intro") or "").strip() if company else ""
+    locale_rows = list(
+        (
+            await session.scalars(
+                select(Locale)
+                .where(Locale.is_enabled.is_(True))
+                .order_by(Locale.sort_order, Locale.code)
+            )
+        ).all()
+    )
+    eligible: dict[str, str] = {}
+    for candidate in locale_rows:
+        candidate_has_content = (
+            has_content
+            if candidate.id == locale.id
+            else await _home_locale_is_eligible(session, candidate)
+        )
+        if candidate_has_content:
+            eligible[candidate.code] = f"{OFFICIAL_ORIGIN}/{candidate.slug}/"
+    if "zh-CN" in eligible:
+        eligible["x-default"] = eligible["zh-CN"]
+    seo = {
+        "title": title,
+        "description": description or fallback_description,
+        "canonical": canonical,
+        "robots": "index, follow" if has_content else "noindex, follow",
+        "hreflang": eligible if has_content else {},
+    }
+    schema = (
+        [
+            build_webpage_schema(
+                {"name": title, "description": seo["description"], "url": canonical}
+            ),
+            build_website_schema(),
+            build_organization_schema(),
+        ]
+        if has_content
+        else []
+    )
+    return seo, schema
 
 
 async def _published_company(
@@ -995,21 +1240,61 @@ async def get_public_home(
         else None
     )
 
+    category_rows = await _published_row_tuples(session, "product_category", locale, 12, False)
+    product_rows = await _published_row_tuples(session, "product", locale, 12, True)
+    capability_rows = await _published_row_tuples(
+        session, "manufacturing_capability", locale, 8, False
+    )
+    case_rows = await _published_row_tuples(session, "case_study", locale, 6, False)
+    knowledge_rows = await _published_row_tuples(session, "knowledge_article", locale, 6, False)
+    product_categories = [
+        _card_payload("product_category", entity, translation, route)
+        for entity, translation, route in category_rows
+    ]
+    capabilities = [
+        _card_payload("manufacturing_capability", entity, translation, route)
+        for entity, translation, route in capability_rows
+    ]
+    cases = [
+        _card_payload("case_study", entity, translation, route)
+        for entity, translation, route in case_rows
+    ]
+    await _attach_card_media(session, locale, product_categories, category_rows, "cover_media_id")
+    await _attach_card_media(session, locale, capabilities, capability_rows, "primary_media_id")
+    await _attach_card_media(session, locale, cases, case_rows, "primary_media_id")
+    featured_products = await _product_card_payloads(session, locale, product_rows)
+    knowledge = await _authority_card_payloads(session, "knowledge_article", locale, knowledge_rows)
+    materials = await _published_rows(session, "material", locale, 8, False)
+    solutions = await _published_rows(session, "solution", locale, 8, False)
+    applications = await _published_rows(session, "application", locale, 8, False)
+    has_content = bool(
+        company
+        or product_categories
+        or featured_products
+        or materials
+        or solutions
+        or capabilities
+        or applications
+        or cases
+        or knowledge
+    )
+    seo, schema = await _home_metadata(session, locale, company, has_content)
+
     return {
         "locale": locale.slug,
         "company": company,
         "hero_media": hero_media.model_dump() if hero_media else None,
-        "product_categories": await _published_rows(session, "product_category", locale, 12, False),
-        "featured_products": await _published_rows(session, "product", locale, 12, True),
-        "materials": await _published_rows(session, "material", locale, 8, False),
-        "solutions": await _published_rows(session, "solution", locale, 8, False),
-        "capabilities": await _published_rows(
-            session, "manufacturing_capability", locale, 8, False
-        ),
-        "applications": await _published_rows(session, "application", locale, 8, False),
-        "cases": await _published_rows(session, "case_study", locale, 6, False),
-        "knowledge": await _published_rows(session, "knowledge_article", locale, 6, False),
+        "product_categories": product_categories,
+        "featured_products": featured_products,
+        "materials": materials,
+        "solutions": solutions,
+        "capabilities": capabilities,
+        "applications": applications,
+        "cases": cases,
+        "knowledge": knowledge,
         "trust_summary": _trust_summary(company),
+        "seo": seo,
+        "schema": schema,
     }
 
 
@@ -1049,16 +1334,22 @@ async def get_public_listing(
         raise AppException(404, "public_content_not_found", "公开集合不存在")
 
     model = config.model
+    category_row: tuple[Any, Any, ContentRoute] | None = None
     if owner_type == "product":
         if category:
+            category_row = await _require_public_filter(
+                session, "product_category", locale, category
+            )
             statement = statement.where(ProductCategory.slug == category)
         if material:
+            await _require_public_filter(session, "material", locale, material)
             statement = (
                 statement.join(ProductMaterial, ProductMaterial.product_id == Product.id)
                 .join(Material, Material.id == ProductMaterial.material_id)
                 .where(Material.slug == material, Material.status == "enabled")
             )
         if application:
+            await _require_public_filter(session, "application", locale, application)
             statement = (
                 statement.join(
                     ProductApplication,
@@ -1074,12 +1365,47 @@ async def get_public_listing(
                 )
             )
     elif owner_type == "knowledge_article" and category:
+        category_exists = await session.scalar(
+            select(KnowledgeCategory.id)
+            .join(
+                KnowledgeCategoryTranslation,
+                KnowledgeCategoryTranslation.category_id == KnowledgeCategory.id,
+            )
+            .where(
+                KnowledgeCategory.slug == category,
+                KnowledgeCategory.status == "enabled",
+                KnowledgeCategoryTranslation.locale_id == locale.id,
+            )
+        )
+        if category_exists is None:
+            raise AppException(404, "public_filter_not_found", "公开筛选不存在")
         statement = statement.where(KnowledgeCategory.slug == category)
     elif owner_type == "author_expert" and type_filter:
         statement = statement.where(AuthorExpert.role_type == type_filter)
 
     count_statement = select(func.count()).select_from(statement.subquery())
     total = int(await session.scalar(count_statement) or 0)
+    real_pages = ceil(total / page_size) if total else 0
+    if page > 1 and (real_pages == 0 or page > real_pages):
+        raise AppException(404, "public_page_not_found", "公开分页不存在")
+    if owner_type == "product" and total == 0 and (category or material or application):
+        category_description = ""
+        if category_row is not None:
+            category_translation = category_row[1]
+            category_description = str(
+                getattr(category_translation, "short_description", None)
+                or getattr(category_translation, "description", None)
+                or ""
+            ).strip()
+        # 已发布且有独立说明的分类落地页可在无产品时保留 200；其他零结果组合均为 404。
+        if material or application or not category_description:
+            raise AppException(404, "public_filter_empty", "公开筛选没有匹配内容")
+    if (
+        owner_type in {"knowledge_article", "author_expert"}
+        and total == 0
+        and (category or type_filter)
+    ):
+        raise AppException(404, "public_filter_empty", "公开筛选没有匹配内容")
     order_columns = []
     if hasattr(model, "sort_order"):
         order_columns.append(model.sort_order)
@@ -1122,6 +1448,7 @@ async def get_public_listing(
             category,
             material,
             application,
+            total,
         )
         products_name = "产品" if locale.slug == "zh-cn" else "Products"
         breadcrumb = [
@@ -1163,6 +1490,7 @@ async def get_public_listing(
             page_size,
             category,
             type_filter,
+            total,
         )
         if catalog_metadata is not None:
             payload.update(catalog_metadata)

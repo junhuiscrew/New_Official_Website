@@ -154,6 +154,8 @@ describe('Phase 3.6 public foundation', () => {
       cases: [],
       knowledge: [],
       trust_summary: null,
+      seo,
+      schema: [],
     }
 
     expectTypeOf(link).toMatchTypeOf<PublicLinkDto>()

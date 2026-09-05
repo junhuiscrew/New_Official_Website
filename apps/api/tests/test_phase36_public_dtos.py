@@ -236,7 +236,7 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         ManufacturingCapabilityTranslation,
     )
     from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
-    from app.modules.discovery.public_collections import get_public_listing
+    from app.modules.discovery.public_collections import get_public_home, get_public_listing
     from app.modules.discovery.public_delivery import get_public_product
     from app.modules.localization.models import Locale
     from app.modules.media.models import MediaAsset, MediaAssetTranslation
@@ -328,6 +328,7 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
             category_id=category.id,
             slug="extrusion-screw",
             status="enabled",
+            featured=True,
             primary_media_id=public_asset.id,
         )
         definition = SpecificationDefinition(
@@ -533,6 +534,13 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         ]
         assert listing["seo"]["canonical"] == "https://junhuiscrewbarrel.com/en/products/"
         assert listing["seo"]["robots"] == "index, follow"
+
+        home = await get_public_home(session, "en")
+        assert home["featured_products"] == listing["items"]
+        assert home["featured_products"][0]["media"]["src"] == expected_media["src"]
+        assert home["featured_products"][0]["specifications"] == payload["specifications"]
+        assert home["seo"]["canonical"] == "https://junhuiscrewbarrel.com/en/"
+        assert home["schema"][0]["url"] == home["seo"]["canonical"]
 
         media_translation = MediaAssetTranslation(
             media_asset_id=public_asset.id,

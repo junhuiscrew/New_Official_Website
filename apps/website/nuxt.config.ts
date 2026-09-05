@@ -2,6 +2,8 @@
 import { defineNuxtConfig } from 'nuxt/config'
 
 export default defineNuxtConfig({
+  // 停电或并行 QA 后可将生成目录指向隔离临时路径，避免复用被占用的构建缓存。
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   compatibilityDate: '2025-07-15',
   devtools: { enabled: false },
   ssr: true,

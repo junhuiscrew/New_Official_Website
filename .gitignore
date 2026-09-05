@@ -16,9 +16,11 @@ htmlcov/
 # Node / Nuxt
 node_modules/
 .nuxt/
+.nuxt-*/
 .output/
 dist/
 .pnpm-store/
+.playwright-cli/
 
 # Git 隔离开发目录
 .worktrees/
@@ -31,5 +33,6 @@ Thumbs.db
 
 # 本地数据与日志
 data/
+artifacts/phase3-6-remediation/
 *.log
 *.htpasswd

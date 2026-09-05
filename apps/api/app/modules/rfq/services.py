@@ -19,7 +19,7 @@ from app.modules.audit.service import write_audit_log
 from app.modules.catalog.models import Product, ProductModel
 from app.modules.discovery.public_delivery import (
     OFFICIAL_ORIGIN,
-    resolve_public_product_source,
+    resolve_public_rfq_source,
 )
 from app.modules.media.models import MediaAsset
 from app.modules.media.scanner import apply_scan_result
@@ -29,10 +29,15 @@ from app.modules.rfq.models import RFQ, RFQFile, RFQItem
 from app.modules.rfq.schemas import RFQCreate
 
 _TRANSITIONS = {
-    "new": {"qualified", "spam"}, "qualified": {"in_progress", "spam"},
+    "new": {"qualified", "spam"},
+    "qualified": {"in_progress", "spam"},
     "in_progress": {"waiting_customer", "quoted", "spam"},
     "waiting_customer": {"in_progress", "quoted", "spam"},
-    "quoted": {"won", "lost"}, "won": {"closed"}, "lost": {"closed"}, "spam": {"closed"}, "closed": set(),
+    "quoted": {"won", "lost"},
+    "won": {"closed"},
+    "lost": {"closed"},
+    "spam": {"closed"},
+    "closed": set(),
 }
 
 
@@ -57,7 +62,10 @@ async def enforce_public_rate_limit(ip: str | None) -> None:
             await client.expire(hour_key, 3600)
         if day_count == 1:
             await client.expire(day_key, 86400)
-        if hour_count > settings.rfq_rate_limit_per_hour or day_count > settings.rfq_rate_limit_per_day:
+        if (
+            hour_count > settings.rfq_rate_limit_per_hour
+            or day_count > settings.rfq_rate_limit_per_day
+        ):
             raise AppException(429, "rfq_rate_limited", "提交频率超过限制，请稍后再试")
     except AppException:
         raise
@@ -92,7 +100,13 @@ def validate_public_origin(request: Request) -> None:
     allowed: set[tuple[str, str, int | None]] = set()
     for value in settings.cors_allowed_origins:
         candidate = urlparse(value)
-        allowed.add((candidate.scheme.lower(), (candidate.hostname or "").lower().rstrip("."), candidate.port))
+        allowed.add(
+            (
+                candidate.scheme.lower(),
+                (candidate.hostname or "").lower().rstrip("."),
+                candidate.port,
+            )
+        )
     if actual not in allowed:
         raise AppException(403, "origin_not_allowed", "提交来源不受信任")
 
@@ -131,26 +145,29 @@ async def validate_source(
 
     输入：
         session: AsyncSession，数据库会话。
-        payload: RFQCreate，匿名 RFQ 输入；公开 CTA 只允许携带 Product slug。
+        payload: RFQCreate，匿名 RFQ 输入；公开 CTA 只允许携带白名单类型与 slug。
     输出：
         tuple[str | None, str | None, UUID | None]；服务端解析的 canonical、类型与真实 ID。
     """
     if not payload.source_type and not payload.source_slug:
         return None, None, None
-    if payload.source_type != "product" or not payload.source_slug or not payload.preferred_language:
+    if not payload.source_type or not payload.source_slug or not payload.preferred_language:
         raise AppException(422, "invalid_rfq_source", "询盘来源参数不完整")
     try:
-        product, route = await resolve_public_product_source(
+        entity, route = await resolve_public_rfq_source(
             session,
             payload.preferred_language,
+            payload.source_type,
             payload.source_slug,
         )
     except AppException as exc:
-        raise AppException(422, "invalid_rfq_source", "询盘来源产品未公开") from exc
-    return OFFICIAL_ORIGIN + route.path, "product", product.id
+        raise AppException(422, "invalid_rfq_source", "询盘来源未公开") from exc
+    return OFFICIAL_ORIGIN + route.path, payload.source_type, entity.id
 
 
-async def create_rfq(session: AsyncSession, payload: RFQCreate, *, ip: str | None, user_agent: str | None) -> RFQ:
+async def create_rfq(
+    session: AsyncSession, payload: RFQCreate, *, ip: str | None, user_agent: str | None
+) -> RFQ:
     """创建询盘及多项目记录，公开返回只使用 public_reference。"""
     source_page_url, source_owner_type, source_owner_id = await validate_source(session, payload)
     # 唯一索引是最终防线；先用有限重试避免极低概率的公开编号碰撞。
@@ -163,7 +180,25 @@ async def create_rfq(session: AsyncSession, payload: RFQCreate, *, ip: str | Non
             break
     if not public_reference:
         raise AppException(503, "rfq_reference_unavailable", "暂时无法生成询盘编号")
-    rfq = RFQ(public_reference=public_reference, company_name=payload.company_name.strip(), contact_name=payload.contact_name.strip(), email=str(payload.email).lower(), phone=payload.phone, whatsapp=payload.whatsapp, country_code=payload.country_code, website=payload.website, message=payload.message, preferred_language=payload.preferred_language, source_page_url=source_page_url, source_owner_type=source_owner_type, source_owner_id=source_owner_id, submitted_ip=ip, user_agent=user_agent, consent_privacy=payload.consent_privacy, consent_marketing=payload.consent_marketing)
+    rfq = RFQ(
+        public_reference=public_reference,
+        company_name=payload.company_name.strip(),
+        contact_name=payload.contact_name.strip(),
+        email=str(payload.email).lower(),
+        phone=payload.phone,
+        whatsapp=payload.whatsapp,
+        country_code=payload.country_code,
+        website=payload.website,
+        message=payload.message,
+        preferred_language=payload.preferred_language,
+        source_page_url=source_page_url,
+        source_owner_type=source_owner_type,
+        source_owner_id=source_owner_id,
+        submitted_ip=ip,
+        user_agent=user_agent,
+        consent_privacy=payload.consent_privacy,
+        consent_marketing=payload.consent_marketing,
+    )
     session.add(rfq)
     await session.flush()
     for item in payload.items:
@@ -176,14 +211,38 @@ async def create_rfq(session: AsyncSession, payload: RFQCreate, *, ip: str | Non
             if item.product_id is None or product_model.product_id != item.product_id:
                 raise AppException(422, "product_model_mismatch", "询盘型号不属于当前产品")
         session.add(RFQItem(rfq_id=rfq.id, **item.model_dump()))
-    write_audit_log(session, action="rfq.submit", target_type="rfq", target_id=str(rfq.id), metadata={"item_count": len(payload.items)})
+    write_audit_log(
+        session,
+        action="rfq.submit",
+        target_type="rfq",
+        target_id=str(rfq.id),
+        metadata={"item_count": len(payload.items)},
+    )
     return rfq
 
 
-async def add_private_file(session: AsyncSession, rfq: RFQ, file_name: str, mime_type: str, content: bytes, category: str, item_id: uuid.UUID | None, actor_id: uuid.UUID | None, storage: MinioStorageAdapter | None = None) -> RFQFile:
+async def add_private_file(
+    session: AsyncSession,
+    rfq: RFQ,
+    file_name: str,
+    mime_type: str,
+    content: bytes,
+    category: str,
+    item_id: uuid.UUID | None,
+    actor_id: uuid.UUID | None,
+    storage: MinioStorageAdapter | None = None,
+) -> RFQFile:
     """校验并保存 RFQ 私有附件，生产未配置扫描器时进入 quarantine。"""
     settings = get_settings()
-    current_files = list((await session.scalars(select(MediaAsset).join(RFQFile, RFQFile.media_asset_id == MediaAsset.id).where(RFQFile.rfq_id == rfq.id))).all())
+    current_files = list(
+        (
+            await session.scalars(
+                select(MediaAsset)
+                .join(RFQFile, RFQFile.media_asset_id == MediaAsset.id)
+                .where(RFQFile.rfq_id == rfq.id)
+            )
+        ).all()
+    )
     if len(current_files) >= settings.rfq_max_files:
         raise AppException(413, "rfq_file_count_exceeded", "询盘附件数量超过限制")
     current_total = sum(int(item.file_size_bytes) for item in current_files)
@@ -191,22 +250,50 @@ async def add_private_file(session: AsyncSession, rfq: RFQ, file_name: str, mime
         raise AppException(413, "rfq_total_files_too_large", "询盘附件总大小超过限制")
     metadata = validate_upload_bytes(file_name, mime_type, content, private=True)
     if item_id is not None:
-        item = await session.scalar(select(RFQItem).where(RFQItem.id == item_id, RFQItem.rfq_id == rfq.id))
+        item = await session.scalar(
+            select(RFQItem).where(RFQItem.id == item_id, RFQItem.rfq_id == rfq.id)
+        )
         if item is None:
             raise AppException(422, "rfq_item_mismatch", "附件项目不属于当前询盘")
     storage = storage or MinioStorageAdapter()
     storage_key = f"rfq/{rfq.id}/{uuid.uuid4()}/{metadata['sanitized_filename']}"
-    await storage.put_object(settings.minio_private_bucket, storage_key, content, str(metadata["mime_type"]))
-    asset = MediaAsset(visibility="private", storage_bucket=settings.minio_private_bucket, storage_key=storage_key, checksum_verified=True, malware_scan_status="pending", upload_status="pending", uploaded_by=actor_id, **metadata)
+    await storage.put_object(
+        settings.minio_private_bucket, storage_key, content, str(metadata["mime_type"])
+    )
+    asset = MediaAsset(
+        visibility="private",
+        storage_bucket=settings.minio_private_bucket,
+        storage_key=storage_key,
+        checksum_verified=True,
+        malware_scan_status="pending",
+        upload_status="pending",
+        uploaded_by=actor_id,
+        **metadata,
+    )
     session.add(asset)
     try:
         await session.flush()
     except Exception:
         await storage.delete_object(settings.minio_private_bucket, storage_key)
         raise
-    record = RFQFile(rfq_id=rfq.id, rfq_item_id=item_id, media_asset_id=asset.id, file_category=category, original_filename=file_name, sha256=metadata["sha256"], uploaded_at=datetime.now(UTC).isoformat())
+    record = RFQFile(
+        rfq_id=rfq.id,
+        rfq_item_id=item_id,
+        media_asset_id=asset.id,
+        file_category=category,
+        original_filename=file_name,
+        sha256=metadata["sha256"],
+        uploaded_at=datetime.now(UTC).isoformat(),
+    )
     session.add(record)
-    write_audit_log(session, action="rfq.file_uploaded", target_type="rfq", target_id=str(rfq.id), user_id=actor_id, metadata={"file_id": str(record.id), "sha256": metadata["sha256"]})
+    write_audit_log(
+        session,
+        action="rfq.file_uploaded",
+        target_type="rfq",
+        target_id=str(rfq.id),
+        user_id=actor_id,
+        metadata={"file_id": str(record.id), "sha256": metadata["sha256"]},
+    )
     # 开发/测试未启用外部扫描器时使用可信测试路径；生产永远失败关闭。
     if not settings.malware_scanner_enabled and settings.app_env in {"development", "test"}:
         await apply_scan_result(session, asset.id, "clean")
@@ -215,9 +302,16 @@ async def add_private_file(session: AsyncSession, rfq: RFQ, file_name: str, mime
     return record
 
 
-async def private_download_url(session: AsyncSession, rfq_id: uuid.UUID, file_id: uuid.UUID, storage: MinioStorageAdapter | None = None) -> tuple[str, datetime]:
+async def private_download_url(
+    session: AsyncSession,
+    rfq_id: uuid.UUID,
+    file_id: uuid.UUID,
+    storage: MinioStorageAdapter | None = None,
+) -> tuple[str, datetime]:
     """仅为 clean + ready 且属于该 RFQ 的私有附件生成短期 URL。"""
-    row = await session.scalar(select(RFQFile).where(RFQFile.id == file_id, RFQFile.rfq_id == rfq_id))
+    row = await session.scalar(
+        select(RFQFile).where(RFQFile.id == file_id, RFQFile.rfq_id == rfq_id)
+    )
     if row is None:
         raise AppException(404, "rfq_file_not_found", "询盘附件不存在")
     asset = await session.get(MediaAsset, row.media_asset_id)

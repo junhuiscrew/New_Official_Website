@@ -1,12 +1,25 @@
 // 模块用途：集中生成公开语言路径、alternate 回退和带来源上下文的 RFQ URL。
-import type { LocaleSlug, PublicContentType } from '../types/public'
+import type { LocaleSlug } from '../types/public'
 
 const DEFAULT_LOCALE: LocaleSlug = 'zh-cn'
+
+/** 后端会重新解析并校验的 RFQ 公开来源白名单。 */
+export type RfqSourceType =
+  | 'product'
+  | 'material'
+  | 'technology'
+  | 'application'
+  | 'solution'
+  | 'case_study'
+  | 'knowledge_article'
+  | 'manufacturing_capability'
+  | 'author_expert'
+  | 'exhibition'
 
 /** 可由公开 CTA 带入 RFQ 的最小来源上下文。 */
 export interface RfqSource {
   locale?: unknown
-  type?: PublicContentType
+  type?: RfqSourceType
   slug?: string
 }
 

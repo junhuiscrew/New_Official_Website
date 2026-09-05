@@ -40,7 +40,21 @@ class RFQCreate(BaseModel):
     website: str | None = Field(default=None, max_length=500)
     message: str | None = Field(default=None, max_length=10000)
     preferred_language: str | None = Field(default=None, max_length=32)
-    source_type: Literal["product"] | None = None
+    source_type: (
+        Literal[
+            "product",
+            "material",
+            "technology",
+            "application",
+            "solution",
+            "case_study",
+            "knowledge_article",
+            "manufacturing_capability",
+            "author_expert",
+            "exhibition",
+        ]
+        | None
+    ) = None
     source_slug: str | None = Field(
         default=None,
         min_length=1,
@@ -72,6 +86,8 @@ class RFQCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_content(self) -> RFQCreate:
+        if bool(self.source_type) != bool(self.source_slug):
+            raise ValueError("询盘来源类型与 slug 必须同时提供")
         if not self.consent_privacy:
             raise ValueError("必须同意隐私政策")
         if not self.message and not self.items:
@@ -82,7 +98,20 @@ class RFQCreate(BaseModel):
 class RFQUpdate(BaseModel):
     """后台询盘状态和优先级更新。"""
 
-    status: Literal["new", "qualified", "in_progress", "waiting_customer", "quoted", "won", "lost", "spam", "closed"] | None = None
+    status: (
+        Literal[
+            "new",
+            "qualified",
+            "in_progress",
+            "waiting_customer",
+            "quoted",
+            "won",
+            "lost",
+            "spam",
+            "closed",
+        ]
+        | None
+    ) = None
     priority: Literal["low", "normal", "high", "urgent"] | None = None
 
 
@@ -90,4 +119,3 @@ class RFQAssign(BaseModel):
     """销售分配输入。"""
 
     assigned_to: uuid.UUID | None = None
-

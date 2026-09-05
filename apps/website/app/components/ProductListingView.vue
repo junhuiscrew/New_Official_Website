@@ -42,7 +42,7 @@ const labels = computed(() => ui[props.locale])
 </script>
 
 <template>
-  <main id="main-content" class="product-listing public-content-page">
+  <div class="product-listing public-content-page">
     <div v-if="breadcrumb?.length" class="public-container product-listing__breadcrumb">
       <PublicBreadcrumb :items="breadcrumb" />
     </div>
@@ -79,7 +79,7 @@ const labels = computed(() => ui[props.locale])
         :query="paginationQuery ?? filters"
       />
     </section>
-  </main>
+  </div>
 </template>
 
 <style scoped>

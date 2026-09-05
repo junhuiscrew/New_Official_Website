@@ -137,6 +137,14 @@ function populatedHome(locale: HomeDto['locale'] = 'en'): HomeDto {
       annual_capacity_text: 'API supplied capacity',
       export_markets: ['Market A', 'Market B'],
     },
+    seo: {
+      title: locale === 'en' ? 'Junhui Screw' : '骏辉螺杆',
+      description: locale === 'en' ? 'API home description' : '接口首页描述',
+      canonical: `https://junhuiscrewbarrel.com/${locale}/`,
+      robots: 'index, follow',
+      hreflang: { [locale === 'en' ? 'en' : 'zh-CN']: `https://junhuiscrewbarrel.com/${locale}/` },
+    },
+    schema: [],
   }
 }
 
@@ -371,7 +379,7 @@ describe('Phase 3.6 homepage SSR and metadata contract', () => {
     const englishHead = (englishHeadFactory as () => Record<string, unknown>)()
     expect(englishHead).toMatchObject({
       htmlAttrs: { lang: 'en' },
-      title: 'API supplied introduction.',
+      title: 'Junhui Screw',
     })
     expect(englishHead.link).toContainEqual({
       rel: 'preload',

@@ -2,14 +2,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { rfqUrl } from '~/composables/useLocalePath'
+import { rfqUrl, type RfqSourceType } from '~/composables/useLocalePath'
 import { useTelemetry } from '~/composables/useTelemetry'
 import { ui } from '~/i18n/ui'
-import type { LocaleSlug, PublicContentType } from '~/types/public'
+import type { LocaleSlug } from '~/types/public'
 
 const props = defineProps<{
   locale: LocaleSlug
-  sourceType?: PublicContentType
+  sourceType?: RfqSourceType
   sourceSlug?: string
 }>()
 const labels = computed(() => ui[props.locale])

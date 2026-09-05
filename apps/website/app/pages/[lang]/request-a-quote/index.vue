@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref } from 'vue'
 
-import { normalizeLocale } from '~/composables/useLocalePath'
+import { normalizeLocale, type RfqSourceType } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
 import {
   buildRfqSubmissionPayload,
@@ -21,22 +21,43 @@ const api = useApi()
 const route = useRoute()
 const locale = normalizeLocale(route.params.lang)
 const labels = computed(() => ui[locale])
-const sourceType = computed(() => (route.query.source_type === 'product' ? 'product' : null))
+const RFQ_SOURCE_TYPES = new Set<RfqSourceType>([
+  'product',
+  'material',
+  'technology',
+  'application',
+  'solution',
+  'case_study',
+  'knowledge_article',
+  'manufacturing_capability',
+  'author_expert',
+  'exhibition',
+])
+const sourceType = computed<RfqSourceType | null>(() => {
+  const candidate = String(route.query.source_type ?? '') as RfqSourceType
+  return RFQ_SOURCE_TYPES.has(candidate) ? candidate : null
+})
 const sourceSlug = computed(() => {
   const candidate = String(route.query.source_slug ?? '')
     .trim()
     .toLowerCase()
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate) ? candidate.slice(0, 180) : ''
 })
+const sourceDismissed = ref(false)
+const activeSource = computed(() =>
+  !sourceDismissed.value && sourceType.value && sourceSlug.value
+    ? { type: sourceType.value, slug: sourceSlug.value }
+    : null,
+)
 const sourceContext = computed(() =>
-  sourceType.value && sourceSlug.value ? `${sourceType.value}: ${sourceSlug.value}` : '',
+  activeSource.value ? `${activeSource.value.type}: ${activeSource.value.slug}` : '',
 )
 
-/** 创建结构一致的询价项目，并只把公开 Product slug 用作可编辑提示。 */
+/** 创建结构一致的询价项目，仅 Product 来源预填产品提示，其他来源只做服务端归因。 */
 function createItem(fromProduct = false): RfqInquiryItem {
   return {
     item_type: fromProduct ? 'product' : 'custom',
-    product_name_text: fromProduct ? sourceSlug.value : '',
+    product_name_text: fromProduct && sourceType.value === 'product' ? sourceSlug.value : '',
     quantity: '',
     material_text: '',
     screw_diameter: '',
@@ -56,7 +77,7 @@ const form = reactive<RfqFormState>({
   country_code: '',
   website: '',
   message: '',
-  items: [createItem(Boolean(sourceType.value && sourceSlug.value))],
+  items: [createItem(Boolean(activeSource.value))],
   consent_privacy: false,
   consent_marketing: false,
   honeypot: '',
@@ -192,12 +213,7 @@ async function submit(): Promise<void> {
       data: { reference: string; status: string; submission_token: string }
     }>('/public/rfqs', {
       method: 'POST',
-      body: buildRfqSubmissionPayload(
-        form,
-        sourceType.value && sourceSlug.value
-          ? { type: sourceType.value, slug: sourceSlug.value }
-          : null,
-      ),
+      body: buildRfqSubmissionPayload(form, activeSource.value),
     })
     result.value = response.data.reference
     submissionReference.value = response.data.reference
@@ -224,9 +240,14 @@ useHead(() => ({
       <header class="rfq-page__header">
         <p class="eyebrow">{{ labels.form.inquiryItems }}</p>
         <h1>{{ labels.cta.requestQuote }}</h1>
-        <p v-if="sourceContext" class="source-context">
-          <strong>{{ labels.form.sourceContext }}:</strong> {{ sourceContext }}
-        </p>
+        <div v-if="sourceContext" class="source-context">
+          <p>
+            <strong>{{ labels.form.sourceContext }}:</strong> {{ sourceContext }}
+          </p>
+          <button type="button" @click="sourceDismissed = true">
+            {{ locale === 'zh-cn' ? '移除来源并继续' : 'Remove source and continue' }}
+          </button>
+        </div>
       </header>
 
       <form class="rfq-form" novalidate @submit.prevent="submit">

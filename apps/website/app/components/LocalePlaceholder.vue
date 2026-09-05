@@ -27,7 +27,7 @@ useHead({
 </script>
 
 <template>
-  <main class="placeholder-shell">
+  <div class="placeholder-shell">
     <section aria-labelledby="page-title" class="placeholder-content">
       <p class="phase-label">{{ page.phaseLabel }}</p>
       <h1 id="page-title">{{ page.heading }}</h1>
@@ -37,5 +37,5 @@ useHead({
         <a href="/en/" lang="en" hreflang="en">English</a>
       </nav>
     </section>
-  </main>
+  </div>
 </template>

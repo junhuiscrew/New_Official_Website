@@ -35,6 +35,7 @@ from app.modules.authority.models import (
     KnowledgeArticle,
     KnowledgeArticleTranslation,
     KnowledgeCategory,
+    KnowledgeCategoryTranslation,
 )
 from app.modules.catalog.models import (
     Application,
@@ -57,7 +58,12 @@ from app.modules.catalog.models import (
     Technology,
     TechnologyTranslation,
 )
-from app.modules.company.models import CompanyProfile, CompanyProfileTranslation
+from app.modules.company.models import (
+    CompanyProfile,
+    CompanyProfileTranslation,
+    ManufacturingCapability,
+    ManufacturingCapabilityTranslation,
+)
 from app.modules.content.models import (
     ContentPublication,
     ContentRoute,
@@ -66,6 +72,8 @@ from app.modules.content.models import (
 from app.modules.discovery.models import SeoDocument
 from app.modules.localization.models import Locale
 from app.modules.media.models import MediaAsset, MediaAssetTranslation
+from app.modules.rfq.schemas import RFQCreate
+from app.modules.rfq.services import validate_source
 
 
 @pytest.fixture
@@ -173,6 +181,7 @@ def _add_lifecycle(
                 owner_id=owner_id,
                 locale_id=locale_id,
                 status=status,
+                published_at=datetime.now(UTC) if status == "published" else None,
             ),
             ContentRoute(
                 owner_type=owner_type,
@@ -390,6 +399,17 @@ async def test_navigation_and_home_only_return_fully_indexable_content(
     assert home["hero_media"]["alt"] == "Junhui factory"
     assert home["hero_media"]["loading"] == "eager"
     assert home["trust_summary"]["founded_year"] == 1985
+    assert home["seo"] == {
+        "title": "Junhui Screw",
+        "description": "Published company introduction",
+        "canonical": "https://junhuiscrewbarrel.com/en/",
+        "robots": "index, follow",
+        "hreflang": {"en": "https://junhuiscrewbarrel.com/en/"},
+    }
+    assert home["schema"][0]["url"] == home["seo"]["canonical"]
+    assert home["featured_products"][0]["media"] is None
+    assert home["featured_products"][0]["category"]["slug"] == "screws"
+    assert home["featured_products"][0]["specifications"] == []
 
     serialized_payloads = f"{navigation!r}{home!r}"
     for forbidden in (
@@ -441,23 +461,85 @@ async def test_empty_collections_return_empty_arrays_without_fabricated_facts(
     assert navigation["materials"] == []
     assert navigation["applications"] == []
     assert navigation["company"] is None
-    assert home == {
-        "locale": "en",
-        "company": None,
-        "hero_media": None,
-        "product_categories": [],
-        "featured_products": [],
-        "materials": [],
-        "solutions": [],
-        "capabilities": [],
-        "applications": [],
-        "cases": [],
-        "knowledge": [],
-        "trust_summary": None,
-    }
+    assert home["company"] is None
+    assert home["featured_products"] == []
+    assert home["seo"]["canonical"] == "https://junhuiscrewbarrel.com/en/"
+    assert home["seo"]["robots"] == "noindex, follow"
+    assert home["seo"]["description"]
+    assert home["seo"]["hreflang"] == {}
+    assert home["schema"] == []
     serialized_payloads = f"{navigation!r}{home!r}".lower()
     for fabricated_fact in ("iso", "certificate", "employees", "products available"):
         assert fabricated_fact not in serialized_payloads
+
+
+@pytest.mark.asyncio
+async def test_home_hreflang_only_contains_equivalent_eligible_locales(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证双语首页 reciprocal hreflang 与中文 x-default 均来自真实已发布内容。
+
+    输入：public_collections_factory，隔离数据库。
+    输出：None；空语言或 About canonical 混入首页 metadata 时失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        en = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=False,
+            is_enabled=True,
+        )
+        zh = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="bilingual", status="enabled")
+        session.add_all([en, zh, category])
+        await session.flush()
+        session.add_all(
+            [
+                ProductCategoryTranslation(
+                    category_id=category.id, locale_id=en.id, name="Bilingual"
+                ),
+                ProductCategoryTranslation(
+                    category_id=category.id, locale_id=zh.id, name="双语分类"
+                ),
+            ]
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=en.id,
+            path="/en/products/bilingual/",
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=zh.id,
+            path="/zh-cn/products/bilingual/",
+        )
+
+    async with _public_client(public_collections_factory) as client:
+        en_home = (await client.get("/api/v1/public/home/en")).json()["data"]
+        zh_home = (await client.get("/api/v1/public/home/zh-cn")).json()["data"]
+
+    expected = {
+        "en": "https://junhuiscrewbarrel.com/en/",
+        "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/",
+        "x-default": "https://junhuiscrewbarrel.com/zh-cn/",
+    }
+    assert en_home["seo"]["hreflang"] == expected
+    assert zh_home["seo"]["hreflang"] == expected
+    assert en_home["seo"]["canonical"] != "https://junhuiscrewbarrel.com/en/about/"
 
 
 @pytest.mark.asyncio
@@ -721,6 +803,12 @@ async def test_product_listing_filters_paginates_and_isolates_locale(
         oversized_page_response = await client.get(
             "/api/v1/public/products/en", params={"page_size": 49}
         )
+        out_of_range_response = await client.get(
+            "/api/v1/public/products/en", params={"page": 99, "page_size": 1}
+        )
+        unknown_filter_response = await client.get(
+            "/api/v1/public/products/en", params={"material": "missing-material"}
+        )
 
     assert filtered_response.status_code == 200
     payload = filtered_response.json()["data"]
@@ -757,7 +845,8 @@ async def test_product_listing_filters_paginates_and_isolates_locale(
         "https://junhuiscrewbarrel.com/en/products/screws/"
         "?material=peek&application=medical&page_size=1"
     )
-    assert payload["seo"]["hreflang"]["en"] == payload["seo"]["canonical"]
+    assert payload["seo"]["robots"] == "noindex, follow"
+    assert payload["seo"]["hreflang"] == {}
     assert payload["schema"][0]["url"] == payload["seo"]["canonical"]
     assert payload["breadcrumb"][-1]["url"] == payload["seo"]["canonical"]
     assert payload["schema"][1]["itemListElement"][-1]["item"] == (payload["breadcrumb"][-1]["url"])
@@ -771,13 +860,13 @@ async def test_product_listing_filters_paginates_and_isolates_locale(
     assert second_page["seo"]["canonical"] == (
         "https://junhuiscrewbarrel.com/en/products/?page=2&page_size=1"
     )
-    assert second_page["seo"]["hreflang"]["en"] == second_page["seo"]["canonical"]
-    assert second_page["seo"]["hreflang"]["zh-CN"] == (
-        "https://junhuiscrewbarrel.com/zh-cn/products/?page=2&page_size=1"
-    )
+    assert second_page["seo"]["robots"] == "noindex, follow"
+    assert second_page["seo"]["hreflang"] == {}
     assert second_page["schema"][0]["url"] == second_page["seo"]["canonical"]
     assert invalid_page_response.status_code == 422
     assert oversized_page_response.status_code == 422
+    assert out_of_range_response.status_code == 404
+    assert unknown_filter_response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -1021,6 +1110,13 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
                 "/en/experts/unverified-engineer/",
             ),
         )
+        session.add(
+            KnowledgeCategoryTranslation(
+                category_id=knowledge_category.id,
+                locale_id=locale.id,
+                name="Guides",
+            )
+        )
         for owner_type, owner_id, translation, path in translations_and_lifecycle:
             session.add(translation)
             _add_lifecycle(
@@ -1069,6 +1165,7 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         responses = {
             resource: await client.get(f"/api/v1/public/{resource}/en") for resource in resources
         }
+        home_response = await client.get("/api/v1/public/home/en")
         material_page_two = await client.get(
             "/api/v1/public/materials/en", params={"page": 2, "page_size": 1}
         )
@@ -1122,6 +1219,7 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         elif resource == "knowledge":
             expected_item_keys.update(
                 {
+                    "media",
                     "category",
                     "author",
                     "reviewer",
@@ -1133,11 +1231,16 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             expected_item_keys.update({"role_type"})
         assert set(envelope["items"][0]) == expected_item_keys
     assert responses["experts"].json()["data"]["items"][0]["slug"] == "verified-engineer"
+    assert home_response.status_code == 200
+    home_knowledge = home_response.json()["data"]["knowledge"][0]
+    assert home_knowledge["author"] == "Verified Engineer"
+    assert home_knowledge["published_at"] is not None
+    assert "updated_at" in home_knowledge
     assert "private-engineer" not in repr(responses["experts"].json())
     assert filtered_knowledge.json()["data"]["total"] == 1
-    assert missing_category.json()["data"]["items"] == []
+    assert missing_category.status_code == 404
     assert filtered_experts.json()["data"]["total"] == 1
-    assert wrong_expert_type.json()["data"]["items"] == []
+    assert wrong_expert_type.status_code == 404
     assert filtered_knowledge.json()["data"]["filters"]["category"] == "guides"
     assert filtered_experts.json()["data"]["filters"]["type"] == "expert"
     assert category_detail_response.status_code == 200
@@ -1146,19 +1249,7 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
     assert category_detail["breadcrumb"][-2]["url"] == (
         "https://junhuiscrewbarrel.com/en/products/"
     )
-    assert material_page_two.status_code == 200
-    material_page_two_payload = material_page_two.json()["data"]
-    assert material_page_two_payload["seo"]["canonical"] == (
-        "https://junhuiscrewbarrel.com/en/materials/?page=2&page_size=1"
-    )
-    assert (
-        material_page_two_payload["seo"]["hreflang"]["en"]
-        == (material_page_two_payload["seo"]["canonical"])
-    )
-    assert (
-        material_page_two_payload["breadcrumb"][-1]["url"]
-        == (material_page_two_payload["seo"]["canonical"])
-    )
+    assert material_page_two.status_code == 404
 
     # 每类详情都只输出已发布 canonical Link DTO，并在可见 Breadcrumb 中包含列表入口。
     expected_relation_groups = {
@@ -1574,3 +1665,128 @@ async def test_lists_reject_empty_canonical_override_and_unrenderable_author_loc
     assert knowledge_response.status_code == 200
     assert product_response.json()["data"]["items"] == []
     assert knowledge_response.json()["data"]["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_rfq_multi_source_is_resolved_by_server_publication_gates(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证八类真实 CTA 来源由服务端解析为 canonical、owner 类型和内部 ID。
+
+    输入：public_collections_factory，隔离公开内容数据库。
+    输出：None；任何客户端值绕过发布门禁或归因不准确时测试失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="qa-category", status="enabled")
+        knowledge_category = KnowledgeCategory(slug="qa-guides", status="enabled")
+        expert = AuthorExpert(
+            slug="qa-expert",
+            status="enabled",
+            role_type="expert",
+            is_real_person_verified=True,
+            public_profile_enabled=True,
+        )
+        entities = {
+            "material": Material(slug="qa-material", status="enabled"),
+            "technology": Technology(slug="qa-technology", status="enabled"),
+            "application": Application(slug="qa-application", status="enabled"),
+            "solution": Solution(slug="qa-solution", status="enabled"),
+            "case_study": CaseStudy(slug="qa-case", status="enabled"),
+            "manufacturing_capability": ManufacturingCapability(
+                slug="qa-capability", capability_type="machining", status="enabled"
+            ),
+        }
+        session.add_all([locale, category, knowledge_category, expert, *entities.values()])
+        await session.flush()
+        product = Product(category_id=category.id, slug="qa-product", status="enabled")
+        article = KnowledgeArticle(
+            category_id=knowledge_category.id,
+            slug="qa-knowledge",
+            status="enabled",
+            author_id=expert.id,
+        )
+        entities.update({"product": product, "knowledge_article": article})
+        session.add_all([product, article])
+        await session.flush()
+        session.add_all(
+            [
+                ProductTranslation(product_id=product.id, locale_id=locale.id, name="QA Product"),
+                MaterialTranslation(
+                    material_id=entities["material"].id, locale_id=locale.id, name="QA Material"
+                ),
+                TechnologyTranslation(
+                    technology_id=entities["technology"].id,
+                    locale_id=locale.id,
+                    name="QA Technology",
+                ),
+                ApplicationTranslation(
+                    application_id=entities["application"].id,
+                    locale_id=locale.id,
+                    name="QA Application",
+                ),
+                SolutionTranslation(
+                    solution_id=entities["solution"].id, locale_id=locale.id, name="QA Solution"
+                ),
+                CaseStudyTranslation(
+                    case_study_id=entities["case_study"].id, locale_id=locale.id, title="QA Case"
+                ),
+                KnowledgeArticleTranslation(
+                    article_id=article.id,
+                    locale_id=locale.id,
+                    title="QA Knowledge",
+                    body_markdown="QA body",
+                ),
+                AuthorExpertTranslation(
+                    author_expert_id=expert.id, locale_id=locale.id, name="QA Expert"
+                ),
+                ManufacturingCapabilityTranslation(
+                    capability_id=entities["manufacturing_capability"].id,
+                    locale_id=locale.id,
+                    name="QA Capability",
+                ),
+            ]
+        )
+        paths = {
+            "product": "/en/products/qa-category/qa-product/",
+            "material": "/en/materials/qa-material/",
+            "technology": "/en/technologies/qa-technology/",
+            "application": "/en/applications/qa-application/",
+            "solution": "/en/solutions/qa-solution/",
+            "case_study": "/en/case-studies/qa-case/",
+            "knowledge_article": "/en/knowledge/qa-guides/qa-knowledge/",
+            "manufacturing_capability": "/en/capabilities/qa-capability/",
+        }
+        for source_type, entity in entities.items():
+            _add_lifecycle(
+                session,
+                owner_type=source_type,
+                owner_id=entity.id,
+                locale_id=locale.id,
+                path=paths[source_type],
+            )
+        await session.flush()
+
+        for source_type, entity in entities.items():
+            payload = RFQCreate(
+                company_name="QA Company",
+                contact_name="QA Contact",
+                email="qa@example.com",
+                message="QA only",
+                preferred_language="en",
+                source_type=source_type,
+                source_slug=entity.slug,
+                consent_privacy=True,
+            )
+            canonical, owner_type, owner_id = await validate_source(session, payload)
+            assert canonical == f"https://junhuiscrewbarrel.com{paths[source_type]}"
+            assert owner_type == source_type
+            assert owner_id == entity.id

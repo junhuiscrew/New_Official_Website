@@ -47,7 +47,7 @@ const telemetry = useTelemetry()
       <div class="product-card__actions">
         <a data-testid="card-primary-link-action" :href="item.url">{{ labels.cta.viewDetails }}</a>
         <a
-          :href="rfqUrl({ locale, type: item.type, slug: item.slug })"
+          :href="rfqUrl({ locale, type: 'product', slug: item.slug })"
           @click="
             telemetry.track('rfq_cta_click', {
               locale,

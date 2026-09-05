@@ -28,11 +28,28 @@ function queryText(value: unknown): string {
   return typeof candidate === 'string' ? candidate.trim() : ''
 }
 
-/** 将页码限制在正整数范围，并确保 page_size 不超过 API 上限 48。 */
+/** 严格解析公开分页参数，SSR 直达非法值时返回明确 400。 */
 function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const parsed = Number.parseInt(queryText(value), 10)
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
+  const raw = queryText(value)
+  if (!raw) return fallback
+  if (!/^\d+$/.test(raw))
+    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
+  const parsed = Number(raw)
+  if (parsed < 1 || (maximum !== undefined && parsed > maximum)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
+  }
+  return parsed
+}
+
+/** 从 Nuxt/$fetch 错误中保留后端真实 HTTP 状态。 */
+function requestStatus(value: unknown): number {
+  if (!value || typeof value !== 'object') return 500
+  const candidate = value as {
+    statusCode?: number
+    status?: number
+    response?: { status?: number }
+  }
+  return candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 500
 }
 
 const filters = computed<ProductFilters>(() => ({
@@ -82,7 +99,11 @@ const { data: response, error } = await useAsyncData(
   { watch: [requestQuery] },
 )
 if (error.value || !response.value) {
-  throw createError({ statusCode: 500, statusMessage: 'Products could not be loaded' })
+  const statusCode = requestStatus(error.value)
+  throw createError({
+    statusCode,
+    statusMessage: statusCode === 404 ? 'Products not found' : 'Products could not be loaded',
+  })
 }
 const pageData = computed(() => response.value!)
 

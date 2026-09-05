@@ -44,11 +44,28 @@ function queryText(value: unknown): string {
   return typeof candidate === 'string' ? candidate.trim() : ''
 }
 
-/** 限制公开分页整数，page_size 最大为 48。 */
+/** 严格解析公开分页参数，SSR 直达非法值时返回明确 400。 */
 function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const parsed = Number.parseInt(queryText(value), 10)
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
+  const raw = queryText(value)
+  if (!raw) return fallback
+  if (!/^\d+$/.test(raw))
+    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
+  const parsed = Number(raw)
+  if (parsed < 1 || (maximum !== undefined && parsed > maximum)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
+  }
+  return parsed
+}
+
+/** 从 Nuxt/$fetch 错误中保留后端真实 HTTP 状态。 */
+function requestStatus(value: unknown): number {
+  if (!value || typeof value !== 'object') return 500
+  const candidate = value as {
+    statusCode?: number
+    status?: number
+    response?: { status?: number }
+  }
+  return candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 500
 }
 
 const category = computed(() => queryText(route.params.category))
@@ -100,7 +117,7 @@ const { data: response, error } = await useAsyncData(
   { watch: [requestQuery] },
 )
 if (error.value || !response.value) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
+  const statusCode = requestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage:
@@ -120,7 +137,7 @@ useHead(() => {
       ...(categoryPage.seo.description
         ? [{ name: 'description', content: categoryPage.seo.description }]
         : []),
-      { name: 'robots', content: categoryPage.seo.robots },
+      { name: 'robots', content: listingSeo?.robots ?? categoryPage.seo.robots },
     ],
     link: [
       { rel: 'canonical', href: listingSeo?.canonical ?? categoryPage.seo.canonical },

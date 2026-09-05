@@ -152,7 +152,7 @@ useHead(() => ({
 </script>
 
 <template>
-  <main id="main-content" class="product-detail">
+  <article class="product-detail">
     <div class="public-container">
       <PublicBreadcrumb :items="page.breadcrumb" />
     </div>
@@ -228,7 +228,7 @@ useHead(() => ({
     </article>
 
     <RfqCta :locale="locale" source-type="product" :source-slug="page.slug" />
-  </main>
+  </article>
 </template>
 
 <style scoped>

@@ -10,6 +10,7 @@ from collections.abc import Sequence
 
 from app.core.database import async_session_factory
 from app.modules.users.bootstrap import create_super_admin
+from app.phase36_qa import prepare_phase36_qa
 from app.seed import seed_database
 
 
@@ -23,11 +24,14 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(description="Junhui Global Website API 管理命令")
     parser.add_argument(
-        "command", choices=("seed", "create-super-admin"), help="需要执行的管理命令"
+        "command",
+        choices=("seed", "create-super-admin", "phase36-qa-setup"),
+        help="需要执行的管理命令",
     )
     parser.add_argument("--email", help="Bootstrap 管理员邮箱；也可用 BOOTSTRAP_ADMIN_EMAIL")
     parser.add_argument("--password", help="Bootstrap 管理员密码；推荐使用环境变量或交互输入")
     parser.add_argument("--display-name", help="Bootstrap 管理员显示名称")
+    parser.add_argument("--run-id", help="Phase 3.6 隔离 QA 运行标识")
     return parser
 
 
@@ -65,6 +69,15 @@ def main(arguments: Sequence[str] | None = None) -> int:
             )
         )
         print(f"Super admin created: {user.email}")
+    elif parsed.command == "phase36-qa-setup":
+        # QA 数据命令带双重环境门禁，绝不允许在生产环境或无确认时运行。
+        manifest = asyncio.run(
+            prepare_phase36_qa(
+                async_session_factory,
+                run_id=parsed.run_id or os.getenv("PHASE36_QA_RUN_ID", ""),
+            )
+        )
+        print(manifest.model_dump_json(indent=2))
     return 0
 
 

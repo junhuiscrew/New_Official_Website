@@ -31,7 +31,7 @@ def test_phase34_migrations_are_linear_new_heads() -> None:
     """
     api_root = Path(__file__).resolve().parents[1]
     script = ScriptDirectory(str(api_root / "alembic"))
-    assert script.get_current_head() == "20260904_0009"
+    assert script.get_current_head() == "20260905_0010"
     assert (api_root / "alembic/versions/20260904_0006_authority_content.py").is_file()
     assert (api_root / "alembic/versions/20260904_0007_discovery_delivery.py").is_file()
 

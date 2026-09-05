@@ -6,13 +6,14 @@ import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import create_database_engine, create_session_factory
 from app.core.exceptions.handlers import AppException
 from app.main import create_app
 from app.modules.auth.models import AuthSession
+from app.modules.catalog.models import Product, ProductCategory, ProductTranslation
 from app.modules.catalog.schemas import (
     CategoryCreate,
     EntityCreate,
@@ -544,16 +545,12 @@ async def test_postgresql_catalog_remediation_lifecycle_is_atomic() -> None:
         await update_product(
             session,
             product.id,
-            ProductUpdate(
-                translations=[TranslationInput(locale_id=zh.id, name="PG 产品已修改")]
-            ),
+            ProductUpdate(translations=[TranslationInput(locale_id=zh.id, name="PG 产品已修改")]),
         )
         await update_product(
             session,
             product.id,
-            ProductUpdate(
-                translations=[TranslationInput(locale_id=en.id, name="PG Product")]
-            ),
+            ProductUpdate(translations=[TranslationInput(locale_id=en.id, name="PG Product")]),
         )
         await archive_entity(session, "material", material.id)
         indexed_owner_ids = {route.owner_id for route in await list_indexable_routes(session)}
@@ -576,4 +573,126 @@ async def test_postgresql_catalog_remediation_lifecycle_is_atomic() -> None:
         )
         assert en_publication is not None and en_publication.status == "draft"
         assert en_route is not None and en_route.active is False and en_route.indexable is False
+    await engine.dispose()
+
+
+async def test_postgresql_public_search_prefers_title_and_has_trigram_indexes() -> None:
+    """
+    验证真实 PostgreSQL 搜索将名称命中排在摘要命中前，并已安装六个 trigram 索引。
+
+    输入：TEST_DATABASE_URL 环境变量。
+
+    输出：None；FTS 排序、统一发布门禁或迁移索引缺失时测试失败。
+    """
+    from app.modules.discovery.public_collections import search_public_content
+
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    unique = uuid.uuid4().hex
+    needle = f"precision{unique[:10]}"
+    async with factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        assert locale is not None
+        category = ProductCategory(slug=f"pg-search-category-{unique}", status="enabled")
+        session.add(category)
+        await session.flush()
+        title_product = Product(
+            category_id=category.id,
+            slug=f"pg-title-{unique}",
+            status="enabled",
+            sort_order=1,
+        )
+        body_product = Product(
+            category_id=category.id,
+            slug=f"pg-body-{unique}",
+            status="enabled",
+            sort_order=2,
+        )
+        session.add_all([title_product, body_product])
+        await session.flush()
+        session.add_all(
+            [
+                ProductTranslation(
+                    product_id=title_product.id,
+                    locale_id=locale.id,
+                    name=needle,
+                    short_description="Generic title-match summary",
+                ),
+                ProductTranslation(
+                    product_id=body_product.id,
+                    locale_id=locale.id,
+                    name="Generic PostgreSQL screw",
+                    short_description=f"The summary contains {needle}",
+                ),
+            ]
+        )
+        for product in (title_product, body_product):
+            session.add_all(
+                [
+                    TranslationStatus(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentPublication(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentRoute(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        path=(f"/en/products/{category.slug}/{product.slug}/"),
+                        is_canonical=True,
+                        active=True,
+                        indexable=True,
+                    ),
+                ]
+            )
+
+    async with factory() as session:
+        search_payload = await search_public_content(
+            session,
+            "en",
+            needle,
+            ("product",),
+            10,
+        )
+
+    assert [item["slug"] for item in search_payload["groups"]["product"]] == [
+        title_product.slug,
+        body_product.slug,
+    ]
+
+    expected_indexes = {
+        "ix_product_translations_name_trgm",
+        "ix_material_translations_name_trgm",
+        "ix_application_translations_name_trgm",
+        "ix_solution_translations_name_trgm",
+        "ix_knowledge_article_translations_title_trgm",
+        "ix_case_study_translations_title_trgm",
+    }
+    async with engine.connect() as connection:
+        index_rows = (
+            await connection.execute(
+                text(
+                    """
+                    SELECT indexname, indexdef
+                    FROM pg_indexes
+                    WHERE schemaname = current_schema()
+                    """
+                )
+            )
+        ).mappings()
+        index_definitions = {
+            row["indexname"]: row["indexdef"]
+            for row in index_rows
+            if row["indexname"] in expected_indexes
+        }
+    assert expected_indexes == set(index_definitions)
+    assert all("USING gin" in definition for definition in index_definitions.values())
+    assert all("gin_trgm_ops" in definition for definition in index_definitions.values())
     await engine.dispose()

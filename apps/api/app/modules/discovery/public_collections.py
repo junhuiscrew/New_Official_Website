@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from math import ceil
 from typing import Any, NamedTuple
 
-from sqlalchemy import literal, or_, select
+from sqlalchemy import case, func, literal, literal_column, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.core.exceptions.handlers import AppException
 from app.modules.authority.models import (
+    AuthorExpert,
+    AuthorExpertTranslation,
     CaseStudy,
     CaseStudyTranslation,
     KnowledgeArticle,
     KnowledgeArticleTranslation,
+    KnowledgeCategory,
 )
 from app.modules.catalog.models import (
     Application,
@@ -20,11 +25,15 @@ from app.modules.catalog.models import (
     Material,
     MaterialTranslation,
     Product,
+    ProductApplication,
     ProductCategory,
     ProductCategoryTranslation,
+    ProductMaterial,
     ProductTranslation,
     Solution,
     SolutionTranslation,
+    Technology,
+    TechnologyTranslation,
 )
 from app.modules.company.models import (
     CompanyProfile,
@@ -71,6 +80,13 @@ _COLLECTION_CONFIG: dict[str, _CollectionConfig] = {
         "name",
         ("definition", "processing_characteristics"),
     ),
+    "technology": _CollectionConfig(
+        Technology,
+        TechnologyTranslation,
+        "technology_id",
+        "name",
+        ("definition", "process_description"),
+    ),
     "solution": _CollectionConfig(
         Solution,
         SolutionTranslation,
@@ -106,6 +122,36 @@ _COLLECTION_CONFIG: dict[str, _CollectionConfig] = {
         "title",
         ("summary",),
     ),
+    "author_expert": _CollectionConfig(
+        AuthorExpert,
+        AuthorExpertTranslation,
+        "author_expert_id",
+        "name",
+        ("short_bio",),
+    ),
+}
+
+_SEARCH_TYPES = (
+    "product",
+    "material",
+    "application",
+    "solution",
+    "knowledge_article",
+    "case_study",
+)
+
+_SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
+    "product": ("short_description", "description"),
+    "material": (
+        "definition",
+        "processing_characteristics",
+        "screw_impact",
+        "recommendations",
+    ),
+    "application": ("description", "technical_requirements", "common_problems"),
+    "solution": ("definition", "symptoms", "causes", "diagnosis", "solution"),
+    "knowledge_article": ("summary", "body_markdown"),
+    "case_study": ("summary", "problem", "analysis", "solution", "result"),
 }
 
 _PRIMARY_NAVIGATION = (
@@ -120,39 +166,61 @@ _PRIMARY_NAVIGATION = (
 )
 
 
-async def _published_rows(
-    session: AsyncSession,
+def _public_collection_statement(
     owner_type: str,
     locale: Locale,
-    limit: int,
-    featured_only: bool,
-) -> list[dict[str, str]]:
+) -> Select[Any] | None:
     """
-    返回通过统一公开门禁的 canonical Link DTO 集合。
+    构造复用完整发布/路由/SEO 门禁的公开集合查询。
 
     输入：
-        session: AsyncSession，数据库会话。
-        owner_type: str，业务实体类型。
-        locale: Locale，已启用的目标语言。
-        limit: int，最多返回的有效条目数。
-        featured_only: bool，是否仅返回业务层标记为推荐的实体。
+        owner_type: str，集合实体类型。
+        locale: Locale，已启用目标语言。
 
     输出：
-        list[dict[str, str]]，仅含类型、slug、名称、canonical 路径与摘要。
+        Select[Any] | None，可继续添加筛选、排序或搜索列的查询；不支持时返回 None。
     """
     config = _COLLECTION_CONFIG.get(owner_type)
-    if config is None or limit <= 0:
-        return []
-
+    if config is None:
+        return None
     model = config.model
     translation_model = config.translation_model
-    statement = (
-        select(model, translation_model, ContentRoute)
-        .join(
-            translation_model,
-            getattr(translation_model, config.owner_field) == model.id,
+    statement = select(model, translation_model, ContentRoute).join(
+        translation_model,
+        getattr(translation_model, config.owner_field) == model.id,
+    )
+
+    # 与详情端点保持同一业务依赖门禁，避免列表产生点击后 404 的孤立卡片。
+    if owner_type == "product":
+        statement = statement.join(
+            ProductCategory, ProductCategory.id == Product.category_id
+        ).where(ProductCategory.status == "enabled")
+    elif owner_type == "knowledge_article":
+        statement = (
+            statement.join(
+                KnowledgeCategory,
+                KnowledgeCategory.id == KnowledgeArticle.category_id,
+            )
+            .join(AuthorExpert, AuthorExpert.id == KnowledgeArticle.author_id)
+            .join(
+                AuthorExpertTranslation,
+                (AuthorExpertTranslation.author_expert_id == KnowledgeArticle.author_id)
+                & (AuthorExpertTranslation.locale_id == locale.id),
+            )
+            .where(
+                KnowledgeCategory.status == "enabled",
+                AuthorExpert.status == "enabled",
+                AuthorExpert.is_real_person_verified.is_(True),
+            )
         )
-        .join(
+    elif owner_type == "author_expert":
+        statement = statement.where(
+            AuthorExpert.is_real_person_verified.is_(True),
+            AuthorExpert.public_profile_enabled.is_(True),
+        )
+
+    return (
+        statement.join(
             ContentRoute,
             (ContentRoute.owner_type == owner_type)
             & (ContentRoute.owner_id == model.id)
@@ -191,12 +259,76 @@ async def _published_rows(
             or_(
                 SeoDocument.id.is_(None),
                 SeoDocument.canonical_override.is_(None),
-                SeoDocument.canonical_override == "",
-                SeoDocument.canonical_override
-                == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
             ),
         )
     )
+
+
+def _card_payload(
+    owner_type: str,
+    entity: Any,
+    translation: Any,
+    route: ContentRoute,
+) -> dict[str, str]:
+    """
+    将已通过门禁的查询行转为无内部 ID 的 canonical Card DTO。
+
+    输入：
+        owner_type: str，卡片所属的公开实体类型。
+        entity: Any，已通过公开门禁的业务实体。
+        translation: Any，当前语言且已发布的翻译实体。
+        route: ContentRoute，当前语言的 canonical 路由。
+
+    输出：
+        dict[str, str]，仅含类型、slug、名称、URL 与摘要。
+    """
+    config = _COLLECTION_CONFIG[owner_type]
+    summary = next(
+        (
+            str(value)
+            for field in config.summary_fields
+            if (value := getattr(translation, field, None))
+        ),
+        "",
+    )
+    return {
+        "type": owner_type,
+        "slug": entity.slug,
+        "name": str(getattr(translation, config.title_field)),
+        "url": route.path,
+        "summary": summary,
+    }
+
+
+async def _published_rows(
+    session: AsyncSession,
+    owner_type: str,
+    locale: Locale,
+    limit: int,
+    featured_only: bool,
+) -> list[dict[str, str]]:
+    """
+    返回通过统一公开门禁的 canonical Link DTO 集合。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_type: str，业务实体类型。
+        locale: Locale，已启用的目标语言。
+        limit: int，最多返回的有效条目数。
+        featured_only: bool，是否仅返回业务层标记为推荐的实体。
+
+    输出：
+        list[dict[str, str]]，仅含类型、slug、名称、canonical 路径与摘要。
+    """
+    config = _COLLECTION_CONFIG.get(owner_type)
+    if config is None or limit <= 0:
+        return []
+
+    model = config.model
+    statement = _public_collection_statement(owner_type, locale)
+    if statement is None:
+        return []
     if featured_only:
         featured_column = getattr(model, "featured", None)
         if featured_column is None:
@@ -208,30 +340,11 @@ async def _published_rows(
     if hasattr(model, "sort_order"):
         order_columns.append(model.sort_order)
     order_columns.extend((model.created_at, model.slug))
-    rows = (
-        await session.execute(statement.order_by(*order_columns).limit(limit))
-    ).all()
+    rows = (await session.execute(statement.order_by(*order_columns).limit(limit))).all()
 
-    result: list[dict[str, str]] = []
-    for entity, translation, route in rows:
-        summary = next(
-            (
-                str(value)
-                for field in config.summary_fields
-                if (value := getattr(translation, field, None))
-            ),
-            "",
-        )
-        result.append(
-            {
-                "type": owner_type,
-                "slug": entity.slug,
-                "name": str(getattr(translation, config.title_field)),
-                "url": route.path,
-                "summary": summary,
-            }
-        )
-    return result
+    return [
+        _card_payload(owner_type, entity, translation, route) for entity, translation, route in rows
+    ]
 
 
 async def _published_company(
@@ -296,8 +409,7 @@ async def _published_company(
                 SeoDocument.id.is_(None),
                 SeoDocument.canonical_override.is_(None),
                 SeoDocument.canonical_override == "",
-                SeoDocument.canonical_override
-                == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
             ),
         )
     )
@@ -429,3 +541,240 @@ async def get_public_home(
         "knowledge": await _published_rows(session, "knowledge_article", locale, 6, False),
         "trust_summary": _trust_summary(company),
     }
+
+
+async def get_public_listing(
+    session: AsyncSession,
+    owner_type: str,
+    locale_slug: str,
+    page: int,
+    page_size: int,
+    *,
+    category: str | None = None,
+    material: str | None = None,
+    application: str | None = None,
+) -> dict[str, Any]:
+    """
+    返回统一分页 envelope 的严格公开卡片列表。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_type: str，受支持的公开实体类型。
+        locale_slug: str，目标语言 slug。
+        page: int，从 1 开始的页码。
+        page_size: int，每页条数，API 层限制为 1 到 48。
+        category: str | None，产品分类 slug 白名单筛选。
+        material: str | None，产品材料关系 slug 白名单筛选。
+        application: str | None，产品应用关系 slug 白名单筛选。
+
+    输出：
+        dict[str, Any]，包含 items、分页元数据和三项白名单筛选回显。
+    """
+    locale = await _locale(session, locale_slug)
+    config = _COLLECTION_CONFIG.get(owner_type)
+    statement = _public_collection_statement(owner_type, locale)
+    if config is None or statement is None:
+        raise AppException(404, "public_content_not_found", "公开集合不存在")
+
+    model = config.model
+    if owner_type == "product":
+        if category:
+            statement = statement.where(ProductCategory.slug == category)
+        if material:
+            statement = (
+                statement.join(ProductMaterial, ProductMaterial.product_id == Product.id)
+                .join(Material, Material.id == ProductMaterial.material_id)
+                .where(Material.slug == material, Material.status == "enabled")
+            )
+        if application:
+            statement = (
+                statement.join(
+                    ProductApplication,
+                    ProductApplication.product_id == Product.id,
+                )
+                .join(
+                    Application,
+                    Application.id == ProductApplication.application_id,
+                )
+                .where(
+                    Application.slug == application,
+                    Application.status == "enabled",
+                )
+            )
+
+    count_statement = select(func.count()).select_from(statement.subquery())
+    total = int(await session.scalar(count_statement) or 0)
+    order_columns = []
+    if hasattr(model, "sort_order"):
+        order_columns.append(model.sort_order)
+    order_columns.extend((model.created_at, model.slug))
+    rows = (
+        await session.execute(
+            statement.order_by(*order_columns).offset((page - 1) * page_size).limit(page_size)
+        )
+    ).all()
+    return {
+        "items": [
+            _card_payload(owner_type, entity, translation, route)
+            for entity, translation, route in rows
+        ],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": max(1, ceil(total / page_size)),
+        "filters": {
+            "category": category,
+            "material": material,
+            "application": application,
+        },
+    }
+
+
+def _combined_text(columns: list[Any]) -> Any:
+    """
+    将可空搜索字段组合为跨 PostgreSQL/SQLite 可用的文本表达式。
+
+    输入：columns: list[Any]，SQLAlchemy 文本列列表。
+    输出：Any，空值已归一化且字段间带空格的 SQL 表达式。
+    """
+    combined = func.coalesce(columns[0], "")
+    for column in columns[1:]:
+        combined = combined + literal(" ") + func.coalesce(column, "")
+    return combined
+
+
+def _search_select(
+    owner_type: str,
+    locale: Locale,
+    query: str,
+    dialect_name: str,
+) -> Select[Any]:
+    """
+    构造单个批准内容族的标准化搜索 select，供统一 UNION 使用。
+
+    输入：
+        owner_type: str，六个批准搜索内容族之一。
+        locale: Locale，已启用的目标语言。
+        query: str，已经 API 校验的用户搜索词。
+        dialect_name: str，当前数据库方言名称。
+
+    输出：
+        Select[Any]，列固定为 Card DTO 字段加内部相关性分值。
+    """
+    config = _COLLECTION_CONFIG[owner_type]
+    statement = _public_collection_statement(owner_type, locale)
+    if statement is None:  # pragma: no cover - 调用方已使用固定白名单
+        raise AppException(404, "public_content_not_found", "公开集合不存在")
+    model = config.model
+    translation_model = config.translation_model
+    title = getattr(translation_model, config.title_field)
+    body_columns = [getattr(translation_model, field) for field in _SEARCH_FIELDS[owner_type]]
+    body_text = _combined_text(body_columns)
+    card_summary = func.coalesce(getattr(translation_model, config.summary_fields[0]), "")
+
+    if dialect_name == "postgresql":
+        # 标题使用 A 权重、正文使用 B 权重；trigram 仅作为标题拼写容错后备。
+        weighted_vector = func.setweight(
+            func.to_tsvector("simple", func.coalesce(title, "")),
+            literal_column("'A'"),
+        ).op("||")(func.setweight(func.to_tsvector("simple", body_text), literal_column("'B'")))
+        ts_query = func.websearch_to_tsquery("simple", query)
+        match_condition = or_(
+            weighted_vector.op("@@")(ts_query),
+            title.op("%")(query),
+        )
+        score = (
+            func.ts_rank_cd(weighted_vector, ts_query) * 100 + func.similarity(title, query) * 10
+        )
+    else:
+        # SQLite 单测按精确、前缀、标题包含、正文包含给固定分值，结果可重复。
+        normalized_query = query.casefold()
+        lowered_title = func.lower(title)
+        lowered_body = func.lower(body_text)
+        contains_pattern = f"%{normalized_query}%"
+        match_condition = or_(
+            lowered_title.like(contains_pattern),
+            lowered_body.like(contains_pattern),
+        )
+        score = case(
+            (lowered_title == normalized_query, 400.0),
+            (lowered_title.like(f"{normalized_query}%"), 300.0),
+            (lowered_title.like(contains_pattern), 200.0),
+            (lowered_body.like(contains_pattern), 100.0),
+            else_=0.0,
+        )
+
+    return statement.where(match_condition).with_only_columns(
+        literal(owner_type).label("type"),
+        model.slug.label("slug"),
+        title.label("name"),
+        ContentRoute.path.label("url"),
+        card_summary.label("summary"),
+        score.label("score"),
+    )
+
+
+async def search_public_content(
+    session: AsyncSession,
+    locale_slug: str,
+    query: str,
+    content_types: tuple[str, ...] | list[str] | None = None,
+    limit_per_type: int = 10,
+) -> dict[str, Any]:
+    """
+    搜索六个批准内容族并按类型返回 canonical Card DTO。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale_slug: str，目标语言 slug。
+        query: str，已在 API 层校验长度的搜索词。
+        content_types: tuple[str, ...] | list[str] | None，可选类型白名单子集。
+        limit_per_type: int，每个类型最多返回的卡片数。
+
+    输出：
+        dict[str, Any]，包含原查询词和按批准类型分组的公开卡片。
+    """
+    locale = await _locale(session, locale_slug)
+    requested_types = tuple(content_types or _SEARCH_TYPES)
+    if not requested_types or any(item not in _SEARCH_TYPES for item in requested_types):
+        raise AppException(422, "invalid_search_type", "搜索类型不受支持")
+    # 去重但保留 API 请求顺序，使分组合同稳定。
+    selected_types = tuple(dict.fromkeys(requested_types))
+    bind = session.get_bind()
+    dialect_name = bind.dialect.name
+    selects = [
+        _search_select(owner_type, locale, query, dialect_name) for owner_type in selected_types
+    ]
+    search_union = selects[0].subquery() if len(selects) == 1 else union_all(*selects).subquery()
+    ranked = select(
+        search_union,
+        func.row_number()
+        .over(
+            partition_by=search_union.c.type,
+            order_by=(
+                search_union.c.score.desc(),
+                search_union.c.name,
+                search_union.c.slug,
+            ),
+        )
+        .label("type_rank"),
+    ).subquery()
+    rows = (
+        await session.execute(
+            select(ranked)
+            .where(ranked.c.type_rank <= limit_per_type)
+            .order_by(ranked.c.type, ranked.c.type_rank)
+        )
+    ).mappings()
+    groups: dict[str, list[dict[str, str]]] = {owner_type: [] for owner_type in selected_types}
+    for row in rows:
+        groups[row["type"]].append(
+            {
+                "type": row["type"],
+                "slug": row["slug"],
+                "name": row["name"],
+                "url": row["url"],
+                "summary": row["summary"],
+            }
+        )
+    return {"query": query, "groups": groups}

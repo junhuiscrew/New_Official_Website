@@ -82,6 +82,14 @@ from app.modules.users.service import collect_authorization
 
 router = APIRouter(prefix="/authority", tags=["authority"])
 
+_PUBLICATION_PERMISSION_ACTIONS: dict[PublicationStatus, str] = {
+    PublicationStatus.REVIEW: "review",
+    PublicationStatus.SCHEDULED: "publish",
+    PublicationStatus.PUBLISHED: "publish",
+    PublicationStatus.ARCHIVED: "archive",
+    PublicationStatus.DRAFT: "update",
+}
+
 _ENTITY_CONFIG: dict[str, dict[str, Any]] = {
     "cases": {"permission": "case", "model": CaseStudy, "translation": CaseStudyTranslation, "owner_field": "case_study_id", "create_schema": CaseStudyCreate, "update_schema": CaseStudyUpdate, "create": create_case_study, "update": update_case_study, "owner_type": "case_study", "relations": True},
     "knowledge": {"permission": "knowledge", "model": KnowledgeArticle, "translation": KnowledgeArticleTranslation, "owner_field": "article_id", "create_schema": KnowledgeArticleCreate, "update_schema": KnowledgeArticleUpdate, "create": create_knowledge_article, "update": update_knowledge_article, "owner_type": "knowledge_article", "relations": True},
@@ -408,7 +416,8 @@ async def transition_authority_publication(
     config = _config(entity_type)
     if config["owner_type"] not in {"case_study", "knowledge_article", "author_expert"}:
         raise AppException(409, "publication_not_supported", "该实体没有独立 Publication")
-    permission_action = "publish" if target_status in {PublicationStatus.PUBLISHED, PublicationStatus.SCHEDULED} else "archive" if target_status is PublicationStatus.ARCHIVED else "update"
+    # Authority 外层校验实体职责；统一 transition_publication() 继续校验全局内容职责。
+    permission_action = _PUBLICATION_PERMISSION_ACTIONS[target_status]
     _require(user, f"{config['permission']}.{permission_action}")
     publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_type == config["owner_type"], ContentPublication.owner_id == entity_id, ContentPublication.locale_id == locale_id))
     translation = await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_type == config["owner_type"], TranslationStatus.owner_id == entity_id, TranslationStatus.locale_id == locale_id))

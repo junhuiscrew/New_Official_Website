@@ -149,6 +149,7 @@ PERMISSION_CODES: tuple[str, ...] = (
     "expert.read",
     "expert.create",
     "expert.update",
+    "expert.review",
     "expert.publish",
     "expert.archive",
     "source.read",
@@ -307,6 +308,7 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "faq.review",
             "faq.publish",
             "expert.read",
+            "expert.review",
             "expert.publish",
         }
     ),

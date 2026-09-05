@@ -29,6 +29,22 @@ export function normalizeLocale(locale: unknown): LocaleSlug {
 }
 
 /**
+ * 从动态 lang 参数或静态语言首页路径解析当前语言。
+ *
+ * 输入：
+ *   paramLocale: unknown，动态 `[lang]` 路由参数。
+ *   routePath: string，Nuxt 当前路径；用于 `/en/`、`/zh-cn/` 静态首页。
+ *
+ * 输出：
+ *   LocaleSlug，优先使用有效路由参数，否则读取首个路径段并安全回退。
+ */
+export function resolveRouteLocale(paramLocale: unknown, routePath: string): LocaleSlug {
+  if (typeof paramLocale === 'string' && paramLocale.trim()) return normalizeLocale(paramLocale)
+  const pathLocale = routePath.split('/').filter(Boolean)[0]
+  return normalizeLocale(pathLocale)
+}
+
+/**
  * 返回指定语言首页路径。
  *
  * 输入：

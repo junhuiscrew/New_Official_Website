@@ -136,6 +136,8 @@ export interface HomeDto {
   cases: PublicCardDto[]
   knowledge: PublicCardDto[]
   trust_summary: PublicTrustSummaryDto | null
+  seo?: SeoDto | null
+  schema?: unknown | null
 }
 
 /** 后端生成且可直接用于页面 head 的 SEO DTO。 */

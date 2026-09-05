@@ -553,7 +553,11 @@ async def test_trust_review_publish_archive_api_reuses_publication_transaction(
 async def test_trust_hreflang_uses_strict_self_canonical_alternates(remediation_factory) -> None:
     """Trust hreflang 必须保留 self-canonical，并排除 noindex 或非 self-canonical 语言。"""
     from app.modules.company.schemas import TrustEntityInput, TrustTranslation
-    from app.modules.company.services import create_trust_entity, get_public_trust
+    from app.modules.company.services import (
+        create_trust_entity,
+        get_public_trust,
+        list_public_trust,
+    )
     from app.modules.discovery.models import SeoDocument
 
     async with remediation_factory() as session, session.begin():
@@ -613,6 +617,37 @@ async def test_trust_hreflang_uses_strict_self_canonical_alternates(remediation_
                 "url": "https://junhuiscrewbarrel.com/zh-cn/capabilities/strict-hreflang/",
             },
         ]
+        assert [
+            item["slug"]
+            for item in await list_public_trust(session, "capabilities", "zh-cn")
+        ] == ["strict-hreflang"]
+        assert await list_public_trust(session, "capabilities", "en") == []
+        with pytest.raises(AppException) as noindex_error:
+            await get_public_trust(
+                session,
+                "manufacturing_capability",
+                "en",
+                "strict-hreflang",
+            )
+        assert noindex_error.value.status_code == 404
+        en_seo = await session.scalar(
+            select(SeoDocument).where(
+                SeoDocument.owner_id == entity.id,
+                SeoDocument.locale_id == locales["en"].id,
+            )
+        )
+        en_seo.robots_index = True
+        en_seo.canonical_override = "https://junhuiscrewbarrel.com/en/capabilities/another/"
+        await session.flush()
+        assert await list_public_trust(session, "capabilities", "en") == []
+        with pytest.raises(AppException) as noncanonical_error:
+            await get_public_trust(
+                session,
+                "manufacturing_capability",
+                "en",
+                "strict-hreflang",
+            )
+        assert noncanonical_error.value.status_code == 404
 
 
 async def test_public_downloads_filter_missing_objects_and_report_broken_media(remediation_factory) -> None:
@@ -676,6 +711,20 @@ async def test_public_downloads_filter_missing_objects_and_report_broken_media(r
                 "reason": "object_missing",
             }
         ]
+
+
+async def test_public_trust_page_metadata_is_backend_owned(remediation_factory) -> None:
+    """Trust 聚合页 SEO、canonical、hreflang 与 Schema 必须由后端统一生成。"""
+    from app.modules.company.services import get_public_page_metadata
+
+    async with remediation_factory() as session:
+        metadata = await get_public_page_metadata(session, "capabilities", "en")
+
+    assert metadata["seo"]["canonical"] == "https://junhuiscrewbarrel.com/en/capabilities/"
+    assert metadata["seo"]["robots"] == "index, follow"
+    assert metadata["seo"]["hreflang"]["zh-CN"].endswith("/zh-cn/capabilities/")
+    assert metadata["breadcrumb"][-1]["url"] == metadata["seo"]["canonical"]
+    assert [item["@type"] for item in metadata["schema"]] == ["WebPage", "BreadcrumbList"]
 
 
 def test_minio_internal_and_public_transport_security_are_independent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -932,13 +981,28 @@ async def test_capability_only_exposes_equipment_with_published_translation(
 ) -> None:
     """能力公开 DTO 只能嵌入已发布且 enabled 的设备翻译。"""
     from app.api.v1 import trust as trust_api
-    from app.modules.company.models import CapabilityEquipment
+    from app.modules.authority.models import (
+        CaseProduct,
+        CaseStudy,
+        CaseStudyTranslation,
+        CaseTechnology,
+    )
+    from app.modules.catalog.models import (
+        Product,
+        ProductCategory,
+        ProductTechnology,
+        ProductTranslation,
+        Technology,
+        TechnologyTranslation,
+    )
+    from app.modules.company.models import CapabilityEquipment, TechnologyEquipment
     from app.modules.company.schemas import TrustEntityInput, TrustTranslation
     from app.modules.company.services import (
         create_trust_entity,
         get_public_trust,
         update_trust_entity,
     )
+    from app.modules.discovery.models import SeoDocument
 
     async with remediation_factory() as session:
         locale = await session.scalar(select(Locale).where(Locale.code == "en"))
@@ -1006,9 +1070,146 @@ async def test_capability_only_exposes_equipment_with_published_translation(
         await trust_api.publish_trust_translation(
             "equipment", equipment.id, locale.id, session, actor, None
         )
+        category = ProductCategory(slug="relation-components")
+        technology = Technology(slug="published-turning")
+        hidden_technology = Technology(slug="hidden-turning")
+        session.add_all([category, technology, hidden_technology])
+        await session.flush()
+        product = Product(slug="related-product", category_id=category.id)
+        case_study = CaseStudy(slug="related-case")
+        session.add_all([product, case_study])
+        await session.flush()
+        session.add_all(
+            [
+                TechnologyTranslation(
+                    technology_id=technology.id,
+                    locale_id=locale.id,
+                    name="Published turning",
+                ),
+                TechnologyTranslation(
+                    technology_id=hidden_technology.id,
+                    locale_id=locale.id,
+                    name="Hidden turning",
+                ),
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="Related product",
+                ),
+                CaseStudyTranslation(
+                    case_study_id=case_study.id,
+                    locale_id=locale.id,
+                    title="Related case",
+                ),
+                TechnologyEquipment(
+                    technology_id=technology.id,
+                    equipment_id=equipment.id,
+                    sort_order=10,
+                ),
+                TechnologyEquipment(
+                    technology_id=hidden_technology.id,
+                    equipment_id=equipment.id,
+                    sort_order=20,
+                ),
+                ProductTechnology(product_id=product.id, technology_id=technology.id),
+                CaseTechnology(case_study_id=case_study.id, technology_id=technology.id),
+                CaseProduct(case_study_id=case_study.id, product_id=product.id),
+            ]
+        )
+        for owner_type, owner_id, path, robots_index in (
+            (
+                "technology",
+                technology.id,
+                "/en/technologies/published-turning/",
+                True,
+            ),
+            (
+                "technology",
+                hidden_technology.id,
+                "/en/technologies/hidden-turning/",
+                False,
+            ),
+            ("product", product.id, "/en/products/relation-components/related-product/", True),
+            ("case_study", case_study.id, "/en/case-studies/related-case/", True),
+        ):
+            session.add_all(
+                [
+                    TranslationStatus(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        source_locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentPublication(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        status="published",
+                    ),
+                    ContentRoute(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        path=path,
+                        is_canonical=True,
+                        active=True,
+                        indexable=True,
+                    ),
+                    SeoDocument(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale.id,
+                        robots_index=robots_index,
+                    ),
+                ]
+            )
+        await session.commit()
         published_public = await get_public_trust(
             session, "manufacturing_capability", "en", "turning"
         )
+        # Phase 3.6 公开详情所需的展示字段必须由后端统一批准，前端不得重建。
+        assert published_public["breadcrumb"] == [
+            {"name": "Home", "url": "https://junhuiscrewbarrel.com/en/"},
+            {
+                "name": "Capabilities",
+                "url": "https://junhuiscrewbarrel.com/en/capabilities/",
+            },
+            {
+                "name": "Turning",
+                "url": "https://junhuiscrewbarrel.com/en/capabilities/turning/",
+            },
+        ]
+        assert published_public["relations"] == {
+            "technologies": [
+                {
+                    "type": "technology",
+                    "slug": "published-turning",
+                    "name": "Published turning",
+                    "url": "/en/technologies/published-turning/",
+                    "summary": "",
+                }
+            ],
+            "products": [
+                {
+                    "type": "product",
+                    "slug": "related-product",
+                    "name": "Related product",
+                    "url": "/en/products/relation-components/related-product/",
+                    "summary": "",
+                }
+            ],
+            "cases": [
+                {
+                    "type": "case_study",
+                    "slug": "related-case",
+                    "name": "Related case",
+                    "url": "/en/case-studies/related-case/",
+                    "summary": "",
+                }
+            ],
+        }
+        assert published_public["primary_media"] is None
         assert published_public["equipment"] == [
             {
                 "slug": "cnc-lathe",
@@ -1049,6 +1250,11 @@ async def test_capability_only_exposes_equipment_with_published_translation(
             session, "manufacturing_capability", "en", "turning"
         )
         assert withdrawn_public["equipment"] == []
+        assert withdrawn_public["relations"] == {
+            "technologies": [],
+            "products": [],
+            "cases": [],
+        }
 
 
 async def test_reviewer_can_review_trust_and_company_without_update_permissions(

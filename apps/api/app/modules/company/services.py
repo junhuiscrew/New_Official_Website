@@ -6,11 +6,13 @@ import uuid
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
+from app.modules.authority.models import CaseProduct, CaseTechnology
+from app.modules.catalog.models import ProductTechnology
 from app.modules.company.models import (
     CapabilityEquipment,
     Certificate,
@@ -27,12 +29,14 @@ from app.modules.company.models import (
     ManufacturingCapabilityTranslation,
     Patent,
     PatentTranslation,
+    TechnologyEquipment,
 )
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.publication import invalidate_publication_after_translation_edit
 from app.modules.content.services.revisions import store_revision
 from app.modules.content.services.routes import create_content_route
 from app.modules.discovery.models import GeoDocument, SeoDocument
+from app.modules.discovery.schema_generator import build_breadcrumb_schema, build_webpage_schema
 from app.modules.localization.models import Locale
 
 TRUST_CONFIG: dict[str, tuple[type, type, str, str, bool]] = {
@@ -45,6 +49,34 @@ TRUST_CONFIG: dict[str, tuple[type, type, str, str, bool]] = {
 }
 
 _PATHS = {"manufacturing_capability": "capabilities", "certificate": "certificates", "patent": "patents", "honor": "honors", "exhibition": "exhibitions"}
+
+# Trust/Downloads 集合页只包含界面用途文案，不混入任何未经审核的经营事实。
+_PUBLIC_PAGE_METADATA = {
+    "capabilities": {
+        "en": ("Manufacturing Capabilities", "Browse published manufacturing capabilities and technical evidence."),
+        "zh-cn": ("制造能力", "浏览已发布的制造能力与技术证据。"),
+    },
+    "certificates": {
+        "en": ("Certificates", "Browse certificate records currently approved for publication."),
+        "zh-cn": ("证书", "浏览当前已发布的证书记录。"),
+    },
+    "patents": {
+        "en": ("Patents", "Browse patent records currently approved for publication."),
+        "zh-cn": ("专利", "浏览当前已发布的专利记录。"),
+    },
+    "honors": {
+        "en": ("Honors", "Browse honor records currently approved for publication."),
+        "zh-cn": ("荣誉", "浏览当前已发布的荣誉记录。"),
+    },
+    "exhibitions": {
+        "en": ("Exhibitions", "Browse exhibition information currently approved for publication."),
+        "zh-cn": ("展会", "浏览当前已发布的展会信息。"),
+    },
+    "downloads": {
+        "en": ("Downloads", "Download product and technical resources currently available to the public."),
+        "zh-cn": ("资料下载", "下载当前可公开访问的产品与技术资料。"),
+    },
+}
 
 
 def serialize(entity: Any) -> dict[str, Any]:
@@ -366,23 +398,202 @@ async def list_public_trust(session: AsyncSession, resource: str, locale_slug: s
     if config is None or locale is None:
         return []
     model, translation_model, owner_field, owner_type, has_route = config
-    rows = (await session.execute(
+    statement = (
         select(model, translation_model)
         .join(translation_model, getattr(translation_model, owner_field) == model.id)
         .join(TranslationStatus, (TranslationStatus.owner_type == owner_type) & (TranslationStatus.owner_id == model.id) & (TranslationStatus.locale_id == locale.id))
         .where(model.status == "enabled", translation_model.locale_id == locale.id, TranslationStatus.status == "published")
-        .order_by(model.sort_order, model.created_at)
-    )).all()
+    )
+    if has_route:
+        # Route-based Trust 索引与详情复用 self-canonical、robots 和发布门禁。
+        statement = (
+            statement.add_columns(ContentRoute)
+            .join(
+                ContentRoute,
+                (ContentRoute.owner_type == owner_type)
+                & (ContentRoute.owner_id == model.id)
+                & (ContentRoute.locale_id == locale.id),
+            )
+            .join(
+                ContentPublication,
+                (ContentPublication.owner_type == ContentRoute.owner_type)
+                & (ContentPublication.owner_id == ContentRoute.owner_id)
+                & (ContentPublication.locale_id == ContentRoute.locale_id),
+            )
+            .outerjoin(
+                SeoDocument,
+                (SeoDocument.owner_type == ContentRoute.owner_type)
+                & (SeoDocument.owner_id == ContentRoute.owner_id)
+                & (SeoDocument.locale_id == ContentRoute.locale_id),
+            )
+            .where(
+                ContentRoute.is_canonical.is_(True),
+                ContentRoute.active.is_(True),
+                ContentRoute.indexable.is_(True),
+                ContentPublication.status == "published",
+                or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+                or_(
+                    SeoDocument.id.is_(None),
+                    SeoDocument.canonical_override.is_(None),
+                    SeoDocument.canonical_override
+                    == literal("https://junhuiscrewbarrel.com") + ContentRoute.path,
+                ),
+            )
+        )
+    rows = (await session.execute(statement.order_by(model.sort_order, model.created_at))).all()
     result: list[dict[str, Any]] = []
-    for entity, translation in rows:
-        route = None
-        if has_route:
-            route = await session.scalar(select(ContentRoute).join(ContentPublication, (ContentPublication.owner_type == ContentRoute.owner_type) & (ContentPublication.owner_id == ContentRoute.owner_id) & (ContentPublication.locale_id == ContentRoute.locale_id)).where(ContentRoute.owner_type == owner_type, ContentRoute.owner_id == entity.id, ContentRoute.locale_id == locale.id, ContentRoute.is_canonical.is_(True), ContentRoute.active.is_(True), ContentRoute.indexable.is_(True), ContentPublication.status == "published"))
-            if route is None:
-                continue
+    for row in rows:
+        entity, translation = row[0], row[1]
+        route = row[2] if has_route else None
         translation_data = _translation_snapshot(translation, owner_field)
-        result.append({"type": owner_type, "slug": entity.slug, "title": translation_data.get("name") or translation_data.get("title"), "summary": translation_data.get("summary"), "url": route.path if route else None})
+        item = {"type": owner_type, "slug": entity.slug, "title": translation_data.get("name") or translation_data.get("title"), "summary": translation_data.get("summary"), "url": route.path if route else None}
+        # Non-route Trust 聚合页需要展示结构化事实，但不创建第二套详情 Route。
+        if not has_route or owner_type == "exhibition":
+            item["details"] = _public_trust_details(entity, owner_type)
+        result.append(item)
     return result
+
+
+def _public_trust_details(entity: Any, owner_type: str) -> dict[str, Any]:
+    """
+    按 Trust 类型提取公开结构化事实。
+
+    输入：entity: Any，已通过公开门禁的 Trust ORM；owner_type: str，Trust 类型。
+    输出：dict[str, Any]，不含内部 ID、媒体存储字段和生命周期字段的白名单事实。
+    """
+    field_allowlist = {
+        "manufacturing_capability": ("capability_type",),
+        "equipment": (
+            "equipment_type",
+            "manufacturer",
+            "model",
+            "quantity",
+            "commissioning_year",
+            "precision_text",
+            "capacity_text",
+        ),
+        "certificate": (
+            "certificate_type",
+            "certificate_number",
+            "issuer",
+            "issue_date",
+            "expiry_date",
+        ),
+        "patent": (
+            "patent_number",
+            "patent_type",
+            "application_number",
+            "filing_date",
+            "grant_date",
+            "jurisdiction",
+            "inventor_text",
+        ),
+        "honor": ("issuing_organization", "award_date"),
+        "exhibition": (
+            "event_name",
+            "country_code",
+            "city",
+            "start_date",
+            "end_date",
+            "booth_no",
+        ),
+    }
+    return jsonable_encoder(
+        {
+            field: getattr(entity, field, None)
+            for field in field_allowlist.get(owner_type, ())
+        }
+    )
+
+
+def _public_trust_breadcrumb(
+    locale: Locale,
+    owner_type: str,
+    title: str,
+    canonical: str,
+) -> list[dict[str, str]]:
+    """
+    生成与 Trust Breadcrumb Schema 完全相同的可见路径。
+
+    输入：locale: Locale，当前语言；owner_type: str，Trust 类型；title: str，公开标题；canonical: str，详情 canonical。
+    输出：list[dict[str, str]]，使用正式域名的面包屑项。
+    """
+    localized = locale.slug == "zh-cn"
+    collection = {
+        "manufacturing_capability": ("制造能力" if localized else "Capabilities", "capabilities"),
+        "exhibition": ("展会" if localized else "Exhibitions", "exhibitions"),
+    }[owner_type]
+    return [
+        {
+            "name": "首页" if localized else "Home",
+            "url": f"https://junhuiscrewbarrel.com/{locale.slug}/",
+        },
+        {
+            "name": collection[0],
+            "url": f"https://junhuiscrewbarrel.com/{locale.slug}/{collection[1]}/",
+        },
+        {"name": title, "url": canonical},
+    ]
+
+
+async def get_public_page_metadata(
+    session: AsyncSession,
+    resource: str,
+    locale_slug: str,
+) -> dict[str, Any]:
+    """
+    生成 Trust 与 Downloads 聚合页的统一 SEO、Breadcrumb 和 Schema。
+
+    输入：session: AsyncSession，数据库会话；resource: str，公开聚合页资源名；locale_slug: str，当前语言。
+    输出：dict[str, Any]，仅含后端批准的页面级元数据。
+    """
+    labels = _PUBLIC_PAGE_METADATA.get(resource)
+    locale = await session.scalar(
+        select(Locale).where(Locale.slug == locale_slug, Locale.is_enabled.is_(True))
+    )
+    if labels is None or locale is None:
+        raise AppException(404, "public_page_not_found", "公开聚合页不存在")
+    title, description = labels["zh-cn" if locale.slug == "zh-cn" else "en"]
+    origin = "https://junhuiscrewbarrel.com"
+    canonical = f"{origin}/{locale.slug}/{resource}/"
+    locale_rows = list(
+        (
+            await session.scalars(
+                select(Locale)
+                .where(Locale.is_enabled.is_(True))
+                .order_by(Locale.sort_order, Locale.code)
+            )
+        ).all()
+    )
+    hreflang = {
+        item.code: f"{origin}/{item.slug}/{resource}/" for item in locale_rows
+    }
+    default_locale = next((item for item in locale_rows if item.is_default), None)
+    if default_locale is not None:
+        hreflang["x-default"] = f"{origin}/{default_locale.slug}/{resource}/"
+    breadcrumb = [
+        {
+            "name": "首页" if locale.slug == "zh-cn" else "Home",
+            "url": f"{origin}/{locale.slug}/",
+        },
+        {"name": title, "url": canonical},
+    ]
+    return {
+        "seo": {
+            "title": title,
+            "description": description,
+            "canonical": canonical,
+            "robots": "index, follow",
+            "hreflang": hreflang,
+        },
+        "breadcrumb": breadcrumb,
+        "schema": [
+            build_webpage_schema(
+                {"name": title, "description": description, "url": canonical}
+            ),
+            build_breadcrumb_schema(breadcrumb),
+        ],
+    }
 
 
 def _translation_snapshot(translation: Any, owner_field: str) -> dict[str, Any]:
@@ -486,6 +697,91 @@ async def _public_capability_equipment(
     return result
 
 
+async def _public_capability_relations(
+    session: AsyncSession,
+    capability_id: uuid.UUID,
+    locale: Locale,
+) -> dict[str, list[dict[str, str]]]:
+    """
+    沿既有显式 Equipment/Technology/Product/Case 关系返回公开 canonical links。
+
+    输入：session: AsyncSession，数据库会话；capability_id: UUID，能力 ID；locale: Locale，当前语言。
+    输出：dict[str, list[dict[str, str]]]，目标均再次通过统一发布与 canonical 门禁。
+    """
+    technology_ids = list(
+        (
+            await session.scalars(
+                select(TechnologyEquipment.technology_id)
+                .join(
+                    CapabilityEquipment,
+                    CapabilityEquipment.equipment_id == TechnologyEquipment.equipment_id,
+                )
+                .join(Equipment, Equipment.id == TechnologyEquipment.equipment_id)
+                .join(
+                    TranslationStatus,
+                    (TranslationStatus.owner_type == "equipment")
+                    & (TranslationStatus.owner_id == Equipment.id)
+                    & (TranslationStatus.locale_id == locale.id),
+                )
+                .where(
+                    CapabilityEquipment.capability_id == capability_id,
+                    Equipment.status == "enabled",
+                    TranslationStatus.status == "published",
+                )
+                .order_by(TechnologyEquipment.sort_order)
+            )
+        ).all()
+    )
+    product_ids = (
+        list(
+            (
+                await session.scalars(
+                    select(ProductTechnology.product_id)
+                    .where(ProductTechnology.technology_id.in_(technology_ids))
+                    .order_by(ProductTechnology.sort_order)
+                )
+            ).all()
+        )
+        if technology_ids
+        else []
+    )
+    case_ids = []
+    if technology_ids:
+        case_ids.extend(
+            (
+                await session.scalars(
+                    select(CaseTechnology.case_study_id)
+                    .where(CaseTechnology.technology_id.in_(technology_ids))
+                    .order_by(CaseTechnology.sort_order)
+                )
+            ).all()
+        )
+    if product_ids:
+        case_ids.extend(
+            (
+                await session.scalars(
+                    select(CaseProduct.case_study_id)
+                    .where(CaseProduct.product_id.in_(product_ids))
+                    .order_by(CaseProduct.sort_order)
+                )
+            ).all()
+        )
+
+    from app.modules.discovery.public_delivery import _published_links_for_ids
+
+    return {
+        "technologies": await _published_links_for_ids(
+            session, "technology", technology_ids, locale
+        ),
+        "products": await _published_links_for_ids(
+            session, "product", product_ids, locale
+        ),
+        "cases": await _published_links_for_ids(
+            session, "case_study", case_ids, locale
+        ),
+    }
+
+
 async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: str, slug: str) -> dict[str, Any]:
     """按统一发布门槛返回公开 Trust DTO；Equipment 不允许独立公开页。"""
     if owner_type == "equipment":
@@ -498,15 +794,19 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
     entity = await session.scalar(select(model).where(model.slug == slug, model.status == "enabled"))
     if locale is None or entity is None:
         raise AppException(404, "public_content_not_found", "公开 Trust 内容不存在")
-    status = await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_type == owner_type, TranslationStatus.owner_id == entity.id, TranslationStatus.locale_id == locale.id, TranslationStatus.status == "published"))
-    publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_type == owner_type, ContentPublication.owner_id == entity.id, ContentPublication.locale_id == locale.id, ContentPublication.status == "published"))
-    route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_type == owner_type, ContentRoute.owner_id == entity.id, ContentRoute.locale_id == locale.id, ContentRoute.is_canonical.is_(True), ContentRoute.active.is_(True), ContentRoute.indexable.is_(True)))
+    from app.modules.discovery.public_delivery import _public_route
+
+    route, seo, geo = await _public_route(session, owner_type, entity.id, locale.id)
+    if (
+        seo
+        and seo.canonical_override
+        and seo.canonical_override != f"https://junhuiscrewbarrel.com{route.path}"
+    ):
+        raise AppException(404, "public_content_not_found", "公开 Trust canonical 不可索引")
     translation = await session.scalar(select(translation_model).where(getattr(translation_model, owner_field) == entity.id, translation_model.locale_id == locale.id))
-    if not status or not publication or not route or not translation:
+    if not translation:
         raise AppException(404, "public_content_not_found", "公开 Trust 内容不存在")
     payload = {key: value for key, value in serialize(translation).items() if key not in {"id", owner_field, "locale_id", "created_at", "updated_at"}}
-    seo = await session.scalar(select(SeoDocument).where(SeoDocument.owner_type == owner_type, SeoDocument.owner_id == entity.id, SeoDocument.locale_id == locale.id))
-    geo = await session.scalar(select(GeoDocument).where(GeoDocument.owner_type == owner_type, GeoDocument.owner_id == entity.id, GeoDocument.locale_id == locale.id))
     canonical = seo.canonical_override if seo and seo.canonical_override else f"https://junhuiscrewbarrel.com{route.path}"
     # 与 Product/Case/Knowledge 共用同一严格规则，避免 Trust 产生第二套 hreflang 判定。
     from app.modules.discovery.public_delivery import _published_alternates
@@ -521,14 +821,39 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
         if owner_type == "manufacturing_capability"
         else None
     )
+    title = payload.get("name") or payload.get("title")
+    breadcrumb = _public_trust_breadcrumb(locale, owner_type, title, canonical)
+    # 媒体仍经统一 public-media 状态白名单解析，不向前端暴露媒体 ID 或存储路径。
+    from app.modules.discovery.public_delivery import _public_media
+
+    primary_media = await _public_media(
+        session,
+        getattr(entity, "primary_media_id", None),
+        locale.id,
+        title,
+        loading="eager",
+    )
+    relations = (
+        await _public_capability_relations(session, entity.id, locale)
+        if owner_type == "manufacturing_capability"
+        else None
+    )
     return {
         "type": owner_type,
         "slug": entity.slug,
         "translation": payload,
         "url": f"https://junhuiscrewbarrel.com{route.path}",
-        "seo": {"title": seo.seo_title if seo else None, "description": seo.meta_description if seo else None, "canonical": canonical, "robots_index": bool(seo.robots_index) if seo else True, "hreflang": alternates},
-        "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json, "evidence": geo.evidence_json} if geo else None,
-        "schema": {"@context": "https://schema.org", "@type": "WebPage", "name": payload.get("name") or payload.get("title"), "url": canonical},
+        "details": _public_trust_details(entity, owner_type),
+        "seo": {"title": seo.seo_title if seo else None, "description": seo.meta_description if seo else None, "canonical": canonical, "robots_index": bool(seo.robots_index) if seo else True, "robots_follow": bool(seo.robots_follow) if seo else True, "hreflang": alternates},
+        "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json or [], "evidence": geo.evidence_json or [], "related_questions": geo.related_questions_json or [], "last_reviewed_at": geo.last_reviewed_at} if geo else None,
+        "breadcrumb": breadcrumb,
+        "schema": [
+            build_webpage_schema({"name": title, "description": payload.get("summary"), "url": canonical}),
+            build_breadcrumb_schema(breadcrumb),
+        ],
+        "primary_media": primary_media.model_dump() if primary_media else None,
+        "media": [primary_media.model_dump()] if primary_media else [],
+        **({"relations": relations} if relations is not None else {}),
         **({"equipment": equipment} if equipment is not None else {}),
     }
 
@@ -563,6 +888,33 @@ async def get_public_company_profile(session: AsyncSession, locale_slug: str) ->
         for hreflang, url in published_alternates.items()
     ]
     public = {"company_name": translation.company_name, "short_intro": translation.short_intro, "full_intro": translation.full_intro, "mission": translation.mission, "advantages": translation.advantages_json, "founded_year": profile.founded_year, "years_experience": profile.years_experience, "employee_count_range": profile.employee_count_range, "factory_area_sqm": profile.factory_area_sqm, "annual_capacity_text": profile.annual_capacity_text, "export_markets": profile.export_markets_json, "phone": profile.public_phone, "email": profile.public_email, "address": profile.public_address, "url": f"https://junhuiscrewbarrel.com{route.path}"}
+    localized = locale.slug == "zh-cn"
+    breadcrumb = [
+        {
+            "name": "首页" if localized else "Home",
+            "url": f"https://junhuiscrewbarrel.com/{locale.slug}/",
+        },
+        {"name": translation.company_name, "url": canonical},
+    ]
+    organization_schema = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": translation.company_name,
+        "url": "https://junhuiscrewbarrel.com/",
+        **(
+            {
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": profile.public_address,
+                }
+            }
+            if profile.public_address
+            else {}
+        ),
+        **({"telephone": profile.public_phone} if profile.public_phone else {}),
+        **({"email": profile.public_email} if profile.public_email else {}),
+        "mainEntityOfPage": canonical,
+    }
     return {
         **public,
         "seo": {
@@ -573,24 +925,7 @@ async def get_public_company_profile(session: AsyncSession, locale_slug: str) ->
             "robots_follow": bool(seo.robots_follow) if seo else True,
             "hreflang": alternates,
         },
-        "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json, "evidence": geo.evidence_json} if geo else None,
-        "schema": {
-            "@context": "https://schema.org",
-            "@type": "Organization",
-            "name": translation.company_name,
-            "url": "https://junhuiscrewbarrel.com/",
-            **(
-                {
-                    "address": {
-                        "@type": "PostalAddress",
-                        "streetAddress": profile.public_address,
-                    }
-                }
-                if profile.public_address
-                else {}
-            ),
-            **({"telephone": profile.public_phone} if profile.public_phone else {}),
-            **({"email": profile.public_email} if profile.public_email else {}),
-            "mainEntityOfPage": canonical,
-        },
+        "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json or [], "evidence": geo.evidence_json or [], "related_questions": geo.related_questions_json or [], "last_reviewed_at": geo.last_reviewed_at} if geo else None,
+        "breadcrumb": breadcrumb,
+        "schema": [organization_schema, build_breadcrumb_schema(breadcrumb)],
     }

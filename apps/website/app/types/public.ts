@@ -123,6 +123,116 @@ export interface PublicCompanyDto {
   url: string
 }
 
+/** About 页使用的完整 Company Public DTO；SEO/GEO/Schema 均由后端生成。 */
+export interface PublicCompanyProfileDto extends PublicCompanyDto {
+  seo: {
+    title: string | null
+    description: string | null
+    canonical: string
+    robots_index: boolean
+    robots_follow: boolean
+    hreflang: Array<{ hreflang: string; url: string }>
+  }
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+}
+
+/** Trust 聚合页卡片；details 仅含服务端按资源类型白名单输出的事实。 */
+export interface PublicTrustListItemDto {
+  type: PublicContentType | 'certificate' | 'patent' | 'honor'
+  slug: string
+  title: string
+  summary: string | null
+  url: string | null
+  details?: Record<string, string | number | null>
+}
+
+/** Capability 内嵌的已发布 Equipment 翻译和结构化事实。 */
+export interface PublicEquipmentDto {
+  slug: string
+  equipment_type: string
+  manufacturer: string | null
+  model: string | null
+  quantity: number | null
+  commissioning_year: number | null
+  precision_text: string | null
+  capacity_text: string | null
+  featured: boolean
+  translation: {
+    name: string
+    summary: string | null
+    description: string | null
+    public_specs_json: Record<string, string | number | boolean | null> | null
+  }
+}
+
+/** Capability 详情只消费服务端发布门禁批准的证据和 canonical links。 */
+export interface PublicCapabilityDetailDto {
+  type: 'manufacturing_capability'
+  slug: string
+  translation: {
+    name: string
+    summary: string | null
+    description: string | null
+    key_facts_json: string[] | null
+  }
+  details: Record<string, string | number | null>
+  url: string
+  equipment: PublicEquipmentDto[]
+  primary_media: PublicMediaDto | null
+  media: PublicMediaDto[]
+  relations: Partial<Record<'technologies' | 'products' | 'cases', PublicLinkDto[]>>
+  seo: PublicTrustSeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+}
+
+/** Exhibition 详情使用的 route-based Trust DTO。 */
+export interface PublicExhibitionDetailDto {
+  type: 'exhibition'
+  slug: string
+  translation: { title: string; summary: string | null; description: string | null }
+  details: Record<string, string | number | null>
+  url: string
+  primary_media: PublicMediaDto | null
+  seo: PublicTrustSeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+}
+
+/** 兼容已冻结 Trust API 的 SEO 形状。 */
+export interface PublicTrustSeoDto {
+  title: string | null
+  description: string | null
+  canonical: string
+  robots_index: boolean
+  robots_follow?: boolean
+  hreflang: Array<{ hreflang: string; url: string }>
+}
+
+/** 对象存储存在性已由后端核验的公开下载元数据。 */
+export interface PublicDownloadDto {
+  slug: string
+  resource_type: string
+  title: string
+  summary: string | null
+  version_label: string | null
+  published_date: string | null
+  url: string
+  mime_type: string
+  file_size_bytes: number
+}
+
+/** Trust 与 Downloads 聚合页后端统一生成的页面级元数据。 */
+export interface PublicPageMetadataDto {
+  seo: SeoDto
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+}
+
 /** 首页可信度摘要，只允许后端真实存在的公开事实。 */
 export interface PublicTrustSummaryDto {
   founded_year?: number

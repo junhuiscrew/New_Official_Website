@@ -432,3 +432,145 @@ describe('Phase 3.6 authority content pages', () => {
     }
   })
 })
+
+describe('Phase 3.6 company trust presentation', () => {
+  it('renders About exclusively from populated public Company DTO fields', () => {
+    const source = sourceAt('app/pages/[lang]/about.vue')
+
+    for (const field of [
+      'page.value.founded_year',
+      'page.value.years_experience',
+      'page.value.employee_count_range',
+      'page.value.factory_area_sqm',
+      'page.value.annual_capacity_text',
+      'page.export_markets',
+      'page.phone',
+      'page.email',
+      'page.address',
+    ]) {
+      expect(source).toContain(field)
+    }
+    expect(source).toContain('<PublicBreadcrumb')
+    expect(source).toContain('<GeoAnswer')
+    expect(source).toContain('<RfqCta')
+    expect(source).toContain('error.value?.statusCode === 404 ? 404 : 500')
+    expect(source).toContain('page.value.seo.canonical')
+    expect(source).toContain('serializeJsonLd(page.value.schema)')
+    expect(source).not.toMatch(/ISO\s*9001|\b30\+?\s+years|\b100\+?\s+employees/i)
+  })
+
+  it('uses only backend-approved Capability evidence and canonical relations', () => {
+    const index = sourceAt('app/pages/[lang]/capabilities/index.vue')
+    const detail = sourceAt('app/pages/[lang]/capabilities/[slug].vue')
+
+    expect(index).toContain('<EmptyState')
+    expect(index).toContain(':href="item.url"')
+    expect(index).not.toMatch(/item\.slug[^\n]+capabilities|capabilities[^\n]+item\.slug/)
+    expect(detail).toContain('<PublicBreadcrumb')
+    expect(detail).toContain('<GeoAnswer')
+    expect(detail).toContain('<RelationLinks')
+    expect(detail).toContain('<PublicImage')
+    expect(detail).toContain('<RfqCta')
+    expect(detail).toContain('page.equipment')
+    expect(detail).toContain('page.relations')
+    expect(detail).toContain('page.primary_media')
+    expect(detail).toContain('source-type="manufacturing_capability"')
+    expect(detail).toContain('error.value?.statusCode === 404 ? 404 : 500')
+    expect(detail).not.toContain('<pre')
+    expect(detail).not.toContain('JSON.stringify')
+  })
+
+  it('builds Capability relations only through explicit backend relation tables and publication gates', () => {
+    const service = sourceAt('../api/app/modules/company/services.py')
+
+    expect(service).toContain('_public_capability_relations')
+    expect(service).toContain('TechnologyEquipment')
+    expect(service).toContain('ProductTechnology')
+    expect(service).toContain('CaseTechnology')
+    expect(service).toContain('CaseProduct')
+    expect(service).toContain('_published_links_for_ids')
+    expect(service).not.toContain('for owner_id in dict.fromkeys(owner_ids)')
+    expect(service).toMatch(/relations\s*=\s*\(\s*await _public_capability_relations/)
+  })
+
+  it('keeps Certificate, Patent, and Honor aggregate-only without detail routes', () => {
+    for (const resource of ['certificates', 'patents', 'honors']) {
+      const source = sourceAt(`app/pages/[lang]/${resource}/index.vue`)
+      expect(source).toContain('<EmptyState')
+      expect(source).toContain('item.details')
+      expect(source).not.toContain('<NuxtLink')
+      expect(source).not.toMatch(
+        new RegExp(`${resource}[^\\n]+item\\.slug|item\\.slug[^\\n]+${resource}`),
+      )
+      expect(existsSync(resolve(process.cwd(), `app/pages/[lang]/${resource}/[slug].vue`))).toBe(
+        false,
+      )
+    }
+  })
+
+  it('keeps Exhibition index/detail canonical and backend-owned', () => {
+    const index = sourceAt('app/pages/[lang]/exhibitions/index.vue')
+    const detail = sourceAt('app/pages/[lang]/exhibitions/[slug].vue')
+
+    expect(index).toContain(':href="item.url"')
+    expect(index).toContain('<EmptyState')
+    expect(detail).toContain('page.value.seo.canonical')
+    expect(detail).toContain('<PublicBreadcrumb')
+    expect(detail).toContain('<GeoAnswer')
+    expect(detail).toContain('<RfqCta')
+    expect(detail).toContain('page.value.details')
+    expect(detail).toContain('error.value?.statusCode === 404 ? 404 : 500')
+    expect(detail).not.toMatch(/['"]@type['"]\s*:/)
+  })
+
+  it('shows only safe, existing download metadata returned by the backend', () => {
+    const source = sourceAt('app/pages/[lang]/downloads/index.vue')
+
+    for (const field of [
+      'item.resource_type',
+      'item.version_label',
+      'item.published_date',
+      'item.mime_type',
+      'item.file_size_bytes',
+    ]) {
+      expect(source).toContain(field)
+    }
+    expect(source).toContain('safeDownloadUrl')
+    expect(source).toContain('<EmptyState')
+    expect(source).toContain("telemetry.track('download_click'")
+    expect(source).not.toContain('storage_bucket')
+    expect(source).not.toContain('storage_key')
+    expect(source).not.toContain('private-rfq')
+  })
+
+  it('uses neutral empty states without unconfigured verification claims', () => {
+    for (const path of [
+      'app/pages/[lang]/about.vue',
+      'app/pages/[lang]/capabilities/index.vue',
+      'app/pages/[lang]/certificates/index.vue',
+      'app/pages/[lang]/patents/index.vue',
+      'app/pages/[lang]/honors/index.vue',
+      'app/pages/[lang]/exhibitions/index.vue',
+      'app/pages/[lang]/downloads/index.vue',
+    ]) {
+      const source = sourceAt(path)
+      expect(source).not.toMatch(/verified certificates|certified quality|industry-leading/i)
+    }
+  })
+
+  it('consumes backend-owned SEO metadata on every Trust aggregate page', () => {
+    for (const resource of [
+      'capabilities',
+      'certificates',
+      'patents',
+      'honors',
+      'exhibitions',
+      'downloads',
+    ]) {
+      const source = sourceAt(`app/pages/[lang]/${resource}/index.vue`)
+      expect(source).toContain(`/public/page-metadata/${resource}/`)
+      expect(source).toContain('metadata.value.seo.canonical')
+      expect(source).toContain('serializeJsonLd(metadata.value.schema)')
+    }
+  })
+})

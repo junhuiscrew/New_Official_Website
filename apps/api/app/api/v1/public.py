@@ -12,6 +12,7 @@ from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
 from app.modules.company.services import (
     get_public_company_profile,
+    get_public_page_metadata,
     get_public_trust,
     list_public_trust,
 )
@@ -464,6 +465,21 @@ async def public_trust(
 
         raise AppException(404, "public_content_not_found", "公开 Trust 内容不存在")
     return success_response(await get_public_trust(session, owner_type, locale_slug, slug))
+
+
+@router.get("/page-metadata/{resource}/{locale_slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_page_metadata(
+    resource: str,
+    locale_slug: str,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回 Trust 与 Downloads 聚合页的后端统一 SEO 元数据。
+
+    输入：resource: str，聚合页资源；locale_slug: str，语言；session: AsyncSession，会话。
+    输出：ApiResponse[dict[str, Any]]，包含 SEO、Breadcrumb 与 Schema。
+    """
+    return success_response(await get_public_page_metadata(session, resource, locale_slug))
 
 
 @router.get("/trust/{resource}/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])

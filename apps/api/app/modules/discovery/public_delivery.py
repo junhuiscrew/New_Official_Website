@@ -828,6 +828,108 @@ async def _published_relation_links(
     ]
 
 
+async def _published_links_for_ids(
+    session: AsyncSession,
+    target_type: str,
+    target_ids: list[Any],
+    locale: Locale,
+) -> list[dict[str, str]]:
+    """
+    批量解析一组关系目标，避免逐项执行公开门禁产生 N+1 查询。
+
+    输入：session: AsyncSession，数据库会话；target_type: str，目标类型；target_ids: list[Any]，按业务顺序排列的目标 ID；locale: Locale，当前语言。
+    输出：list[dict[str, str]]，保持输入顺序且仅含严格 published/self-canonical/robots 可见链接。
+    """
+    ordered_ids = list(dict.fromkeys(target_ids))
+    if not ordered_ids:
+        return []
+    if target_type in CATALOG_PUBLIC_TYPES:
+        model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[target_type]
+        title_field = "name"
+    elif target_type == "product":
+        model, translation_model, foreign_key = Product, ProductTranslation, "product_id"
+        title_field, summary_fields = "name", ("short_description",)
+    elif target_type == "case_study":
+        model, translation_model, foreign_key = CaseStudy, CaseStudyTranslation, "case_study_id"
+        title_field, summary_fields = "title", ("summary",)
+    else:
+        return []
+
+    statement = (
+        select(model, translation_model, ContentRoute)
+        .join(
+            translation_model,
+            (getattr(translation_model, foreign_key) == model.id)
+            & (translation_model.locale_id == locale.id),
+        )
+        .join(
+            ContentRoute,
+            (ContentRoute.owner_type == target_type)
+            & (ContentRoute.owner_id == model.id)
+            & (ContentRoute.locale_id == locale.id),
+        )
+        .join(
+            ContentPublication,
+            (ContentPublication.owner_type == ContentRoute.owner_type)
+            & (ContentPublication.owner_id == ContentRoute.owner_id)
+            & (ContentPublication.locale_id == ContentRoute.locale_id),
+        )
+        .join(
+            TranslationStatus,
+            (TranslationStatus.owner_type == ContentRoute.owner_type)
+            & (TranslationStatus.owner_id == ContentRoute.owner_id)
+            & (TranslationStatus.locale_id == ContentRoute.locale_id),
+        )
+        .outerjoin(
+            SeoDocument,
+            (SeoDocument.owner_type == ContentRoute.owner_type)
+            & (SeoDocument.owner_id == ContentRoute.owner_id)
+            & (SeoDocument.locale_id == ContentRoute.locale_id),
+        )
+        .where(
+            model.id.in_(ordered_ids),
+            model.status == "enabled",
+            ContentRoute.is_canonical.is_(True),
+            ContentRoute.active.is_(True),
+            ContentRoute.indexable.is_(True),
+            ContentPublication.status == "published",
+            TranslationStatus.status == "published",
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+            or_(
+                SeoDocument.id.is_(None),
+                SeoDocument.canonical_override.is_(None),
+                SeoDocument.canonical_override
+                == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+            ),
+        )
+    )
+    if target_type == "product":
+        statement = statement.join(
+            ProductCategory,
+            ProductCategory.id == Product.category_id,
+        ).where(ProductCategory.status == "enabled")
+
+    rows = (await session.execute(statement)).all()
+    links_by_id = {
+        entity.id: {
+            "type": target_type,
+            "slug": entity.slug,
+            "name": str(getattr(translation, title_field)),
+            "url": route.path,
+            "summary": next(
+                (
+                    str(getattr(translation, field))
+                    for field in summary_fields
+                    if getattr(translation, field, None)
+                ),
+                "",
+            ),
+        }
+        for entity, translation, route in rows
+    }
+    return [links_by_id[target_id] for target_id in ordered_ids if target_id in links_by_id]
+
+
 async def get_relation_health(
     session: AsyncSession,
     owner_type: str,

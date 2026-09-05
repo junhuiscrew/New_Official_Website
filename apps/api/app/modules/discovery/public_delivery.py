@@ -48,7 +48,6 @@ from app.modules.catalog.models import (
     ProductMaterial,
     ProductModel,
     ProductSolution,
-    ProductSpecValue,
     ProductTechnology,
     ProductTranslation,
     Solution,
@@ -67,6 +66,10 @@ from app.modules.discovery.schema_generator import (
     build_webpage_schema,
 )
 from app.modules.localization.models import Locale
+from app.modules.media.models import MediaAsset, MediaAssetTranslation
+
+from .public_schemas import PublicMediaDto
+from .public_specs import serialize_public_specifications
 
 OFFICIAL_ORIGIN = "https://junhuiscrewbarrel.com"
 PUBLIC_HANDLER_OWNER_TYPES = frozenset(
@@ -141,6 +144,53 @@ async def _locale(session: AsyncSession, locale_slug: str) -> Locale:
     if locale is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     return locale
+
+
+async def _public_media(
+    session: AsyncSession,
+    media_id: Any,
+    locale_id: Any,
+    *,
+    loading: str = "lazy",
+) -> PublicMediaDto | None:
+    """
+    将媒体引用解析为安全公开代理 DTO。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        media_id: Any，业务实体引用的媒体 ID。
+        locale_id: Any，当前语言 ID。
+        loading: str，浏览器加载策略，主媒体使用 eager。
+
+    输出：
+        PublicMediaDto | None，仅 ready public-media 资产可返回。
+    """
+    if media_id is None:
+        return None
+    asset = await session.get(MediaAsset, media_id)
+    if (
+        asset is None
+        or asset.visibility != "public"
+        or asset.storage_bucket != "public-media"
+        or asset.upload_status != "ready"
+    ):
+        return None
+    translation = await session.scalar(
+        select(MediaAssetTranslation).where(
+            MediaAssetTranslation.media_asset_id == asset.id,
+            MediaAssetTranslation.locale_id == locale_id,
+        )
+    )
+    return PublicMediaDto(
+        src=f"/api/v1/public/media/{asset.id}",
+        type=asset.media_type,
+        mime_type=asset.mime_type,
+        width=asset.width,
+        height=asset.height,
+        alt=translation.alt_text if translation else None,
+        caption=translation.caption if translation else None,
+        loading=loading,
+    )
 
 
 async def _public_route(
@@ -664,7 +714,13 @@ async def get_public_product(
     if translation is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     models = list((await session.scalars(select(ProductModel).where(ProductModel.product_id == product.id, ProductModel.status == "enabled").order_by(ProductModel.sort_order))).all())
-    specifications = list((await session.scalars(select(ProductSpecValue).where(ProductSpecValue.product_id == product.id, ProductSpecValue.is_public.is_(True)).order_by(ProductSpecValue.sort_order))).all())
+    specifications = await serialize_public_specifications(session, product.id, locale)
+    primary_media = await _public_media(
+        session,
+        product.primary_media_id,
+        locale.id,
+        loading="eager",
+    )
     relations: dict[str, list[dict[str, str]]] = {}
     for field_name, relation_model, target_column, target_type in (
         ("materials", ProductMaterial, "material_id", "material"),
@@ -714,7 +770,9 @@ async def get_public_product(
         "category_slug": category_slug,
         "translation": {"name": translation.name, "short_description": translation.short_description, "description": translation.description, "highlights": translation.highlights_jsonb},
         "models": [{"model_code": item.model_code, "sort_order": item.sort_order} for item in models],
-        "specifications": [_columns(item) for item in specifications],
+        "specifications": [item.model_dump() for item in specifications],
+        "media": [primary_media.model_dump()] if primary_media else [],
+        "primary_media": primary_media.model_dump() if primary_media else None,
         "relations": relations,
         "faqs": faqs,
         "cases": cases,

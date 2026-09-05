@@ -115,6 +115,13 @@ def test_public_schema_models_are_exact_allowlists() -> None:
             type="number",
             definition_id="internal-id",
         )
+    with pytest.raises(ValidationError):
+        PublicMediaDto(
+            src="/api/v1/public/media/asset-id",
+            type="image",
+            mime_type="image/webp",
+            alt=None,
+        )
 
 
 def test_all_spec_value_types_serialize_without_internal_fields() -> None:
@@ -315,12 +322,6 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
                     value_number=Decimal("120.500000"),
                     is_public=True,
                 ),
-                MediaAssetTranslation(
-                    media_asset_id=public_asset.id,
-                    locale_id=locale.id,
-                    alt_text="Extrusion screw",
-                    caption="Public product image",
-                ),
                 TranslationStatus(
                     owner_type="product",
                     owner_id=product.id,
@@ -354,9 +355,10 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
             "width": 1600,
             "height": 900,
             "alt": "Extrusion screw",
-            "caption": "Public product image",
+            "caption": None,
             "loading": "eager",
         }
+        # 缺少媒体翻译时，图片 alt 必须回退到当前语言的产品名称。
         assert payload["primary_media"] == expected_media
         assert payload["media"] == [expected_media]
         assert payload["specifications"] == [
@@ -373,6 +375,33 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         assert "definition_id" not in repr(payload)
         assert payload["alternates"]["en"].endswith("/en/products/screws/extrusion-screw/")
         assert payload["schema"]
+
+        media_translation = MediaAssetTranslation(
+            media_asset_id=public_asset.id,
+            locale_id=locale.id,
+            alt_text=None,
+            caption="Public product image",
+        )
+        session.add(media_translation)
+        await session.flush()
+        null_alt_payload = await get_public_product(
+            session,
+            "en",
+            "screws",
+            "extrusion-screw",
+        )
+        assert null_alt_payload["primary_media"]["alt"] == "Extrusion screw"
+
+        # 空白 alt 与空值同样不可公开，必须使用产品本地化名称。
+        media_translation.alt_text = "  \t"
+        await session.flush()
+        blank_alt_payload = await get_public_product(
+            session,
+            "en",
+            "screws",
+            "extrusion-screw",
+        )
+        assert blank_alt_payload["primary_media"]["alt"] == "Extrusion screw"
 
         # 即使产品记录错误引用 private-rfq，也必须闭合失败为无媒体。
         product.primary_media_id = private_asset.id

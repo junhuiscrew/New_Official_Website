@@ -150,6 +150,7 @@ async def _public_media(
     session: AsyncSession,
     media_id: Any,
     locale_id: Any,
+    fallback_alt: str,
     *,
     loading: str = "lazy",
 ) -> PublicMediaDto | None:
@@ -160,6 +161,7 @@ async def _public_media(
         session: AsyncSession，数据库会话。
         media_id: Any，业务实体引用的媒体 ID。
         locale_id: Any，当前语言 ID。
+        fallback_alt: str，对应公开实体在当前语言下的显示名称。
         loading: str，浏览器加载策略，主媒体使用 eager。
 
     输出：
@@ -181,13 +183,18 @@ async def _public_media(
             MediaAssetTranslation.locale_id == locale_id,
         )
     )
+    translated_alt = translation.alt_text.strip() if translation and translation.alt_text else ""
+    alt = translated_alt or fallback_alt.strip()
+    # 翻译与实体名称均无可见文本时过滤媒体，杜绝公开空 alt。
+    if not alt:
+        return None
     return PublicMediaDto(
         src=f"/api/v1/public/media/{asset.id}",
         type=asset.media_type,
         mime_type=asset.mime_type,
         width=asset.width,
         height=asset.height,
-        alt=translation.alt_text if translation else None,
+        alt=alt,
         caption=translation.caption if translation else None,
         loading=loading,
     )
@@ -719,6 +726,7 @@ async def get_public_product(
         session,
         product.primary_media_id,
         locale.id,
+        translation.name,
         loading="eager",
     )
     relations: dict[str, list[dict[str, str]]] = {}

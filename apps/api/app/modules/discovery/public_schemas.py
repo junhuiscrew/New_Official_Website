@@ -22,7 +22,7 @@ class PublicMediaDto(BaseModel):
     mime_type: str
     width: int | None = None
     height: int | None = None
-    alt: str | None = None
+    alt: str
     caption: str | None = None
     loading: Literal["eager", "lazy"] = "lazy"
 

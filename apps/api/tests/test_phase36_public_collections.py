@@ -20,24 +20,37 @@ from app.core.database import (
 )
 from app.main import create_app
 from app.modules.authority.models import (
+    ArticleApplication,
+    ArticleMaterial,
+    ArticleSolution,
+    ArticleTechnology,
     AuthorExpert,
     AuthorExpertTranslation,
+    CaseApplication,
+    CaseMaterial,
+    CaseSolution,
     CaseStudy,
     CaseStudyTranslation,
+    CaseTechnology,
     KnowledgeArticle,
     KnowledgeArticleTranslation,
     KnowledgeCategory,
 )
 from app.modules.catalog.models import (
     Application,
+    ApplicationSolution,
     ApplicationTranslation,
     Material,
+    MaterialSolution,
+    MaterialTechnology,
     MaterialTranslation,
     Product,
     ProductApplication,
     ProductCategory,
     ProductCategoryTranslation,
     ProductMaterial,
+    ProductSolution,
+    ProductTechnology,
     ProductTranslation,
     Solution,
     SolutionTranslation,
@@ -809,7 +822,16 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             is_real_person_verified=True,
             public_profile_enabled=False,
         )
+        unverified_expert = AuthorExpert(
+            slug="unverified-engineer",
+            status="enabled",
+            role_type="expert",
+            is_real_person_verified=False,
+            public_profile_enabled=True,
+        )
         knowledge_category = KnowledgeCategory(slug="guides", status="enabled")
+        disabled_product_category = ProductCategory(slug="disabled-components", status="disabled")
+        disabled_knowledge_category = KnowledgeCategory(slug="disabled-guides", status="disabled")
         session.add_all(
             [
                 locale,
@@ -821,7 +843,10 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
                 case_study,
                 expert,
                 hidden_expert,
+                unverified_expert,
                 knowledge_category,
+                disabled_product_category,
+                disabled_knowledge_category,
             ]
         )
         await session.flush()
@@ -836,7 +861,32 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             status="enabled",
             author_id=expert.id,
         )
-        session.add_all([product, article])
+        hidden_product = Product(
+            category_id=disabled_product_category.id,
+            slug="hidden-product",
+            status="enabled",
+        )
+        disabled_category_article = KnowledgeArticle(
+            category_id=disabled_knowledge_category.id,
+            slug="disabled-category-guide",
+            status="enabled",
+            author_id=expert.id,
+        )
+        unverified_author_article = KnowledgeArticle(
+            category_id=knowledge_category.id,
+            slug="unverified-author-guide",
+            status="enabled",
+            author_id=unverified_expert.id,
+        )
+        session.add_all(
+            [
+                product,
+                article,
+                hidden_product,
+                disabled_category_article,
+                unverified_author_article,
+            ]
+        )
         await session.flush()
         translations_and_lifecycle = (
             (
@@ -928,6 +978,48 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
                 ),
                 "/en/experts/private-engineer/",
             ),
+            (
+                "product",
+                hidden_product.id,
+                ProductTranslation(
+                    product_id=hidden_product.id,
+                    locale_id=locale.id,
+                    name="Hidden product",
+                ),
+                "/en/products/disabled-components/hidden-product/",
+            ),
+            (
+                "knowledge_article",
+                disabled_category_article.id,
+                KnowledgeArticleTranslation(
+                    article_id=disabled_category_article.id,
+                    locale_id=locale.id,
+                    title="Disabled category guide",
+                    body_markdown="Must not be linked.",
+                ),
+                "/en/knowledge/disabled-guides/disabled-category-guide/",
+            ),
+            (
+                "knowledge_article",
+                unverified_author_article.id,
+                KnowledgeArticleTranslation(
+                    article_id=unverified_author_article.id,
+                    locale_id=locale.id,
+                    title="Unverified author guide",
+                    body_markdown="Must not be linked.",
+                ),
+                "/en/knowledge/guides/unverified-author-guide/",
+            ),
+            (
+                "author_expert",
+                unverified_expert.id,
+                AuthorExpertTranslation(
+                    author_expert_id=unverified_expert.id,
+                    locale_id=locale.id,
+                    name="Unverified Engineer",
+                ),
+                "/en/experts/unverified-engineer/",
+            ),
         )
         for owner_type, owner_id, translation, path in translations_and_lifecycle:
             session.add(translation)
@@ -938,6 +1030,29 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
                 locale_id=locale.id,
                 path=path,
             )
+        # 四类详情只建立现有显式关系；公开 DTO 必须把目标再次通过发布门禁解析为 canonical Link。
+        session.add_all(
+            [
+                ProductMaterial(product_id=product.id, material_id=material.id),
+                ProductTechnology(product_id=product.id, technology_id=technology.id),
+                ProductApplication(product_id=product.id, application_id=application.id),
+                ProductSolution(product_id=product.id, solution_id=solution.id),
+                MaterialTechnology(material_id=material.id, technology_id=technology.id),
+                MaterialSolution(material_id=material.id, solution_id=solution.id),
+                ApplicationSolution(application_id=application.id, solution_id=solution.id),
+                CaseMaterial(case_study_id=case_study.id, material_id=material.id),
+                CaseTechnology(case_study_id=case_study.id, technology_id=technology.id),
+                CaseApplication(case_study_id=case_study.id, application_id=application.id),
+                CaseSolution(case_study_id=case_study.id, solution_id=solution.id),
+                ArticleMaterial(article_id=article.id, material_id=material.id),
+                ArticleTechnology(article_id=article.id, technology_id=technology.id),
+                ArticleApplication(article_id=article.id, application_id=application.id),
+                ArticleSolution(article_id=article.id, solution_id=solution.id),
+                ProductMaterial(product_id=hidden_product.id, material_id=material.id),
+                ArticleMaterial(article_id=disabled_category_article.id, material_id=material.id),
+                ArticleMaterial(article_id=unverified_author_article.id, material_id=material.id),
+            ]
+        )
 
     resources = (
         "products",
@@ -954,6 +1069,21 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         responses = {
             resource: await client.get(f"/api/v1/public/{resource}/en") for resource in resources
         }
+        material_page_two = await client.get(
+            "/api/v1/public/materials/en", params={"page": 2, "page_size": 1}
+        )
+        detail_responses = {
+            resource: await client.get(f"/api/v1/public/{resource}/en/{slug}")
+            for resource, slug in (
+                ("materials", "pvc"),
+                ("technologies", "nitriding"),
+                ("applications", "extrusion"),
+                ("solutions", "wear"),
+            )
+        }
+        category_detail_response = await client.get(
+            "/api/v1/public/product-categories/en/components"
+        )
 
     for resource, response in responses.items():
         assert response.status_code == 200, resource
@@ -966,7 +1096,12 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             "pages",
             "filters",
         }
-        if resource == "products":
+        if resource == "products" or resource in {
+            "materials",
+            "technologies",
+            "applications",
+            "solutions",
+        }:
             expected_envelope_keys.update({"seo", "schema", "breadcrumb"})
         assert set(envelope) == expected_envelope_keys
         assert envelope["total"] == 1, resource
@@ -976,6 +1111,77 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
         assert set(envelope["items"][0]) == expected_item_keys
     assert responses["experts"].json()["data"]["items"][0]["slug"] == "verified-engineer"
     assert "private-engineer" not in repr(responses["experts"].json())
+    assert category_detail_response.status_code == 200
+    category_detail = category_detail_response.json()["data"]
+    assert category_detail["relations"] == {}
+    assert category_detail["breadcrumb"][-2]["url"] == (
+        "https://junhuiscrewbarrel.com/en/products/"
+    )
+    assert material_page_two.status_code == 200
+    material_page_two_payload = material_page_two.json()["data"]
+    assert material_page_two_payload["seo"]["canonical"] == (
+        "https://junhuiscrewbarrel.com/en/materials/?page=2&page_size=1"
+    )
+    assert (
+        material_page_two_payload["seo"]["hreflang"]["en"]
+        == (material_page_two_payload["seo"]["canonical"])
+    )
+    assert (
+        material_page_two_payload["breadcrumb"][-1]["url"]
+        == (material_page_two_payload["seo"]["canonical"])
+    )
+
+    # 每类详情都只输出已发布 canonical Link DTO，并在可见 Breadcrumb 中包含列表入口。
+    expected_relation_groups = {
+        "materials": {"products", "technologies", "solutions", "cases", "knowledge"},
+        "technologies": {"products", "materials", "cases", "knowledge"},
+        "applications": {"products", "solutions", "cases", "knowledge"},
+        "solutions": {"products", "materials", "applications", "cases", "knowledge"},
+    }
+    for resource, response in detail_responses.items():
+        assert response.status_code == 200, resource
+        detail = response.json()["data"]
+        assert set(detail["relations"]) == expected_relation_groups[resource]
+        assert all(links for links in detail["relations"].values())
+        assert all(
+            set(link) == {"type", "slug", "name", "url", "summary"}
+            and link["url"].startswith("/en/")
+            for links in detail["relations"].values()
+            for link in links
+        )
+        assert detail["breadcrumb"][-2]["url"] == f"https://junhuiscrewbarrel.com/en/{resource}/"
+        assert "_id" not in repr(detail["relations"])
+    material_relations = detail_responses["materials"].json()["data"]["relations"]
+    assert "hidden-product" not in repr(material_relations)
+    assert "disabled-category-guide" not in repr(material_relations)
+    assert "unverified-author-guide" not in repr(material_relations)
+
+    # Catalog 详情关系必须批量读取，查询数不能随关联目标数量线性膨胀。
+    engine = public_collections_factory.kw["bind"]
+    assert isinstance(engine, AsyncEngine)
+    select_statements = 0
+
+    def count_detail_selects(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        """输入：SQLAlchemy 执行上下文；输出：None，仅统计 Catalog 详情 SELECT。"""
+        nonlocal select_statements
+        if statement.lstrip().upper().startswith("SELECT"):
+            select_statements += 1
+
+    event.listen(engine.sync_engine, "before_cursor_execute", count_detail_selects)
+    try:
+        async with _public_client(public_collections_factory) as client:
+            repeated_detail = await client.get("/api/v1/public/materials/en/pvc")
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", count_detail_selects)
+    assert repeated_detail.status_code == 200
+    assert select_statements <= 22
 
 
 @pytest.mark.asyncio

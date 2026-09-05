@@ -97,7 +97,7 @@ describe('Phase 3.6 product list filters and pagination', () => {
     })
 
     const hrefs = wrapper.findAll('a').map((anchor) => anchor.attributes('href'))
-    expect(hrefs.some((href) => href.includes('page=1'))).toBe(true)
+    expect(hrefs.some((href) => href.includes('page=1'))).toBe(false)
     expect(hrefs.some((href) => href.includes('page=3'))).toBe(true)
     for (const href of hrefs) {
       expect(href).toContain('category=injection')

@@ -1,2 +1,2 @@
-<!-- 页面用途：公开工艺技术实体的最小 SSR 页面。 -->
-<template><PublicCatalogEntityPage resource="technologies" /></template>
+<!-- 页面用途：服务端渲染公开处理技术详情、语义字段、关系与询价入口。 -->
+<template><PublicCatalogEntityPage resource="technologies" mode="detail" /></template>

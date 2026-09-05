@@ -160,6 +160,51 @@ export interface GeoDto {
   last_reviewed_at: string | null
 }
 
+/** 四类 Catalog 页面使用的稳定复数资源名。 */
+export type CatalogResource = 'materials' | 'technologies' | 'applications' | 'solutions'
+
+/** Catalog 关系区允许显示的后端分组键。 */
+export type CatalogRelationGroup =
+  | 'products'
+  | 'materials'
+  | 'technologies'
+  | 'applications'
+  | 'solutions'
+  | 'cases'
+  | 'knowledge'
+
+/** 四类 Catalog 翻译 DTO 的显式字段并集；不同类型未使用字段保持缺省。 */
+export interface PublicCatalogTranslationDto {
+  name: string
+  definition?: string | null
+  processing_characteristics?: string | null
+  screw_impact?: string | null
+  recommendations?: string | null
+  limitations?: string | null
+  process_description?: string | null
+  benefits?: string | null
+  description?: string | null
+  technical_requirements?: string | null
+  common_problems?: string | null
+  symptoms?: string | null
+  causes?: string | null
+  diagnosis?: string | null
+  solution?: string | null
+}
+
+/** 四类 Catalog 详情端点的公开白名单 DTO。 */
+export interface PublicCatalogDetailDto {
+  type: 'material' | 'technology' | 'application' | 'solution'
+  slug: string
+  translation: PublicCatalogTranslationDto
+  relations: Partial<Record<CatalogRelationGroup, PublicLinkDto[]>>
+  seo: SeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+  alternates?: Record<string, string>
+}
+
 /** 公开集合端点返回的统一分页 envelope。 */
 export interface PublicCollectionDto<T extends PublicLinkDto = PublicCardDto> {
   items: T[]

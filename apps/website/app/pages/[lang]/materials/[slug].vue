@@ -1,2 +1,2 @@
-<!-- 页面用途：公开材料知识实体的最小 SSR 页面。 -->
-<template><PublicCatalogEntityPage resource="materials" /></template>
+<!-- 页面用途：服务端渲染公开材料详情、语义字段、关系与询价入口。 -->
+<template><PublicCatalogEntityPage resource="materials" mode="detail" /></template>

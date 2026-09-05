@@ -1,2 +1,2 @@
-<!-- 页面用途：公开问题解决方案实体的最小 SSR 页面。 -->
-<template><PublicCatalogEntityPage resource="solutions" /></template>
+<!-- 页面用途：服务端渲染公开解决方案详情、语义字段、关系与询价入口。 -->
+<template><PublicCatalogEntityPage resource="solutions" mode="detail" /></template>

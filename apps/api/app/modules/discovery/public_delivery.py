@@ -38,8 +38,11 @@ from app.modules.authority.models import (
 from app.modules.authority.public import serialize_public_case
 from app.modules.catalog.models import (
     Application,
+    ApplicationSolution,
     ApplicationTranslation,
     Material,
+    MaterialSolution,
+    MaterialTechnology,
     MaterialTranslation,
     Product,
     ProductApplication,
@@ -133,6 +136,55 @@ CATALOG_PUBLIC_TYPES: dict[str, tuple[type, type, str, tuple[str, ...]]] = {
         ("definition", "symptoms", "causes", "diagnosis", "solution", "limitations"),
     ),
 }
+
+# 每类目录详情只读取既有显式关系，目标仍统一通过发布、路由与 SEO 门禁。
+CATALOG_RELATION_TYPES: dict[str, tuple[tuple[str, type, str, str, str], ...]] = {
+    "material": (
+        ("products", ProductMaterial, "material_id", "product_id", "product"),
+        ("technologies", MaterialTechnology, "material_id", "technology_id", "technology"),
+        ("solutions", MaterialSolution, "material_id", "solution_id", "solution"),
+        ("cases", CaseMaterial, "material_id", "case_study_id", "case_study"),
+        ("knowledge", ArticleMaterial, "material_id", "article_id", "knowledge_article"),
+    ),
+    "technology": (
+        ("products", ProductTechnology, "technology_id", "product_id", "product"),
+        ("materials", MaterialTechnology, "technology_id", "material_id", "material"),
+        ("cases", CaseTechnology, "technology_id", "case_study_id", "case_study"),
+        ("knowledge", ArticleTechnology, "technology_id", "article_id", "knowledge_article"),
+    ),
+    "application": (
+        ("products", ProductApplication, "application_id", "product_id", "product"),
+        ("solutions", ApplicationSolution, "application_id", "solution_id", "solution"),
+        ("cases", CaseApplication, "application_id", "case_study_id", "case_study"),
+        ("knowledge", ArticleApplication, "application_id", "article_id", "knowledge_article"),
+    ),
+    "solution": (
+        ("products", ProductSolution, "solution_id", "product_id", "product"),
+        ("materials", MaterialSolution, "solution_id", "material_id", "material"),
+        ("applications", ApplicationSolution, "solution_id", "application_id", "application"),
+        ("cases", CaseSolution, "solution_id", "case_study_id", "case_study"),
+        ("knowledge", ArticleSolution, "solution_id", "article_id", "knowledge_article"),
+    ),
+}
+
+CATALOG_COLLECTION_LABELS: dict[str, dict[str, str]] = {
+    "product_category": {"en": "Products", "zh-cn": "产品"},
+    "material": {"en": "Materials", "zh-cn": "材料"},
+    "technology": {"en": "Technologies", "zh-cn": "处理技术"},
+    "application": {"en": "Applications", "zh-cn": "应用"},
+    "solution": {"en": "Solutions", "zh-cn": "解决方案"},
+}
+
+CATALOG_COLLECTION_PATHS: dict[str, str] = {
+    "product_category": "products",
+    "material": "materials",
+    "technology": "technologies",
+    "application": "applications",
+    "solution": "solutions",
+}
+
+# 单个关系分组限制公开链接数量，避免详情页响应与 SSR DOM 无界增长。
+PUBLIC_RELATION_LINK_LIMIT = 12
 
 
 def _columns(entity: Any) -> dict[str, Any]:
@@ -387,7 +439,16 @@ async def _published_link(
                 ProductTranslation.locale_id == locale.id,
             )
         )
-        if entity is None or entity.status != "enabled" or translation is None:
+        category = (
+            await session.get(ProductCategory, entity.category_id) if entity is not None else None
+        )
+        if (
+            entity is None
+            or entity.status != "enabled"
+            or category is None
+            or category.status != "enabled"
+            or translation is None
+        ):
             return None
         return {
             "type": owner_type,
@@ -423,7 +484,30 @@ async def _published_link(
                 KnowledgeArticleTranslation.locale_id == locale.id,
             )
         )
-        if entity is None or entity.status != "enabled" or translation is None:
+        category = (
+            await session.get(KnowledgeCategory, entity.category_id) if entity is not None else None
+        )
+        author = await session.get(AuthorExpert, entity.author_id) if entity is not None else None
+        author_translation = (
+            await session.scalar(
+                select(AuthorExpertTranslation).where(
+                    AuthorExpertTranslation.author_expert_id == entity.author_id,
+                    AuthorExpertTranslation.locale_id == locale.id,
+                )
+            )
+            if entity is not None
+            else None
+        )
+        if (
+            entity is None
+            or entity.status != "enabled"
+            or category is None
+            or category.status != "enabled"
+            or author is None
+            or not author.is_real_person_verified
+            or author_translation is None
+            or translation is None
+        ):
             return None
         return {
             "type": owner_type,
@@ -626,21 +710,121 @@ async def _published_relation_links(
     输入：会话、关系模型、来源字段/ID、目标字段/类型与语言。
     输出：list[dict[str, str]]，canonical Link DTO 列表。
     """
-    target_ids = list(
-        (
-            await session.scalars(
-                select(getattr(relation_model, target_column))
-                .where(getattr(relation_model, relation_owner_column) == owner_id)
-                .order_by(relation_model.sort_order)
-            )
-        ).all()
+    if target_type in CATALOG_PUBLIC_TYPES:
+        model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[target_type]
+        title_field = "name"
+    elif target_type == "product":
+        model, translation_model, foreign_key = Product, ProductTranslation, "product_id"
+        title_field, summary_fields = "name", ("short_description",)
+    elif target_type == "case_study":
+        model, translation_model, foreign_key = CaseStudy, CaseStudyTranslation, "case_study_id"
+        title_field, summary_fields = "title", ("summary",)
+    elif target_type == "knowledge_article":
+        model = KnowledgeArticle
+        translation_model = KnowledgeArticleTranslation
+        foreign_key = "article_id"
+        title_field, summary_fields = "title", ("summary",)
+    else:
+        return []
+
+    # 一次联表查询完成业务状态、翻译、发布、canonical 路由与 robots 门禁。
+    statement = (
+        select(model, translation_model, ContentRoute)
+        .select_from(relation_model)
+        .join(model, model.id == getattr(relation_model, target_column))
+        .join(
+            translation_model,
+            (getattr(translation_model, foreign_key) == model.id)
+            & (translation_model.locale_id == locale.id),
+        )
+        .join(
+            ContentRoute,
+            (ContentRoute.owner_type == target_type)
+            & (ContentRoute.owner_id == model.id)
+            & (ContentRoute.locale_id == locale.id),
+        )
+        .join(
+            ContentPublication,
+            (ContentPublication.owner_type == ContentRoute.owner_type)
+            & (ContentPublication.owner_id == ContentRoute.owner_id)
+            & (ContentPublication.locale_id == ContentRoute.locale_id),
+        )
+        .join(
+            TranslationStatus,
+            (TranslationStatus.owner_type == ContentRoute.owner_type)
+            & (TranslationStatus.owner_id == ContentRoute.owner_id)
+            & (TranslationStatus.locale_id == ContentRoute.locale_id),
+        )
+        .outerjoin(
+            SeoDocument,
+            (SeoDocument.owner_type == ContentRoute.owner_type)
+            & (SeoDocument.owner_id == ContentRoute.owner_id)
+            & (SeoDocument.locale_id == ContentRoute.locale_id),
+        )
+        .where(
+            getattr(relation_model, relation_owner_column) == owner_id,
+            model.status == "enabled",
+            ContentRoute.is_canonical.is_(True),
+            ContentRoute.active.is_(True),
+            ContentRoute.indexable.is_(True),
+            ContentPublication.status == "published",
+            TranslationStatus.status == "published",
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+            or_(
+                SeoDocument.id.is_(None),
+                SeoDocument.canonical_override.is_(None),
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+            ),
+        )
     )
-    links: list[dict[str, str]] = []
-    for target_id in target_ids:
-        link = await _published_link(session, target_type, target_id, locale)
-        if link is not None:
-            links.append(link)
-    return links
+    # Product 与 Knowledge 的依赖实体也必须满足详情端点的业务可见性门槛。
+    if target_type == "product":
+        statement = statement.join(
+            ProductCategory, ProductCategory.id == Product.category_id
+        ).where(ProductCategory.status == "enabled")
+    elif target_type == "knowledge_article":
+        statement = (
+            statement.join(
+                KnowledgeCategory,
+                KnowledgeCategory.id == KnowledgeArticle.category_id,
+            )
+            .join(AuthorExpert, AuthorExpert.id == KnowledgeArticle.author_id)
+            .join(
+                AuthorExpertTranslation,
+                (AuthorExpertTranslation.author_expert_id == KnowledgeArticle.author_id)
+                & (AuthorExpertTranslation.locale_id == locale.id),
+            )
+            .where(
+                KnowledgeCategory.status == "enabled",
+                AuthorExpert.status == "enabled",
+                AuthorExpert.is_real_person_verified.is_(True),
+            )
+        )
+
+    rows = (
+        await session.execute(
+            statement.order_by(relation_model.sort_order, model.slug).limit(
+                PUBLIC_RELATION_LINK_LIMIT
+            )
+        )
+    ).all()
+    return [
+        {
+            "type": target_type,
+            "slug": entity.slug,
+            "name": str(getattr(translation, title_field)),
+            "url": route.path,
+            "summary": next(
+                (
+                    str(getattr(translation, field))
+                    for field in summary_fields
+                    if getattr(translation, field, None)
+                ),
+                "",
+            ),
+        }
+        for entity, translation, route in rows
+    ]
 
 
 async def get_relation_health(
@@ -1359,10 +1543,9 @@ async def get_public_catalog_entity(
     )
     if translation is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
+    # Catalog 公开翻译使用显式字段白名单，未来新增 ORM 列不会被自动暴露。
     translation_payload = {
-        field: value
-        for field, value in _columns(translation).items()
-        if field not in {"id", foreign_key, "locale_id", "created_at", "updated_at"}
+        field: getattr(translation, field, None) for field in ("name", *summary_fields)
     }
     summary = next(
         (
@@ -1373,14 +1556,40 @@ async def get_public_catalog_entity(
         None,
     )
     url = OFFICIAL_ORIGIN + route.path
+    resource = CATALOG_COLLECTION_PATHS[owner_type]
+    collection_name = CATALOG_COLLECTION_LABELS[owner_type][
+        "zh-cn" if locale.slug == "zh-cn" else "en"
+    ]
     breadcrumb = [
-        {"name": "Home", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
+        {
+            "name": "首页" if locale.slug == "zh-cn" else "Home",
+            "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/",
+        },
+        {"name": collection_name, "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/{resource}/"},
         {"name": translation.name, "url": url},
     ]
+    relations: dict[str, list[dict[str, str]]] = {}
+    for (
+        group,
+        relation_model,
+        owner_column,
+        target_column,
+        target_type,
+    ) in CATALOG_RELATION_TYPES.get(owner_type, ()):
+        relations[group] = await _published_relation_links(
+            session,
+            relation_model,
+            owner_column,
+            entity.id,
+            target_column,
+            target_type,
+            locale,
+        )
     return {
         "type": owner_type,
         "slug": entity.slug,
         "translation": translation_payload,
+        "relations": relations,
         "seo": _seo_payload(seo, route, translation.name, summary),
         "geo": _geo_payload(geo),
         "breadcrumb": breadcrumb,

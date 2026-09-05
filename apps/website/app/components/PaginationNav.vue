@@ -15,9 +15,31 @@ const props = defineProps<{
 }>()
 const labels = computed(() => ui[props.locale])
 const safePageSize = computed(() => Math.min(48, Math.max(1, Math.trunc(props.pageSize))))
-const visiblePages = computed(() =>
-  Array.from({ length: Math.max(0, props.pages) }, (_, index) => index + 1),
+const currentPage = computed(() =>
+  Math.min(Math.max(1, Math.trunc(props.page)), Math.max(1, Math.trunc(props.pages))),
 )
+type PaginationItem = number | 'start-ellipsis' | 'end-ellipsis'
+
+// 大型集合仅展示首尾页与当前页附近窗口，控制 SSR DOM 大小。
+const visiblePages = computed<PaginationItem[]>(() => {
+  const totalPages = Math.max(0, Math.trunc(props.pages))
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1)
+
+  const selectedPages = new Set<number>([1, totalPages])
+  const windowStart = Math.max(2, currentPage.value - 2)
+  const windowEnd = Math.min(totalPages - 1, currentPage.value + 2)
+  for (let page = windowStart; page <= windowEnd; page += 1) selectedPages.add(page)
+
+  const sortedPages = [...selectedPages].sort((left, right) => left - right)
+  const items: PaginationItem[] = []
+  for (const page of sortedPages) {
+    const previous = items.at(-1)
+    if (typeof previous === 'number' && page - previous > 1)
+      items.push(previous === 1 ? 'start-ellipsis' : 'end-ellipsis')
+    items.push(page)
+  }
+  return items
+})
 
 /** 为每个可索引分页生成稳定 href，不依赖客户端点击处理。 */
 function pageHref(page: number): string {
@@ -26,24 +48,28 @@ function pageHref(page: number): string {
     const value = props.query?.[key]?.trim()
     if (value) query.set(key, value)
   }
-  query.set('page', String(page))
-  query.set('page_size', String(safePageSize.value))
-  return `${props.basePath}?${query.toString()}`
+  // 与后端 canonical 规则一致：第一页与默认分页大小不写入查询参数。
+  if (page > 1) query.set('page', String(page))
+  if (safePageSize.value !== 24) query.set('page_size', String(safePageSize.value))
+  const queryString = query.toString()
+  return queryString ? `${props.basePath}?${queryString}` : props.basePath
 }
 </script>
 
 <template>
-  <nav v-if="pages > 1" class="pagination" aria-label="Pagination">
+  <nav v-if="pages > 1" class="pagination" :aria-label="labels.pagination.label">
     <a v-if="page > 1" rel="prev" :href="pageHref(page - 1)">{{ labels.pagination.previous }}</a>
     <ol>
-      <li v-for="pageNumber in visiblePages" :key="pageNumber">
+      <li v-for="item in visiblePages" :key="item">
         <a
-          :href="pageHref(pageNumber)"
-          :aria-current="pageNumber === page ? 'page' : undefined"
-          :aria-label="`${labels.pagination.page} ${pageNumber}`"
+          v-if="typeof item === 'number'"
+          :href="pageHref(item)"
+          :aria-current="item === currentPage ? 'page' : undefined"
+          :aria-label="`${labels.pagination.page} ${item}`"
         >
-          {{ pageNumber }}
+          {{ item }}
         </a>
+        <span v-else aria-hidden="true">…</span>
       </li>
     </ol>
     <a v-if="page < pages" rel="next" :href="pageHref(page + 1)">{{ labels.pagination.next }}</a>

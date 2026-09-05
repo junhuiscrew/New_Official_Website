@@ -179,6 +179,29 @@ _PRIMARY_NAVIGATION = (
     "about",
 )
 
+# 四类目录页标题属于界面导航文案，不包含材料、工艺或解决方案业务事实。
+_CATALOG_LISTING_LABELS: dict[str, dict[str, tuple[str, str]]] = {
+    "material": {
+        "en": ("Materials", "Browse published material guidance and related engineering content."),
+        "zh-cn": ("材料", "浏览已发布的材料指南及相关工程内容。"),
+    },
+    "technology": {
+        "en": ("Technologies", "Browse published processing technologies and capability guidance."),
+        "zh-cn": ("处理技术", "浏览已发布的处理技术与能力指南。"),
+    },
+    "application": {
+        "en": (
+            "Applications",
+            "Browse published application requirements and processing challenges.",
+        ),
+        "zh-cn": ("应用", "浏览已发布的应用要求与加工挑战。"),
+    },
+    "solution": {
+        "en": ("Solutions", "Browse published problem analysis and recommended approaches."),
+        "zh-cn": ("解决方案", "浏览已发布的问题分析与建议方案。"),
+    },
+}
+
 
 def _public_collection_statement(
     owner_type: str,
@@ -534,6 +557,80 @@ async def _product_listing_seo(
         "canonical": canonical,
         "robots": "index, follow",
         "hreflang": {key: f"{value}{suffix}" for key, value in alternates.items()},
+    }
+
+
+async def _catalog_listing_metadata(
+    session: AsyncSession,
+    locale: Locale,
+    owner_type: str,
+    page: int,
+    page_size: int,
+) -> dict[str, Any] | None:
+    """
+    为四类 Catalog 集合生成稳定的后端 SEO、Breadcrumb 与 Schema。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale: Locale，当前已启用语言。
+        owner_type: str，material/technology/application/solution 之一。
+        page: int，当前页码。
+        page_size: int，每页条数。
+
+    输出：
+        dict[str, Any] | None，列表元数据；非 Catalog 内容族返回 None。
+    """
+    locale_labels = _CATALOG_LISTING_LABELS.get(owner_type)
+    if locale_labels is None:
+        return None
+    resource = f"{owner_type}s" if owner_type != "technology" else "technologies"
+    if owner_type == "application":
+        resource = "applications"
+    labels = locale_labels["zh-cn" if locale.slug == "zh-cn" else "en"]
+    title, description = labels
+    suffix = _listing_query_suffix(
+        category=None,
+        material=None,
+        application=None,
+        page=page,
+        page_size=page_size,
+        category_in_path=False,
+    )
+    canonical = f"{OFFICIAL_ORIGIN}/{locale.slug}/{resource}/{suffix}"
+    locale_rows = list(
+        (
+            await session.scalars(
+                select(Locale)
+                .where(Locale.is_enabled.is_(True))
+                .order_by(Locale.sort_order, Locale.code)
+            )
+        ).all()
+    )
+    hreflang = {
+        item.code: f"{OFFICIAL_ORIGIN}/{item.slug}/{resource}/{suffix}" for item in locale_rows
+    }
+    default_locale = next((item for item in locale_rows if item.is_default), None)
+    if default_locale is not None:
+        hreflang["x-default"] = f"{OFFICIAL_ORIGIN}/{default_locale.slug}/{resource}/{suffix}"
+    home_name = "首页" if locale.slug == "zh-cn" else "Home"
+    breadcrumb = [
+        {"name": home_name, "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
+        {"name": title, "url": canonical},
+    ]
+    seo = {
+        "title": title,
+        "description": description,
+        "canonical": canonical,
+        "robots": "index, follow",
+        "hreflang": hreflang,
+    }
+    return {
+        "seo": seo,
+        "breadcrumb": breadcrumb,
+        "schema": [
+            build_webpage_schema({"name": title, "description": description, "url": canonical}),
+            build_breadcrumb_schema(breadcrumb),
+        ],
     }
 
 
@@ -910,6 +1007,16 @@ async def get_public_listing(
             ),
             build_breadcrumb_schema(breadcrumb),
         ]
+    else:
+        catalog_metadata = await _catalog_listing_metadata(
+            session,
+            locale,
+            owner_type,
+            page,
+            page_size,
+        )
+        if catalog_metadata is not None:
+            payload.update(catalog_metadata)
     return payload
 
 

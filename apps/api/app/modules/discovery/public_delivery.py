@@ -327,6 +327,37 @@ async def _public_route(
     return route, seo, geo
 
 
+async def resolve_public_product_source(
+    session: AsyncSession,
+    locale_slug: str,
+    product_slug: str,
+) -> tuple[Product, ContentRoute]:
+    """
+    解析可用于公开 RFQ 归因的 Product，并复用完整发布门禁。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale_slug: str，CTA 页面语言 slug。
+        product_slug: str，公开 Product slug。
+    输出：
+        tuple[Product, ContentRoute]，真实 Product 与当前语言 canonical route；不可公开时抛出 404。
+    """
+    locale = await _locale(session, locale_slug)
+    product = await session.scalar(
+        select(Product)
+        .join(ProductTranslation, ProductTranslation.product_id == Product.id)
+        .where(
+            Product.slug == product_slug,
+            Product.status == "enabled",
+            ProductTranslation.locale_id == locale.id,
+        )
+    )
+    if product is None:
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
+    route, _seo, _geo = await _public_route(session, "product", product.id, locale.id)
+    return product, route
+
+
 async def _published_alternates(
     session: AsyncSession,
     owner_type: str,

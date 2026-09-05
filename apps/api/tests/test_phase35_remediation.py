@@ -20,7 +20,7 @@ from app.core.exceptions.handlers import AppException
 from app.modules.audit import models as _audit_models  # noqa: F401
 from app.modules.auth import models as _auth_models  # noqa: F401
 from app.modules.catalog import models as _catalog_models  # noqa: F401
-from app.modules.catalog.models import Product, ProductCategory, ProductModel
+from app.modules.catalog.models import Product, ProductCategory, ProductModel, ProductTranslation
 from app.modules.company import models as _company_models  # noqa: F401
 from app.modules.content.models import (
     ContentPublication,
@@ -236,6 +236,119 @@ def test_submission_token_uses_public_reference_not_database_uuid() -> None:
     assert payload["sub"] == rfq.public_reference
     assert str(rfq.id) not in token and "ref" not in payload
     assert verify_submission_token(token, rfq.public_reference)
+
+
+async def test_public_product_slug_is_resolved_to_server_authoritative_rfq_source(
+    remediation_factory,
+) -> None:
+    """公开 CTA 只提交 slug；服务端必须核验发布门禁并写入真实 Product ID 与 canonical。"""
+    from app.modules.rfq.services import validate_source
+
+    async with remediation_factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.slug == "en"))
+        category = ProductCategory(slug="parts", status="enabled")
+        session.add(category)
+        await session.flush()
+        product = Product(category_id=category.id, slug="precision-screw", status="enabled")
+        session.add(product)
+        await session.flush()
+        session.add_all(
+            [
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="Precision Screw",
+                ),
+                TranslationStatus(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=locale.id,
+                    path="/en/products/parts/precision-screw/",
+                    is_canonical=True,
+                    indexable=True,
+                    active=True,
+                ),
+            ]
+        )
+        await session.flush()
+        payload = RFQCreate(
+            company_name="ACME",
+            contact_name="Lee",
+            email="lee@example.com",
+            message="Need a quote",
+            consent_privacy=True,
+            preferred_language="en",
+            source_type="product",
+            source_slug="precision-screw",
+        )
+
+        source_page_url, source_owner_type, source_owner_id = await validate_source(
+            session, payload
+        )
+
+        assert source_owner_id == product.id
+        assert source_owner_type == "product"
+        assert source_page_url == (
+            "https://junhuiscrewbarrel.com/en/products/parts/precision-screw/"
+        )
+
+
+async def test_unpublished_product_slug_is_rejected_as_rfq_source(remediation_factory) -> None:
+    """未发布 Product 即使 slug 真实存在，也不能伪装为公开询盘来源。"""
+    from app.modules.rfq.services import validate_source
+
+    async with remediation_factory() as session, session.begin():
+        category = ProductCategory(slug="parts", status="enabled")
+        session.add(category)
+        await session.flush()
+        session.add(Product(category_id=category.id, slug="draft-screw", status="enabled"))
+        await session.flush()
+        payload = RFQCreate(
+            company_name="ACME",
+            contact_name="Lee",
+            email="lee@example.com",
+            message="Need a quote",
+            consent_privacy=True,
+            preferred_language="en",
+            source_type="product",
+            source_slug="draft-screw",
+        )
+
+        with pytest.raises(AppException) as rejected:
+            await validate_source(session, payload)
+
+        assert rejected.value.code == "invalid_rfq_source"
+
+
+def test_public_rfq_schema_rejects_client_supplied_internal_source_fields() -> None:
+    """匿名 RFQ schema 必须拒绝 owner UUID 与页面 URL，不能静默忽略后再污染归因。"""
+    forbidden_fields = {
+        "source_owner_id": str(uuid.uuid4()),
+        "source_owner_type": "product",
+        "source_page_url": "https://evil.example/private",
+    }
+    for field_name, value in forbidden_fields.items():
+        with pytest.raises(ValueError):
+            RFQCreate(
+                company_name="ACME",
+                contact_name="Lee",
+                email="lee@example.com",
+                message="Need a quote",
+                consent_privacy=True,
+                **{field_name: value},
+            )
 
 
 async def test_rfq_model_and_attachment_item_must_belong_to_parent(remediation_factory) -> None:

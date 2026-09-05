@@ -11,7 +11,15 @@ export const TELEMETRY_EVENTS = {
 
 export type TelemetryEvent = keyof typeof TELEMETRY_EVENTS
 
-/** 遥测允许字段白名单；不提供自由结构 payload。 */
+/** 四类事件各自的 payload 白名单，类型层禁止查询词、表单内容与文件名。 */
+export interface TelemetryPayloadMap {
+  rfq_cta_click: Pick<TelemetryContext, 'locale' | 'sourceType' | 'sourceSlug'>
+  search_submit: Pick<TelemetryContext, 'locale'>
+  download_click: Pick<TelemetryContext, 'locale' | 'sourceType' | 'sourceSlug' | 'resourceType'>
+  language_switch: Pick<TelemetryContext, 'locale' | 'targetLocale'>
+}
+
+/** 遥测底层允许字段白名单；不提供自由结构 payload。 */
 export interface TelemetryContext {
   locale?: LocaleSlug
   sourceType?: PublicContentType
@@ -20,7 +28,10 @@ export interface TelemetryContext {
   targetLocale?: LocaleSlug
 }
 
-export type TelemetryAdapter = (event: TelemetryEvent, context: TelemetryContext) => void
+export type TelemetryAdapter = <Event extends TelemetryEvent>(
+  event: Event,
+  context: TelemetryPayloadMap[Event],
+) => void
 
 declare global {
   interface Window {
@@ -37,14 +48,21 @@ declare global {
  * 输出：
  *   TelemetryContext，只含允许上报的短公开标识。
  */
-function sanitizeContext(context: TelemetryContext): TelemetryContext {
+function sanitizeContext(event: TelemetryEvent, context: TelemetryContext): TelemetryContext {
   const sanitized: TelemetryContext = {}
   if (context.locale) sanitized.locale = context.locale
-  if (context.sourceType) sanitized.sourceType = context.sourceType
-  if (context.sourceSlug?.trim()) sanitized.sourceSlug = context.sourceSlug.trim().slice(0, 180)
-  if (context.resourceType?.trim())
+  if (event === 'language_switch' && context.targetLocale) {
+    sanitized.targetLocale = context.targetLocale
+  }
+  if ((event === 'rfq_cta_click' || event === 'download_click') && context.sourceType) {
+    sanitized.sourceType = context.sourceType
+  }
+  if ((event === 'rfq_cta_click' || event === 'download_click') && context.sourceSlug?.trim()) {
+    sanitized.sourceSlug = context.sourceSlug.trim().slice(0, 180)
+  }
+  if (event === 'download_click' && context.resourceType?.trim()) {
     sanitized.resourceType = context.resourceType.trim().slice(0, 64)
-  if (context.targetLocale) sanitized.targetLocale = context.targetLocale
+  }
   return sanitized
 }
 
@@ -65,10 +83,18 @@ export function useTelemetry() {
    *
    * 输出：void；SSR 或 adapter 未配置时不执行任何副作用。
    */
-  function track(event: TelemetryEvent, context: TelemetryContext = {}): void {
+  function track<Event extends TelemetryEvent>(
+    event: Event,
+    context: TelemetryPayloadMap[Event],
+  ): void {
     if (typeof window === 'undefined') return
+    // JS 调用与显式类型断言仍可能绕过编译期类型，因此运行时再次校验四类事件。
+    if (!Object.prototype.hasOwnProperty.call(TELEMETRY_EVENTS, event)) return
     try {
-      window.__JUNHUI_PUBLIC_TELEMETRY__?.(event, sanitizeContext(context))
+      window.__JUNHUI_PUBLIC_TELEMETRY__?.(
+        event,
+        sanitizeContext(event, context) as TelemetryPayloadMap[Event],
+      )
     } catch {
       // 遥测属于可选增强，adapter 故障不得影响公开页面的核心交互。
     }

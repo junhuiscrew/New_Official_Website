@@ -60,6 +60,21 @@ export interface PublicCardDto extends PublicLinkDto {
   role_type?: PublicPersonRole | null
 }
 
+/** Search V1 仅允许检索的六类公开内容。 */
+export type PublicSearchType =
+  | 'product'
+  | 'material'
+  | 'application'
+  | 'solution'
+  | 'knowledge_article'
+  | 'case_study'
+
+/** Search API 按类型返回的 canonical 卡片集合。 */
+export interface PublicSearchDto {
+  query: string
+  groups: Record<PublicSearchType, PublicLinkDto[]>
+}
+
 /** Knowledge 分类仅用于已发布文章筛选，不伪装成独立详情实体。 */
 export interface PublicKnowledgeCategoryDto {
   slug: string

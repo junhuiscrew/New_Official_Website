@@ -17,6 +17,10 @@ from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
 from app.modules.catalog.models import Product, ProductModel
+from app.modules.discovery.public_delivery import (
+    OFFICIAL_ORIGIN,
+    resolve_public_product_source,
+)
 from app.modules.media.models import MediaAsset
 from app.modules.media.scanner import apply_scan_result
 from app.modules.media.services import validate_upload_bytes
@@ -118,24 +122,37 @@ def verify_submission_token(token: str, public_reference: str) -> bool:
         return False
 
 
-async def validate_source(session: AsyncSession, payload: RFQCreate) -> None:
-    """验证来源 URL、owner 类型和真实实体，防止任意 UUID 注入。"""
-    if not payload.source_owner_type and not payload.source_owner_id:
-        return
-    if payload.source_owner_type != "product" or payload.source_owner_id is None:
-        raise AppException(422, "invalid_rfq_source", "询盘来源只能引用公开 Product")
-    product = await session.get(Product, payload.source_owner_id)
-    if product is None or product.status != "enabled":
-        raise AppException(422, "invalid_rfq_source", "询盘来源产品不存在")
-    if payload.source_page_url:
-        parsed = urlparse(payload.source_page_url)
-        if parsed.scheme != "https" or parsed.hostname != "junhuiscrewbarrel.com":
-            raise AppException(422, "invalid_rfq_source", "询盘来源 URL 必须是正式主域")
+async def validate_source(
+    session: AsyncSession,
+    payload: RFQCreate,
+) -> tuple[str | None, str | None, uuid.UUID | None]:
+    """
+    验证来源 URL、owner 类型和真实公开实体，防止任意 UUID 或 slug 注入。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        payload: RFQCreate，匿名 RFQ 输入；公开 CTA 只允许携带 Product slug。
+    输出：
+        tuple[str | None, str | None, UUID | None]；服务端解析的 canonical、类型与真实 ID。
+    """
+    if not payload.source_type and not payload.source_slug:
+        return None, None, None
+    if payload.source_type != "product" or not payload.source_slug or not payload.preferred_language:
+        raise AppException(422, "invalid_rfq_source", "询盘来源参数不完整")
+    try:
+        product, route = await resolve_public_product_source(
+            session,
+            payload.preferred_language,
+            payload.source_slug,
+        )
+    except AppException as exc:
+        raise AppException(422, "invalid_rfq_source", "询盘来源产品未公开") from exc
+    return OFFICIAL_ORIGIN + route.path, "product", product.id
 
 
 async def create_rfq(session: AsyncSession, payload: RFQCreate, *, ip: str | None, user_agent: str | None) -> RFQ:
     """创建询盘及多项目记录，公开返回只使用 public_reference。"""
-    await validate_source(session, payload)
+    source_page_url, source_owner_type, source_owner_id = await validate_source(session, payload)
     # 唯一索引是最终防线；先用有限重试避免极低概率的公开编号碰撞。
     public_reference = ""
     for _attempt in range(5):
@@ -146,7 +163,7 @@ async def create_rfq(session: AsyncSession, payload: RFQCreate, *, ip: str | Non
             break
     if not public_reference:
         raise AppException(503, "rfq_reference_unavailable", "暂时无法生成询盘编号")
-    rfq = RFQ(public_reference=public_reference, company_name=payload.company_name.strip(), contact_name=payload.contact_name.strip(), email=str(payload.email).lower(), phone=payload.phone, whatsapp=payload.whatsapp, country_code=payload.country_code, website=payload.website, message=payload.message, preferred_language=payload.preferred_language, source_page_url=payload.source_page_url, source_owner_type=payload.source_owner_type, source_owner_id=payload.source_owner_id, submitted_ip=ip, user_agent=user_agent, consent_privacy=payload.consent_privacy, consent_marketing=payload.consent_marketing)
+    rfq = RFQ(public_reference=public_reference, company_name=payload.company_name.strip(), contact_name=payload.contact_name.strip(), email=str(payload.email).lower(), phone=payload.phone, whatsapp=payload.whatsapp, country_code=payload.country_code, website=payload.website, message=payload.message, preferred_language=payload.preferred_language, source_page_url=source_page_url, source_owner_type=source_owner_type, source_owner_id=source_owner_id, submitted_ip=ip, user_agent=user_agent, consent_privacy=payload.consent_privacy, consent_marketing=payload.consent_marketing)
     session.add(rfq)
     await session.flush()
     for item in payload.items:

@@ -6,7 +6,7 @@ import uuid
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class RFQItemInput(BaseModel):
@@ -29,6 +29,8 @@ class RFQItemInput(BaseModel):
 class RFQCreate(BaseModel):
     """匿名询盘创建输入；不接收内部状态或文件路径。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     company_name: str = Field(min_length=1, max_length=240)
     contact_name: str = Field(min_length=1, max_length=160)
     email: EmailStr
@@ -38,9 +40,13 @@ class RFQCreate(BaseModel):
     website: str | None = Field(default=None, max_length=500)
     message: str | None = Field(default=None, max_length=10000)
     preferred_language: str | None = Field(default=None, max_length=32)
-    source_page_url: str | None = Field(default=None, max_length=1000)
-    source_owner_type: str | None = Field(default=None, max_length=100)
-    source_owner_id: uuid.UUID | None = None
+    source_type: Literal["product"] | None = None
+    source_slug: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=180,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    )
     items: list[RFQItemInput] = Field(default_factory=list, max_length=20)
     consent_privacy: bool
     consent_marketing: bool = False

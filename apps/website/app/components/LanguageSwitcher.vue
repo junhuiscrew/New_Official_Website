@@ -77,12 +77,18 @@ onBeforeUnmount(() => {
       type="button"
       :aria-expanded="open"
       :aria-controls="optionsId"
+      :aria-label="`${labels.navigation.language}: ${locale === 'zh-cn' ? labels.language.zhCn : labels.language.en}`"
       @click="toggle"
     >
       <span aria-hidden="true">◎</span>
       <span>{{ labels.navigation.language }}</span>
     </button>
-    <div v-if="open" :id="optionsId" class="language-switcher__options">
+    <div
+      v-if="open"
+      :id="optionsId"
+      class="language-switcher__options"
+      data-testid="language-options"
+    >
       <a
         :href="targetHref"
         :lang="targetLocale === 'zh-cn' ? 'zh-CN' : 'en'"

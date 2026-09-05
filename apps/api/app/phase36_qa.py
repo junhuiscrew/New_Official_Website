@@ -11,14 +11,21 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from redis.asyncio import Redis
+from sqlalchemy import delete, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
+from app.modules.audit.models import AuditLog
 from app.modules.audit.service import write_audit_log
-from app.modules.authority.models import CaseStudy, KnowledgeArticle
+from app.modules.authority.models import (
+    AuthorExpert,
+    CaseStudy,
+    KnowledgeArticle,
+    KnowledgeCategory,
+)
 from app.modules.authority.schemas import (
     AuthorExpertCreate,
     AuthorityRelationUpdate,
@@ -69,16 +76,26 @@ from app.modules.catalog.services import (
 )
 from app.modules.company.models import (
     CapabilityEquipment,
+    CompanyProfile,
     CompanyProfileTranslation,
     Equipment,
     ManufacturingCapability,
 )
-from app.modules.company.schemas import CompanyProfileInput, TrustEntityInput, TrustTranslation
+from app.modules.company.schemas import (
+    CompanyProfileInput,
+    TrustEntityInput,
+    TrustTranslation,
+)
 from app.modules.company.services import create_trust_entity, upsert_company_profile
 from app.modules.content.enums import PublicationStatus
-from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+from app.modules.content.models import (
+    ContentPublication,
+    ContentRevision,
+    ContentRoute,
+    TranslationStatus,
+)
 from app.modules.content.services.publication import transition_publication
-from app.modules.discovery.models import SeoDocument, SourceCitation
+from app.modules.discovery.models import GeoDocument, SeoDocument, SourceCitation
 from app.modules.localization.models import Locale
 from app.modules.media.models import (
     DownloadResource,
@@ -88,6 +105,7 @@ from app.modules.media.models import (
 )
 from app.modules.media.services import validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter
+from app.modules.rfq.models import RFQ, RFQFile
 
 _RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,39}$")
 _QA_CONFIRMATION = "LOCAL_QA_ONLY"
@@ -129,9 +147,82 @@ class Phase36QaManifest(BaseModel):
     unmatched_material_slug: str
     download_slug: str
     public_object_keys: list[str]
+    company_profile_marker: str
+    specification_code_prefix: str
+    rfq_email_markers: list[str]
+    rate_limit_namespace: str
     resource_slugs: dict[str, list[str]]
     product_count: int
     specification_types: list[str]
+
+
+class Phase36QaCleanupResult(BaseModel):
+    """本地 QA 精确清理结果；只输出计数，不泄露客户或存储标识。"""
+
+    run_id: str
+    deleted: dict[str, int]
+
+
+class Phase36QaVerificationResult(BaseModel):
+    """QA 旅程持久化核验结果；不输出 UUID、公开编号或私有 URL。"""
+
+    run_id: str
+    rfq_count: int
+    source_persistence: dict[str, bool]
+    attachment_records: int
+    private_objects_exist: bool
+
+
+def _qa_identifiers(run_id: str, *, product_count: int = 26) -> dict[str, object]:
+    """
+    生成一个 QA run 唯一且可重建的资源标识。
+
+    输入：run_id: str，已校验的运行标识；product_count: int，分页样本产品数。
+    输出：dict[str, object]，只含可公开的 slug、标记和限流命名空间。
+    """
+    slugs = {
+        "category": f"qa36-{run_id}-screws",
+        "product": f"qa36-{run_id}-extrusion-screw",
+        "knowledge_category": f"qa36-{run_id}-guides",
+        "knowledge": f"qa36-{run_id}-screw-selection",
+        "missing_translation": f"qa36-{run_id}-english-only",
+        "material": f"qa36-{run_id}-material",
+        "technology": f"qa36-{run_id}-technology",
+        "application": f"qa36-{run_id}-application",
+        "solution": f"qa36-{run_id}-solution",
+        "capability": f"qa36-{run_id}-capability",
+        "equipment": f"qa36-{run_id}-equipment",
+        "case_study": f"qa36-{run_id}-anonymous-case",
+        "expert": f"qa36-{run_id}-verified-author",
+        "draft": f"qa36-{run_id}-draft-product",
+        "noindex": f"qa36-{run_id}-noindex-product",
+        "unmatched_material": f"qa36-{run_id}-unmatched-material",
+        "download": f"qa36-{run_id}-datasheet",
+    }
+    return {
+        "slugs": slugs,
+        "company_profile_marker": f"QA ONLY Junhui {run_id}",
+        "specification_code_prefix": f"qa36-{run_id}-",
+        "public_object_keys": [
+            f"qa/phase36/{run_id}/product.png",
+            f"qa/phase36/{run_id}/qa-datasheet.pdf",
+        ],
+        "rfq_email_markers": [
+            f"phase36-{run_id}-product@example.com",
+            f"phase36-{run_id}-knowledge@example.com",
+            f"phase36-{run_id}-case@example.com",
+        ],
+        "rate_limit_namespace": f"rfq:public:qa36:{run_id}",
+        "product_slugs": [
+            str(slugs["product"]),
+            *[
+                f"qa36-{run_id}-product-{index:02d}"
+                for index in range(1, product_count)
+            ],
+            str(slugs["draft"]),
+            str(slugs["noindex"]),
+        ],
+    }
 
 
 def _assert_qa_allowed(run_id: str) -> str:
@@ -150,7 +241,8 @@ def _assert_qa_allowed(run_id: str) -> str:
         raise AppException(409, "qa_isolation_required", "必须显式确认使用本地 Compose 隔离资源")
 
     # 除环境名外再次校验实际连接目标，避免误把 QA 样本写入远端 DB/Redis/MinIO。
-    database_host = (make_url(settings.database_url).host or "").lower()
+    database_url = make_url(settings.database_url)
+    database_host = (database_url.host or "").lower()
     redis_host = (urlparse(settings.redis_url).hostname or "").lower()
     minio_host = (urlparse(f"//{settings.minio_endpoint}").hostname or "").lower()
     if (
@@ -165,6 +257,20 @@ def _assert_qa_allowed(run_id: str) -> str:
     if not _RUN_ID.fullmatch(normalized):
         raise AppException(
             422, "qa_run_id_invalid", "QA run-id 必须是 3~40 位小写字母、数字或连字符"
+        )
+    expected_database_name = os.getenv("PHASE36_QA_DATABASE_NAME", "").strip()
+    if not expected_database_name or database_url.database != expected_database_name:
+        raise AppException(
+            409,
+            "qa_database_name_required",
+            "QA 必须显式声明并匹配当前本地数据库名",
+        )
+    expected_namespace = f"rfq:public:qa36:{normalized}"
+    if settings.rfq_rate_limit_namespace != expected_namespace:
+        raise AppException(
+            409,
+            "qa_rate_limit_namespace_required",
+            "QA 必须使用与 run-id 完全一致的独立限流命名空间",
         )
     return normalized
 
@@ -276,36 +382,39 @@ async def _ensure_representative_product_copy(
         "en": "QA ONLY Long-title Extrusion Screw for Responsive Browser Validation",
         "zh-CN": "仅测试：用于响应式浏览器验收的长标题挤出机螺杆",
     }
-    if all(
+    copy_is_current = all(
         by_locale.get(locale.id) is not None
         and by_locale[locale.id].name == expected_names[locale.code]
         for locale in locales
-    ):
-        return
-
-    payload_translations: list[TranslationInput] = []
-    for locale in locales:
-        existing = by_locale.get(locale.id)
-        if existing is None:
-            raise AppException(409, "qa_product_translation_missing", "既有 QA 产品缺少双语翻译")
-        payload_translations.append(
-            TranslationInput(
-                locale_id=locale.id,
-                name=expected_names[locale.code],
-                fields={
-                    "short_description": existing.short_description,
-                    "description": existing.description,
-                    "highlights_jsonb": existing.highlights_jsonb,
-                },
+    )
+    if not copy_is_current:
+        payload_translations: list[TranslationInput] = []
+        for locale in locales:
+            existing = by_locale.get(locale.id)
+            if existing is None:
+                raise AppException(
+                    409,
+                    "qa_product_translation_missing",
+                    "既有 QA 产品缺少双语翻译",
+                )
+            payload_translations.append(
+                TranslationInput(
+                    locale_id=locale.id,
+                    name=expected_names[locale.code],
+                    fields={
+                        "short_description": existing.short_description,
+                        "description": existing.description,
+                        "highlights_jsonb": existing.highlights_jsonb,
+                    },
+                )
             )
+        # 正式更新服务会撤销已发布正文，不直接改翻译表。
+        await update_product(
+            session,
+            product.id,
+            ProductUpdate(translations=payload_translations),
         )
 
-    # 正式服务会撤销已发布正文；QA 随后记录人工审核并从 review 重新发布。
-    await update_product(
-        session,
-        product.id,
-        ProductUpdate(translations=payload_translations),
-    )
     for locale in locales:
         publication = await session.scalar(
             select(ContentPublication).where(
@@ -331,6 +440,41 @@ async def _ensure_representative_product_copy(
         )
         if publication is None or translation_status is None or route is None:
             raise AppException(409, "qa_lifecycle_missing", "既有 QA 产品缺少发布生命周期")
+        if (
+            publication.status == PublicationStatus.PUBLISHED.value
+            and translation_status.status == "published"
+            and route.active
+            and route.indexable
+        ):
+            continue
+
+        # 中断的任意合法状态都经统一状态机收敛，不直接伪造 published。
+        all_permissions = {
+            "content.review",
+            "content.publish",
+            "content.archive",
+            "content.update",
+        }
+        if publication.status == PublicationStatus.PUBLISHED.value:
+            await transition_publication(
+                session,
+                publication=publication,
+                translation=translation_status,
+                route=route,
+                target_status=PublicationStatus.ARCHIVED,
+                actor_permissions=all_permissions,
+                actor_id=None,
+            )
+        if publication.status == PublicationStatus.ARCHIVED.value:
+            await transition_publication(
+                session,
+                publication=publication,
+                translation=translation_status,
+                route=route,
+                target_status=PublicationStatus.DRAFT,
+                actor_permissions=all_permissions,
+                actor_id=None,
+            )
         translation_status.status = "human_reviewed"
         write_audit_log(
             session,
@@ -339,15 +483,29 @@ async def _ensure_representative_product_copy(
             target_id=str(product.id),
             metadata={"qa_run": True, "locale_id": str(locale.id)},
         )
-        await transition_publication(
-            session,
-            publication=publication,
-            translation=translation_status,
-            route=route,
-            target_status=PublicationStatus.PUBLISHED,
-            actor_permissions={"content.publish"},
-            actor_id=None,
-        )
+        if publication.status == PublicationStatus.DRAFT.value:
+            await transition_publication(
+                session,
+                publication=publication,
+                translation=translation_status,
+                route=route,
+                target_status=PublicationStatus.REVIEW,
+                actor_permissions=all_permissions,
+                actor_id=None,
+            )
+        if publication.status in {
+            PublicationStatus.REVIEW.value,
+            PublicationStatus.SCHEDULED.value,
+        }:
+            await transition_publication(
+                session,
+                publication=publication,
+                translation=translation_status,
+                route=route,
+                target_status=PublicationStatus.PUBLISHED,
+                actor_permissions=all_permissions,
+                actor_id=None,
+            )
 
 
 async def _create_public_media(
@@ -553,18 +711,9 @@ async def _ensure_extended_qa_content(
     输入：会话、对象存储、run-id、语言、代表分类/产品/媒体。
     输出：dict[str, object]，manifest 和浏览器旅程所需的精确资源清单。
     """
-    slugs = {
-        "material": f"qa36-{run_id}-material",
-        "technology": f"qa36-{run_id}-technology",
-        "application": f"qa36-{run_id}-application",
-        "solution": f"qa36-{run_id}-solution",
-        "capability": f"qa36-{run_id}-capability",
-        "equipment": f"qa36-{run_id}-equipment",
-        "case_study": f"qa36-{run_id}-anonymous-case",
-        "draft": f"qa36-{run_id}-draft-product",
-        "noindex": f"qa36-{run_id}-noindex-product",
-        "unmatched_material": f"qa36-{run_id}-unmatched-material",
-    }
+    identifiers = _qa_identifiers(run_id)
+    slugs = identifiers["slugs"]
+    assert isinstance(slugs, dict)
     material = await _ensure_core_entity(
         session, owner_type="material", slug=slugs["material"], locales=locales
     )
@@ -596,7 +745,7 @@ async def _ensure_extended_qa_content(
 
     # Company Profile 是单例；隔离库若已有非本轮档案则拒绝覆盖，避免破坏人工数据。
     company = await session.scalar(select(CompanyProfileTranslation).limit(1))
-    expected_company_name = f"QA ONLY Junhui {run_id}"
+    expected_company_name = str(identifiers["company_profile_marker"])
     if company is not None and company.company_name != expected_company_name:
         raise AppException(409, "qa_company_conflict", "隔离库已有非本轮 Company Profile")
     if company is None:
@@ -833,16 +982,19 @@ def _build_manifest(
     输入：run-id、页面 slug、规格类型、数量与扩展资源。
     输出：Phase36QaManifest，可用于复验和按 manifest 精确清理。
     """
+    identifiers = _qa_identifiers(run_id, product_count=product_count)
+    identifier_slugs = identifiers["slugs"]
+    assert isinstance(identifier_slugs, dict)
     slugs = extended["slugs"]
     assert isinstance(slugs, dict)
-    expert_slug = f"qa36-{run_id}-verified-author"
-    download_slug = f"qa36-{run_id}-datasheet"
-    product_slugs = [
-        product_slug,
-        *[f"qa36-{run_id}-product-{index:02d}" for index in range(1, product_count)],
-        str(slugs["draft"]),
-        str(slugs["noindex"]),
-    ]
+    expert_slug = str(identifier_slugs["expert"])
+    download_slug = str(identifier_slugs["download"])
+    product_slugs = identifiers["product_slugs"]
+    assert isinstance(product_slugs, list)
+    public_object_keys = identifiers["public_object_keys"]
+    rfq_email_markers = identifiers["rfq_email_markers"]
+    assert isinstance(public_object_keys, list)
+    assert isinstance(rfq_email_markers, list)
     return Phase36QaManifest(
         run_id=run_id,
         product_slug=product_slug,
@@ -862,10 +1014,11 @@ def _build_manifest(
         noindex_slug=str(slugs["noindex"]),
         unmatched_material_slug=str(slugs["unmatched_material"]),
         download_slug=download_slug,
-        public_object_keys=[
-            f"qa/phase36/{run_id}/product.png",
-            f"qa/phase36/{run_id}/qa-datasheet.pdf",
-        ],
+        public_object_keys=public_object_keys,
+        company_profile_marker=str(identifiers["company_profile_marker"]),
+        specification_code_prefix=str(identifiers["specification_code_prefix"]),
+        rfq_email_markers=rfq_email_markers,
+        rate_limit_namespace=str(identifiers["rate_limit_namespace"]),
         resource_slugs={
             "company_profile_marker": [f"QA ONLY Junhui {run_id}"],
             "product_category": [category_slug],
@@ -1033,6 +1186,50 @@ async def _prepare_phase36_qa(
             )
             if existing_category is None:
                 raise AppException(409, "qa_category_missing", "既有 QA 产品缺少对应分类")
+            existing_category.cover_media_id = media.id
+            expected_product_slugs = _qa_identifiers(run_id)["product_slugs"]
+            assert isinstance(expected_product_slugs, list)
+            products = list(
+                (
+                    await session.scalars(
+                        select(Product).where(Product.slug.in_(expected_product_slugs))
+                    )
+                ).all()
+            )
+            products_by_slug = {item.slug: item for item in products}
+            # 中断的 setup 可能只写入了部分分页样本；重跑时精确补齐缺失项。
+            for index in range(26):
+                slug = product_slug if index == 0 else f"qa36-{run_id}-product-{index:02d}"
+                if slug in products_by_slug:
+                    continue
+                product = await create_product(
+                    session,
+                    ProductCreate(
+                        category_id=existing_category.id,
+                        code=f"QA36-{run_id.upper()}-{index:02d}",
+                        slug=slug,
+                        featured=index == 0,
+                        sort_order=index,
+                        translations=_catalog_translations(
+                            locales,
+                            (
+                                "QA ONLY Long-title Extrusion Screw for Responsive Browser Validation"
+                                if index == 0
+                                else f"QA Product {index:02d}"
+                            ),
+                            (
+                                "仅测试：用于响应式浏览器验收的长标题挤出机螺杆"
+                                if index == 0
+                                else f"QA 产品 {index:02d}"
+                            ),
+                        ),
+                    ),
+                )
+                await _publish_many(session, "product", product.id, locales)
+                products.append(product)
+                products_by_slug[slug] = product
+            if set(products_by_slug) != set(expected_product_slugs):
+                raise AppException(409, "qa_product_set_invalid", "QA 产品集合不完整")
             await _ensure_representative_product_copy(
                 session,
                 product=existing_product,
@@ -1066,7 +1263,8 @@ async def _prepare_phase36_qa(
                 knowledge_slug=knowledge_slug,
                 missing_translation_slug=missing_translation_slug,
                 specification_types=specification_types,
-                product_count=26,
+                # manifest 的 product_count 只计入 26 条分页样本，不把 draft/noindex 负向样本混入。
+                product_count=len(expected_product_slugs) - 2,
                 extended=extended,
             )
 
@@ -1265,4 +1463,460 @@ async def prepare_phase36_qa(
         factory,
         run_id=normalized,
         storage=MinioStorageAdapter(),
+    )
+
+
+async def _delete_qa_objects(
+    storage: MinioStorageAdapter,
+    objects: Sequence[tuple[str, str]],
+) -> int:
+    """
+    删除已经过所有权校验的 QA 对象。
+
+    输入：storage: MinioStorageAdapter；objects: Sequence[(bucket, key)]。
+    输出：int，实际存在并删除的对象数。
+    """
+    deleted_count = 0
+    for bucket, key in objects:
+        if await storage.object_exists(bucket, key):
+            await storage.delete_object(bucket, key)
+            deleted_count += 1
+    return deleted_count
+
+
+async def _delete_qa_lifecycle(
+    session: AsyncSession,
+    owners: Sequence[tuple[str, uuid.UUID]],
+) -> int:
+    """
+    按精确 owner type/ID 删除 QA 的通用生命周期记录。
+
+    输入：session；owners，已验证归属的实体元组。
+    输出：int，实际删除的发布、路由、修订、SEO/GEO 与翻译状态数。
+    """
+    deleted_count = 0
+    lifecycle_models = (
+        ContentRevision,
+        ContentRoute,
+        ContentPublication,
+        TranslationStatus,
+        SeoDocument,
+        GeoDocument,
+    )
+    for owner_type, owner_id in owners:
+        for model in lifecycle_models:
+            result = await session.execute(
+                delete(model).where(
+                    model.owner_type == owner_type,
+                    model.owner_id == owner_id,
+                )
+            )
+            deleted_count += max(result.rowcount or 0, 0)
+    return deleted_count
+
+
+async def cleanup_phase36_qa(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: str,
+) -> Phase36QaCleanupResult:
+    """
+    仅按同一 manifest 可重建标识清理本地 Phase 3.6 QA 数据。
+
+    输入：factory: async_sessionmaker；run_id: str，隔离 QA 运行标识。
+    输出：Phase36QaCleanupResult，仅含脱敏删除计数。
+    """
+    normalized = _assert_qa_allowed(run_id)
+    identifiers = _qa_identifiers(normalized)
+    slugs = identifiers["slugs"]
+    product_slugs = identifiers["product_slugs"]
+    public_object_keys = identifiers["public_object_keys"]
+    rfq_email_markers = identifiers["rfq_email_markers"]
+    assert isinstance(slugs, dict)
+    assert isinstance(product_slugs, list)
+    assert isinstance(public_object_keys, list)
+    assert isinstance(rfq_email_markers, list)
+    storage = MinioStorageAdapter()
+
+    async with factory() as session, session.begin():
+        products = list(
+            (
+                await session.scalars(
+                    select(Product).where(Product.slug.in_(product_slugs))
+                )
+            ).all()
+        )
+        expected_code_prefix = f"QA36-{normalized.upper()}-"
+        if any(not product.code.startswith(expected_code_prefix) for product in products):
+            raise AppException(409, "qa_cleanup_conflict", "QA 产品标识与 run-id 冲突")
+
+        category = await session.scalar(
+            select(ProductCategory).where(ProductCategory.slug == slugs["category"])
+        )
+        core_entities: dict[str, list[object]] = {}
+        for owner_type, model in _CORE_MODELS.items():
+            target_slugs = (
+                [slugs["material"], slugs["unmatched_material"]]
+                if owner_type == "material"
+                else [slugs[owner_type]]
+            )
+            core_entities[owner_type] = list(
+                (await session.scalars(select(model).where(model.slug.in_(target_slugs)))).all()
+            )
+
+        capability = await session.scalar(
+            select(ManufacturingCapability).where(
+                ManufacturingCapability.slug == slugs["capability"]
+            )
+        )
+        if capability is not None and capability.capability_type != "qa-validation":
+            raise AppException(409, "qa_cleanup_conflict", "QA 能力标记与 run-id 冲突")
+        equipment = await session.scalar(
+            select(Equipment).where(Equipment.slug == slugs["equipment"])
+        )
+        if equipment is not None and equipment.manufacturer != "QA ONLY":
+            raise AppException(409, "qa_cleanup_conflict", "QA 设备标记与 run-id 冲突")
+        case_study = await session.scalar(
+            select(CaseStudy).where(CaseStudy.slug == slugs["case_study"])
+        )
+        if case_study is not None and case_study.client_name != "QA PRIVATE CLIENT":
+            raise AppException(409, "qa_cleanup_conflict", "QA 案例标记与 run-id 冲突")
+        expert = await session.scalar(
+            select(AuthorExpert).where(AuthorExpert.slug == slugs["expert"])
+        )
+        if expert is not None and (
+            not expert.is_real_person_verified or expert.role_type != "author_expert"
+        ):
+            raise AppException(409, "qa_cleanup_conflict", "QA 作者标记与 run-id 冲突")
+        knowledge_category = await session.scalar(
+            select(KnowledgeCategory).where(
+                KnowledgeCategory.slug == slugs["knowledge_category"]
+            )
+        )
+        knowledge_articles = list(
+            (
+                await session.scalars(
+                    select(KnowledgeArticle).where(
+                        KnowledgeArticle.slug.in_(
+                            [slugs["knowledge"], slugs["missing_translation"]]
+                        )
+                    )
+                )
+            ).all()
+        )
+        download = await session.scalar(
+            select(DownloadResource).where(DownloadResource.slug == slugs["download"])
+        )
+        if download is not None and download.version_label != "QA ONLY":
+            raise AppException(409, "qa_cleanup_conflict", "QA 下载标记与 run-id 冲突")
+
+        company_translation = await session.scalar(
+            select(CompanyProfileTranslation).where(
+                CompanyProfileTranslation.company_name
+                == identifiers["company_profile_marker"]
+            )
+        )
+        company_profile = (
+            await session.get(CompanyProfile, company_translation.company_profile_id)
+            if company_translation is not None
+            else None
+        )
+
+        rfqs = list(
+            (await session.scalars(select(RFQ).where(RFQ.email.in_(rfq_email_markers)))).all()
+        )
+        expected_companies = {
+            f"Phase36 {normalized} Product QA",
+            f"Phase36 {normalized} Knowledge QA",
+            f"Phase36 {normalized} Case QA",
+        }
+        if any(rfq.company_name not in expected_companies for rfq in rfqs):
+            raise AppException(409, "qa_cleanup_conflict", "QA RFQ 标记与 run-id 冲突")
+        rfq_ids = [rfq.id for rfq in rfqs]
+        rfq_files = (
+            list((await session.scalars(select(RFQFile).where(RFQFile.rfq_id.in_(rfq_ids)))).all())
+            if rfq_ids
+            else []
+        )
+        private_asset_ids = [rfq_file.media_asset_id for rfq_file in rfq_files]
+        private_assets = (
+            list(
+                (
+                    await session.scalars(
+                        select(MediaAsset).where(MediaAsset.id.in_(private_asset_ids))
+                    )
+                ).all()
+            )
+            if private_asset_ids
+            else []
+        )
+        for asset in private_assets:
+            if (
+                asset.visibility != "private"
+                or asset.storage_bucket != "private-rfq"
+                or not any(
+                    asset.storage_key.startswith(f"rfq/{rfq_id}/") for rfq_id in rfq_ids
+                )
+            ):
+                raise AppException(409, "qa_cleanup_conflict", "QA 私有对象归属冲突")
+
+        public_assets = list(
+            (
+                await session.scalars(
+                    select(MediaAsset).where(
+                        MediaAsset.storage_bucket == "public-media",
+                        MediaAsset.storage_key.in_(public_object_keys),
+                    )
+                )
+            ).all()
+        )
+        if any(asset.visibility != "public" for asset in public_assets):
+            raise AppException(409, "qa_cleanup_conflict", "QA 公开对象归属冲突")
+
+        owners: list[tuple[str, uuid.UUID]] = [
+            *(("product", product.id) for product in products),
+            *((owner_type, entity.id) for owner_type, rows in core_entities.items() for entity in rows),
+            *(("knowledge_article", article.id) for article in knowledge_articles),
+        ]
+        optional_owners = (
+            ("product_category", category),
+            ("manufacturing_capability", capability),
+            ("equipment", equipment),
+            ("case_study", case_study),
+            ("author_expert", expert),
+            ("knowledge_category", knowledge_category),
+            ("company_profile", company_profile),
+        )
+        owners.extend(
+            (owner_type, entity.id)
+            for owner_type, entity in optional_owners
+            if entity is not None
+        )
+
+        private_objects = [
+            (asset.storage_bucket, asset.storage_key) for asset in private_assets
+        ]
+        public_objects = [("public-media", str(key)) for key in public_object_keys]
+        deleted_private_objects = await _delete_qa_objects(storage, private_objects)
+        deleted_public_objects = await _delete_qa_objects(storage, public_objects)
+
+        lifecycle_count = await _delete_qa_lifecycle(session, owners)
+        target_ids = [str(owner_id) for _owner_type, owner_id in owners]
+        target_ids.extend(str(rfq_id) for rfq_id in rfq_ids)
+        if target_ids:
+            await session.execute(delete(AuditLog).where(AuditLog.target_id.in_(target_ids)))
+
+        if rfq_ids:
+            await session.execute(delete(RFQ).where(RFQ.id.in_(rfq_ids)))
+        if private_asset_ids:
+            await session.execute(delete(MediaAsset).where(MediaAsset.id.in_(private_asset_ids)))
+        if download is not None:
+            await session.execute(delete(DownloadResource).where(DownloadResource.id == download.id))
+        if knowledge_articles:
+            await session.execute(
+                delete(KnowledgeArticle).where(
+                    KnowledgeArticle.id.in_([article.id for article in knowledge_articles])
+                )
+            )
+        if case_study is not None:
+            await session.execute(delete(CaseStudy).where(CaseStudy.id == case_study.id))
+        if capability is not None:
+            await session.execute(
+                delete(ManufacturingCapability).where(
+                    ManufacturingCapability.id == capability.id
+                )
+            )
+        if equipment is not None:
+            await session.execute(delete(Equipment).where(Equipment.id == equipment.id))
+        if products:
+            await session.execute(
+                delete(Product).where(Product.id.in_([product.id for product in products]))
+            )
+        for owner_type, model in _CORE_MODELS.items():
+            entity_ids = [entity.id for entity in core_entities[owner_type]]
+            if entity_ids:
+                await session.execute(delete(model).where(model.id.in_(entity_ids)))
+        specification_prefix = str(identifiers["specification_code_prefix"])
+        definitions = list(
+            (
+                await session.scalars(
+                    select(SpecificationDefinition).where(
+                        SpecificationDefinition.code.startswith(specification_prefix)
+                    )
+                )
+            ).all()
+        )
+        if definitions:
+            await session.execute(
+                delete(SpecificationDefinition).where(
+                    SpecificationDefinition.id.in_([item.id for item in definitions])
+                )
+            )
+        groups = list(
+            (
+                await session.scalars(
+                    select(SpecificationGroup).where(
+                        SpecificationGroup.code
+                        == f"qa36-{normalized}-specifications"
+                    )
+                )
+            ).all()
+        )
+        if groups:
+            await session.execute(
+                delete(SpecificationGroup).where(
+                    SpecificationGroup.id.in_([item.id for item in groups])
+                )
+            )
+        if category is not None:
+            await session.execute(
+                delete(ProductCategory).where(ProductCategory.id == category.id)
+            )
+        if knowledge_category is not None:
+            await session.execute(
+                delete(KnowledgeCategory).where(
+                    KnowledgeCategory.id == knowledge_category.id
+                )
+            )
+        if expert is not None:
+            await session.execute(delete(AuthorExpert).where(AuthorExpert.id == expert.id))
+        if company_profile is not None:
+            await session.execute(
+                delete(CompanyProfile).where(CompanyProfile.id == company_profile.id)
+            )
+        public_asset_ids = [asset.id for asset in public_assets]
+        if public_asset_ids:
+            await session.execute(
+                delete(MediaAsset).where(MediaAsset.id.in_(public_asset_ids))
+            )
+
+        content_count = (
+            len(products)
+            + sum(len(rows) for rows in core_entities.values())
+            + len(knowledge_articles)
+            + sum(entity is not None for _owner_type, entity in optional_owners)
+            + (1 if download is not None else 0)
+        )
+        specification_count = len(definitions) + len(groups)
+
+    redis_client = Redis.from_url(
+        get_settings().redis_url,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+    try:
+        namespace = str(identifiers["rate_limit_namespace"])
+        redis_keys = [key async for key in redis_client.scan_iter(match=f"{namespace}:*")]
+        redis_count = await redis_client.delete(*redis_keys) if redis_keys else 0
+    finally:
+        await redis_client.aclose()
+
+    return Phase36QaCleanupResult(
+        run_id=normalized,
+        deleted={
+            "rfqs": len(rfqs),
+            "private_objects": deleted_private_objects,
+            "content_entities": content_count,
+            "lifecycle_records": lifecycle_count,
+            "specification_records": specification_count,
+            "public_objects": deleted_public_objects,
+            "redis_keys": int(redis_count),
+        },
+    )
+
+
+async def verify_phase36_qa(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    run_id: str,
+) -> Phase36QaVerificationResult:
+    """
+    从数据库和 MinIO 核验真实浏览器旅程的 RFQ 持久化结果。
+
+    输入：factory: async_sessionmaker；run_id: str，隔离 QA 运行标识。
+    输出：Phase36QaVerificationResult，仅含脱敏计数和布尔断言。
+    """
+    normalized = _assert_qa_allowed(run_id)
+    identifiers = _qa_identifiers(normalized)
+    slugs = identifiers["slugs"]
+    email_markers = identifiers["rfq_email_markers"]
+    assert isinstance(slugs, dict)
+    assert isinstance(email_markers, list)
+    expected_sources = {
+        str(email_markers[0]): (
+            "product",
+            str(slugs["product"]),
+            f"/en/products/{slugs['category']}/{slugs['product']}/",
+        ),
+        str(email_markers[1]): (
+            "knowledge_article",
+            str(slugs["knowledge"]),
+            f"/en/knowledge/{slugs['knowledge_category']}/{slugs['knowledge']}/",
+        ),
+        str(email_markers[2]): (
+            "case_study",
+            str(slugs["case_study"]),
+            f"/en/case-studies/{slugs['case_study']}/",
+        ),
+    }
+    models = {
+        "product": Product,
+        "knowledge_article": KnowledgeArticle,
+        "case_study": CaseStudy,
+    }
+    storage = MinioStorageAdapter()
+    source_persistence: dict[str, bool] = {}
+    private_objects_exist = True
+    attachment_records = 0
+    async with factory() as session:
+        rfqs = list(
+            (await session.scalars(select(RFQ).where(RFQ.email.in_(email_markers)))).all()
+        )
+        for email, (owner_type, slug, expected_path) in expected_sources.items():
+            entity = await session.scalar(
+                select(models[owner_type]).where(models[owner_type].slug == slug)
+            )
+            matches = [
+                rfq
+                for rfq in rfqs
+                if rfq.email == email
+                and entity is not None
+                and rfq.source_owner_type == owner_type
+                and rfq.source_owner_id == entity.id
+                and rfq.source_page_url == f"https://junhuiscrewbarrel.com{expected_path}"
+            ]
+            source_persistence[owner_type] = bool(matches)
+
+        product_rfqs = [rfq for rfq in rfqs if rfq.email == email_markers[0]]
+        product_rfq_ids = [rfq.id for rfq in product_rfqs]
+        files = (
+            list(
+                (
+                    await session.scalars(
+                        select(RFQFile).where(RFQFile.rfq_id.in_(product_rfq_ids))
+                    )
+                ).all()
+            )
+            if product_rfq_ids
+            else []
+        )
+        attachment_records = len(files)
+        for file_record in files:
+            asset = await session.get(MediaAsset, file_record.media_asset_id)
+            if (
+                asset is None
+                or asset.visibility != "private"
+                or asset.storage_bucket != "private-rfq"
+                or not await storage.object_exists(asset.storage_bucket, asset.storage_key)
+            ):
+                private_objects_exist = False
+        if not files:
+            private_objects_exist = False
+
+    return Phase36QaVerificationResult(
+        run_id=normalized,
+        rfq_count=len(rfqs),
+        source_persistence=source_persistence,
+        attachment_records=attachment_records,
+        private_objects_exist=private_objects_exist,
     )

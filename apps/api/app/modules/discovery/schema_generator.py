@@ -141,11 +141,13 @@ def build_breadcrumb_schema(items: list[dict[str, str]]) -> dict[str, Any]:
     }
 
 
-def build_webpage_schema(page: dict[str, Any]) -> dict[str, Any]:
+def build_webpage_schema(
+    page: dict[str, Any], *, include_website: bool = True
+) -> dict[str, Any]:
     """
     从公开 Case 等页面字段生成基础 WebPage Schema。
 
-    输入：page，包含 name/url/description 的公开字段。
+    输入：page，包含 name/url/description 的公开字段；include_website，是否声明所属 WebSite。
     输出：dict[str, Any]，不含客户内部身份数据的 WebPage JSON-LD。
     """
     result = {
@@ -154,8 +156,13 @@ def build_webpage_schema(page: dict[str, Any]) -> dict[str, Any]:
         "name": page["name"],
         "url": page["url"],
         "description": page.get("description"),
-        "isPartOf": {"@type": "WebSite", "url": "https://junhuiscrewbarrel.com/"},
     }
+    # 首页没有任何已发布 Company 事实时，不能借 WebPage 嵌套虚构 WebSite publisher。
+    if include_website:
+        result["isPartOf"] = {
+            "@type": "WebSite",
+            "url": "https://junhuiscrewbarrel.com/",
+        }
     return {key: value for key, value in result.items() if value is not None}
 
 

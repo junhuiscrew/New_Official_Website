@@ -84,7 +84,7 @@ $evidence = [ordered]@{
     home_ssr = [ordered]@{
         status = $ssr.StatusCode
         description_present = $html -match '<meta name="description"'
-        self_canonical_present = $html -match 'https://junhuiscrewbarrel.com/en/'
+        self_canonical_present = $html -match '<link rel="canonical" href="https://junhuiscrewbarrel.com/en/"'
         alternate_present = $html -match 'hreflang="zh-CN"'
         json_ld_present = $html -match 'application/ld\+json'
         main_count = [regex]::Matches($html, '<main(?:\s|>)').Count
@@ -136,6 +136,11 @@ if (
     $evidence.listing_api.invalid_filter_status -ne 404 -or
     $evidence.listing_api.zero_result_status -ne 404 -or
     $evidence.home_ssr.status -ne 200 -or
+    -not $evidence.home_ssr.description_present -or
+    -not $evidence.home_ssr.self_canonical_present -or
+    -not $evidence.home_ssr.alternate_present -or
+    -not $evidence.home_ssr.json_ld_present -or
+    -not $evidence.home_ssr.skip_link_present -or
     $evidence.home_ssr.main_count -ne 1 -or
     $evidence.home_ssr.main_content_count -ne 1 -or
     $evidence.home_ssr.h1_count -ne 1 -or
@@ -145,6 +150,7 @@ if (
     -not $evidence.home_ssr_zh.self_canonical_present -or
     -not $evidence.home_ssr_zh.alternate_present -or
     -not $evidence.home_ssr_zh.json_ld_present -or
+    -not $evidence.home_ssr_zh.skip_link_present -or
     $evidence.home_ssr_zh.main_count -ne 1 -or
     $evidence.home_ssr_zh.main_content_count -ne 1 -or
     $evidence.home_ssr_zh.h1_count -ne 1 -or

@@ -18,6 +18,7 @@ from app.core.database import (
     create_session_factory,
     get_session,
 )
+from app.core.exceptions.handlers import AppException
 from app.main import create_app
 from app.modules.authority.models import (
     ArticleApplication,
@@ -520,8 +521,21 @@ async def test_home_without_company_uses_webpage_schema_only(
         response = await client.get("/api/v1/public/home/en")
 
     assert response.status_code == 200
-    schema_types = [item["@type"] for item in response.json()["data"]["schema"]]
+    schemas = response.json()["data"]["schema"]
+    schema_types = [item["@type"] for item in schemas]
     assert schema_types == ["WebPage"]
+
+    def nested_types(value: object) -> list[str]:
+        """输入 JSON-LD 对象；输出所有嵌套 @type，避免只检查顶层而漏判。"""
+        if isinstance(value, dict):
+            current = [value["@type"]] if isinstance(value.get("@type"), str) else []
+            return current + [item for child in value.values() for item in nested_types(child)]
+        if isinstance(value, list):
+            return [item for child in value for item in nested_types(child)]
+        return []
+
+    assert "WebSite" not in nested_types(schemas)
+    assert "Organization" not in nested_types(schemas)
 
 
 @pytest.mark.asyncio
@@ -592,6 +606,99 @@ async def test_noindex_category_remains_accessible_with_backend_owned_seo(
     }
     assert category_page.status_code == 200
     assert category_page.json()["data"]["seo"]["robots"] == "noindex, follow"
+
+
+@pytest.mark.asyncio
+async def test_category_hreflang_excludes_non_self_canonical_locale(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    输入英文 canonical 指向其他页的双语分类；输出不包含错误英文 alternate。
+    """
+    async with public_collections_factory() as session, session.begin():
+        en = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=False,
+            is_enabled=True,
+        )
+        zh = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="canonical-series", status="enabled")
+        session.add_all([en, zh, category])
+        await session.flush()
+        session.add_all(
+            [
+                ProductCategoryTranslation(
+                    category_id=category.id,
+                    locale_id=en.id,
+                    name="Canonical Series",
+                ),
+                ProductCategoryTranslation(
+                    category_id=category.id,
+                    locale_id=zh.id,
+                    name="规范系列",
+                ),
+            ]
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=en.id,
+            path="/en/products/canonical-series/",
+            canonical_override="https://junhuiscrewbarrel.com/en/products/other-series/",
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=zh.id,
+            path="/zh-cn/products/canonical-series/",
+        )
+        product = Product(category_id=category.id, slug="canonical-product", status="enabled")
+        session.add(product)
+        await session.flush()
+        session.add_all(
+            [
+                ProductTranslation(product_id=product.id, locale_id=en.id, name="Product"),
+                ProductTranslation(product_id=product.id, locale_id=zh.id, name="产品"),
+            ]
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product",
+            owner_id=product.id,
+            locale_id=en.id,
+            path="/en/products/canonical-series/canonical-product/",
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product",
+            owner_id=product.id,
+            locale_id=zh.id,
+            path="/zh-cn/products/canonical-series/canonical-product/",
+        )
+
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get(
+            "/api/v1/public/products/zh-cn",
+            params={"category": "canonical-series"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["seo"]["hreflang"] == {
+        "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/products/canonical-series/",
+        "x-default": "https://junhuiscrewbarrel.com/zh-cn/products/canonical-series/",
+    }
 
 
 @pytest.mark.asyncio
@@ -1911,3 +2018,27 @@ async def test_rfq_multi_source_is_resolved_by_server_publication_gates(
             assert canonical == f"https://junhuiscrewbarrel.com{paths[source_type]}"
             assert owner_type == source_type
             assert owner_id == entity.id
+
+        session.add(
+            SeoDocument(
+                owner_type="product",
+                owner_id=product.id,
+                locale_id=locale.id,
+                canonical_override="https://junhuiscrewbarrel.com/en/products/other/product/",
+                robots_index=True,
+            )
+        )
+        await session.flush()
+        non_self_payload = RFQCreate(
+            company_name="QA Company",
+            contact_name="QA Contact",
+            email="qa@example.com",
+            message="QA only",
+            preferred_language="en",
+            source_type="product",
+            source_slug=product.slug,
+            consent_privacy=True,
+        )
+        with pytest.raises(AppException) as failure:
+            await validate_source(session, non_self_payload)
+        assert failure.value.code == "invalid_rfq_source"

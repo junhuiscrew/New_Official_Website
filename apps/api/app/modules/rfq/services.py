@@ -54,8 +54,10 @@ async def enforce_public_rate_limit(ip: str | None) -> None:
     settings = get_settings()
     client = Redis.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1)
     try:
-        hour_key = f"rfq:public:{ip}:hour:{datetime.now(UTC):%Y%m%d%H}"
-        day_key = f"rfq:public:{ip}:day:{datetime.now(UTC):%Y%m%d}"
+        hour_key = (
+            f"{settings.rfq_rate_limit_namespace}:{ip}:hour:{datetime.now(UTC):%Y%m%d%H}"
+        )
+        day_key = f"{settings.rfq_rate_limit_namespace}:{ip}:day:{datetime.now(UTC):%Y%m%d}"
         hour_count = await client.incr(hour_key)
         day_count = await client.incr(day_key)
         if hour_count == 1:

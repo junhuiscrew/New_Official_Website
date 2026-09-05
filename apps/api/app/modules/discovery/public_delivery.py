@@ -342,6 +342,10 @@ async def _public_route(
     if row is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     route, seo = row
+    self_canonical = f"{OFFICIAL_ORIGIN}{route.path}"
+    if seo is not None and seo.canonical_override not in {None, self_canonical}:
+        # RFQ 归因和 hreflang 必须与 Sitemap 共享 self-canonical 门禁。
+        raise AppException(404, "public_content_not_found", "公开内容不存在")
     geo = await session.scalar(
         select(GeoDocument).where(
             GeoDocument.owner_type == owner_type,

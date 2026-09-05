@@ -1078,7 +1078,8 @@ async def _home_metadata(
     if has_content:
         schema.append(
             build_webpage_schema(
-                {"name": title, "description": seo["description"], "url": canonical}
+                {"name": title, "description": seo["description"], "url": canonical},
+                include_website=bool(company),
             )
         )
         # WebSite generator 带 Organization publisher；只有真实 Company Profile 已发布时才输出。

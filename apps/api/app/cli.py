@@ -10,7 +10,7 @@ from collections.abc import Sequence
 
 from app.core.database import async_session_factory
 from app.modules.users.bootstrap import create_super_admin
-from app.phase36_qa import prepare_phase36_qa
+from app.phase36_qa import cleanup_phase36_qa, prepare_phase36_qa, verify_phase36_qa
 from app.seed import seed_database
 
 
@@ -25,7 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Junhui Global Website API 管理命令")
     parser.add_argument(
         "command",
-        choices=("seed", "create-super-admin", "phase36-qa-setup"),
+        choices=(
+            "seed",
+            "create-super-admin",
+            "phase36-qa-setup",
+            "phase36-qa-cleanup",
+            "phase36-qa-verify",
+        ),
         help="需要执行的管理命令",
     )
     parser.add_argument("--email", help="Bootstrap 管理员邮箱；也可用 BOOTSTRAP_ADMIN_EMAIL")
@@ -78,6 +84,24 @@ def main(arguments: Sequence[str] | None = None) -> int:
             )
         )
         print(manifest.model_dump_json(indent=2))
+    elif parsed.command == "phase36-qa-cleanup":
+        # 清理复用同一双重门禁与 run-id，输出严格限于脱敏计数。
+        result = asyncio.run(
+            cleanup_phase36_qa(
+                async_session_factory,
+                run_id=parsed.run_id or os.getenv("PHASE36_QA_RUN_ID", ""),
+            )
+        )
+        print(result.model_dump_json(indent=2))
+    elif parsed.command == "phase36-qa-verify":
+        # 验证命令仅输出布尔断言和计数，不把 RFQ 标识或私有 URL 写入证据。
+        result = asyncio.run(
+            verify_phase36_qa(
+                async_session_factory,
+                run_id=parsed.run_id or os.getenv("PHASE36_QA_RUN_ID", ""),
+            )
+        )
+        print(result.model_dump_json(indent=2))
     return 0
 
 

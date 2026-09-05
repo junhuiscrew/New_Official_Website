@@ -67,9 +67,9 @@ async function runQa(page) {
     .getAttribute('href')
   await page.goto(new URL(rfqHref, page.url()).toString(), { waitUntil: 'networkidle' })
   const sourceContext = (await page.locator('.source-context').textContent())?.trim()
-  await page.locator('#rfq-company').fill('Phase36 Local QA')
   await page.locator('#rfq-contact').fill('Local QA Contact')
-  await page.locator('#rfq-email').fill('phase36-qa@example.com')
+  await page.locator('#rfq-company').fill(`Phase36 ${RUN_ID} Product QA`)
+  await page.locator('#rfq-email').fill(`phase36-${RUN_ID}-product@example.com`)
   await page.locator('#rfq-phone').fill('+86 000 0000 0000')
   await page.locator('#rfq-country').fill('CN')
   await page.locator('#rfq-message').fill('Local-only Phase 3.6 remediation browser QA.')
@@ -108,9 +108,9 @@ async function runQa(page) {
     (await page.locator('.source-context').textContent())?.includes(
       `knowledge_article: qa36-${RUN_ID}-screw-selection`,
     ) ?? false
-  await page.locator('#rfq-company').fill('Phase36 Knowledge QA')
+  await page.locator('#rfq-company').fill(`Phase36 ${RUN_ID} Knowledge QA`)
   await page.locator('#rfq-contact').fill('Local QA Contact')
-  await page.locator('#rfq-email').fill('phase36-qa-knowledge@example.com')
+  await page.locator('#rfq-email').fill(`phase36-${RUN_ID}-knowledge@example.com`)
   await page.locator('#rfq-message').fill('Local-only non-product source persistence QA.')
   await page.locator('.rfq-form__check input[type="checkbox"]').first().check()
   await page.locator('button[type="submit"]').click()
@@ -123,6 +123,19 @@ async function runQa(page) {
   const productZhAlternate = await page
     .locator('link[rel="alternate"][hreflang="zh-CN"]')
     .getAttribute('href')
+  // head 返回正式绝对 URL；本地 QA 仅复用其 path，不访问生产域名。
+  const chineseProductPath = new URL(productZhAlternate).pathname
+  const chineseProductResponse = await page.goto(`${BASE_URL}${chineseProductPath}`, {
+    waitUntil: 'networkidle',
+  })
+  const chineseProduct = await page.evaluate(() => ({
+    language: document.documentElement.lang,
+    heading: document.querySelector('h1')?.textContent?.trim(),
+    canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href'),
+    englishAlternate: document
+      .querySelector('link[rel="alternate"][hreflang="en"]')
+      ?.getAttribute('href'),
+  }))
   await page.goto(
     `${BASE_URL}/en/knowledge/qa36-${RUN_ID}-guides/qa36-${RUN_ID}-english-only/`,
     { waitUntil: 'networkidle' },
@@ -163,9 +176,9 @@ async function runQa(page) {
     (await page.locator('.source-context').textContent())?.includes(
       `case_study: qa36-${RUN_ID}-anonymous-case`,
     ) ?? false
-  await page.locator('#rfq-company').fill('Phase36 Case QA')
+  await page.locator('#rfq-company').fill(`Phase36 ${RUN_ID} Case QA`)
   await page.locator('#rfq-contact').fill('Local QA Contact')
-  await page.locator('#rfq-email').fill('phase36-qa-case@example.com')
+  await page.locator('#rfq-email').fill(`phase36-${RUN_ID}-case@example.com`)
   await page.locator('#rfq-message').fill('Local-only Case source persistence QA.')
   await page.locator('.rfq-form__check input[type="checkbox"]').first().check()
   await page.locator('button[type="submit"]').click()
@@ -190,28 +203,48 @@ async function runQa(page) {
 
   // 移动菜单及基本画廊交互可操作；截图作为 320px 响应式证据。
   await page.setViewportSize({ width: 320, height: 800 })
-  await page.goto(`${BASE_URL}${productHref}`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE_URL}/en/`, { waitUntil: 'networkidle' })
   const mobileToggle = page.locator('[data-testid="mobile-nav-toggle"]')
   await mobileToggle.click()
   await page.locator('[data-testid="mobile-nav"]').waitFor({ state: 'visible' })
   const mobileMenuExpanded =
     (await mobileToggle.getAttribute('aria-expanded')) === 'true' &&
     (await page.locator('[data-testid="mobile-nav"]').count()) === 1
+  const productAccordion = page.locator('[data-testid="mobile-products-toggle"]')
+  if (await productAccordion.count()) await productAccordion.click()
+  await page.locator('[data-testid="mobile-nav"] a[href="/en/products/"]').first().click()
+  await page.waitForLoadState('networkidle')
+  await page.locator(`.product-card a[href="${productHref}"]`).first().click()
+  await page.waitForLoadState('networkidle')
   const galleryButton = page.locator('.product-gallery button').first()
   if (await galleryButton.count()) await galleryButton.click()
   await page.screenshot({
     path: 'artifacts/phase3-6-remediation/product-mobile.png',
     fullPage: true,
   })
+  const mobileRfqHref = await page
+    .locator('a[href*="/request-a-quote/"][href*="source_type=product"]')
+    .first()
+    .getAttribute('href')
+  await page.goto(new URL(mobileRfqHref, page.url()).toString(), { waitUntil: 'networkidle' })
+  const mobileRfqSourceVisible =
+    (await page.locator('.source-context').textContent())?.includes(
+      `product: qa36-${RUN_ID}-extrusion-screw`,
+    ) ?? false
 
   const redactedNetwork = network.map((entry) => ({
     ...entry,
-    url: entry.url.replace(/\/public\/rfqs\/[^/]+\/files$/, '/public/rfqs/[REDACTED]/files'),
+    url: entry.url
+      .replace(/\/public\/rfqs\/[^/]+\/files$/, '/public/rfqs/[REDACTED]/files')
+      .replace(/\/public\/media\/[^/]+$/, '/public/media/[REDACTED]'),
   }))
   const result = {
     browserVersion: await page.context().browser()?.version(),
     home,
-    product,
+    product: {
+      ...product,
+      imageSrc: product.imageSrc?.replace(/\/public\/media\/[^/]+$/, '/public/media/[REDACTED]'),
+    },
     productSourceVisible: Boolean(
       sourceContext?.includes(`product: qa36-${RUN_ID}-extrusion-screw`),
     ),
@@ -228,6 +261,10 @@ async function runQa(page) {
     knowledgeSourceVisible,
     knowledgeRfqCreated,
     productZhAlternate,
+    chineseProduct: {
+      status: chineseProductResponse?.status(),
+      ...chineseProduct,
+    },
     missingTranslationFallback,
     pagination: {
       validStatus: validPage?.status(),
@@ -238,6 +275,7 @@ async function runQa(page) {
       recoveredProductCount,
     },
     mobileMenuExpanded,
+    mobileRfqSourceVisible,
     caseSourceVisible,
     caseRfqCreated,
     privateCaseLeak: Boolean(privateCaseLeak),
@@ -264,6 +302,11 @@ async function runQa(page) {
   assertQa(result.caseSourceVisible && result.caseRfqCreated, 'case RFQ created')
   assertQa(!result.privateCaseLeak, 'anonymous Case privacy')
   assertQa(Boolean(result.productZhAlternate), 'bilingual alternate')
+  assertQa(result.chineseProduct.status === 200, 'Chinese product HTTP')
+  assertQa(result.chineseProduct.language.toLowerCase().startsWith('zh'), 'Chinese document lang')
+  assertQa(Boolean(result.chineseProduct.heading?.includes('螺杆')), 'Chinese product heading')
+  assertQa(result.chineseProduct.canonical === result.productZhAlternate, 'Chinese self canonical')
+  assertQa(Boolean(result.chineseProduct.englishAlternate), 'Chinese English alternate')
   assertQa(result.missingTranslationFallback === '/zh-cn/', 'missing translation fallback')
   assertQa(result.pagination.validStatus === 200, 'valid page 2')
   assertQa(result.pagination.invalidFilterStatus === 404, 'invalid filter 404')
@@ -271,6 +314,7 @@ async function runQa(page) {
   assertQa(result.pagination.outOfRangeStatus === 404, 'out-of-range 404')
   assertQa(result.pagination.recoveredProductCount > 0, 'pagination recovery')
   assertQa(result.mobileMenuExpanded, 'mobile menu')
+  assertQa(result.mobileRfqSourceVisible, 'mobile menu to product/gallery/RFQ journey')
   assertQa(result.viewportSmoke.every((item) => item.status === 200), 'viewport HTTP')
   assertQa(
     result.viewportSmoke.every(

@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     rfq_max_files: int = 10
     rfq_rate_limit_per_hour: int = 5
     rfq_rate_limit_per_day: int = 20
+    rfq_rate_limit_namespace: str = "rfq:public"
     rfq_retention_days: int = 730
     malware_scanner_enabled: bool = False
     malware_scanner_host: str = "localhost"

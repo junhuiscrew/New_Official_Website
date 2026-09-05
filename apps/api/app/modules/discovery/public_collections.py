@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from math import ceil
 from typing import Any, NamedTuple
+from urllib.parse import urlencode
 
 from sqlalchemy import case, func, literal, literal_column, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,9 +44,22 @@ from app.modules.company.models import (
 from app.modules.company.services import get_public_company_profile
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.discovery.models import SeoDocument
+from app.modules.discovery.schema_generator import (
+    build_breadcrumb_schema,
+    build_webpage_schema,
+)
 from app.modules.localization.models import Locale
+from app.modules.media.models import MediaAsset, MediaAssetTranslation
 
-from .public_delivery import OFFICIAL_ORIGIN, _locale, _public_media
+from .public_delivery import (
+    OFFICIAL_ORIGIN,
+    _locale,
+    _public_media,
+    _public_route,
+    _published_alternates,
+)
+from .public_schemas import PublicMediaDto
+from .public_specs import serialize_public_specifications_for_products
 
 
 class _CollectionConfig(NamedTuple):
@@ -298,6 +312,228 @@ def _card_payload(
         "name": str(getattr(translation, config.title_field)),
         "url": route.path,
         "summary": summary,
+    }
+
+
+async def _product_card_payloads(
+    session: AsyncSession,
+    locale: Locale,
+    rows: list[tuple[Any, Any, ContentRoute]],
+) -> list[dict[str, Any]]:
+    """
+    批量丰富产品列表卡片，避免逐产品查询媒体、分类和公开规格。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale: Locale，当前已启用语言。
+        rows: list，已通过统一发布门禁的产品、翻译和 canonical 路由行。
+
+    输出：
+        list[dict[str, Any]]，包含公开主媒体、canonical 分类及最多四项规格的卡片。
+    """
+    if not rows:
+        return []
+    products = [row[0] for row in rows]
+    product_ids = [product.id for product in products]
+    specifications = await serialize_public_specifications_for_products(
+        session,
+        product_ids,
+        locale,
+    )
+
+    category_ids = list({product.category_id for product in products})
+    category_statement = _public_collection_statement("product_category", locale)
+    category_rows = (
+        (
+            await session.execute(category_statement.where(ProductCategory.id.in_(category_ids)))
+        ).all()
+        if category_statement is not None
+        else []
+    )
+    categories = {
+        category.id: _card_payload("product_category", category, translation, route)
+        for category, translation, route in category_rows
+    }
+
+    media_ids = [product.primary_media_id for product in products if product.primary_media_id]
+    media_rows = (
+        (
+            await session.execute(
+                select(MediaAsset, MediaAssetTranslation)
+                .outerjoin(
+                    MediaAssetTranslation,
+                    (MediaAssetTranslation.media_asset_id == MediaAsset.id)
+                    & (MediaAssetTranslation.locale_id == locale.id),
+                )
+                .where(
+                    MediaAsset.id.in_(media_ids),
+                    MediaAsset.visibility == "public",
+                    MediaAsset.storage_bucket == "public-media",
+                    MediaAsset.upload_status == "ready",
+                )
+            )
+        ).all()
+        if media_ids
+        else []
+    )
+    media_by_id: dict[Any, tuple[MediaAsset, MediaAssetTranslation | None]] = {
+        asset.id: (asset, translation) for asset, translation in media_rows
+    }
+
+    cards: list[dict[str, Any]] = []
+    for product, translation, route in rows:
+        media: dict[str, Any] | None = None
+        media_row = media_by_id.get(product.primary_media_id)
+        if media_row:
+            asset, media_translation = media_row
+            translated_alt = (
+                media_translation.alt_text.strip()
+                if media_translation and media_translation.alt_text
+                else ""
+            )
+            alt = translated_alt or str(translation.name).strip()
+            if alt:
+                media = PublicMediaDto(
+                    src=f"/api/v1/public/media/{asset.id}",
+                    type=asset.media_type,
+                    mime_type=asset.mime_type,
+                    width=asset.width,
+                    height=asset.height,
+                    alt=alt,
+                    caption=media_translation.caption if media_translation else None,
+                    loading="lazy",
+                ).model_dump()
+
+        card: dict[str, Any] = _card_payload("product", product, translation, route)
+        card.update(
+            {
+                "media": media,
+                "category": categories.get(product.category_id),
+                "specifications": [
+                    item.model_dump() for item in specifications.get(product.id, [])[:4]
+                ],
+            }
+        )
+        cards.append(card)
+    return cards
+
+
+def _listing_query_suffix(
+    *,
+    category: str | None,
+    material: str | None,
+    application: str | None,
+    page: int,
+    page_size: int,
+    category_in_path: bool,
+) -> str:
+    """
+    按固定顺序生成产品集合的等价 canonical 查询字符串。
+
+    输入：三项公开筛选、页码、每页条数，以及分类是否已表达在路径中。
+    输出：str，以问号开头的规范化查询；默认值和空筛选不输出。
+    """
+    parameters: list[tuple[str, str | int]] = []
+    if category and not category_in_path:
+        parameters.append(("category", category))
+    if material:
+        parameters.append(("material", material))
+    if application:
+        parameters.append(("application", application))
+    if page > 1:
+        parameters.append(("page", page))
+    if page_size != 24:
+        parameters.append(("page_size", page_size))
+    return f"?{urlencode(parameters)}" if parameters else ""
+
+
+async def _product_listing_seo(
+    session: AsyncSession,
+    locale: Locale,
+    page: int,
+    page_size: int,
+    category: str | None,
+    material: str | None,
+    application: str | None,
+) -> dict[str, Any]:
+    """
+    返回全产品集合的稳定后端 SEO DTO，不在前端复制 canonical/index 规则。
+
+    输入：数据库会话、当前语言、分页值与三项公开筛选。
+    输出：dict[str, Any]，全产品列表的 canonical、robots 与 hreflang。
+    """
+    path = f"/{locale.slug}/products/"
+    title = "产品" if locale.slug == "zh-cn" else "Products"
+    description: str | None = None
+    category_in_path = False
+    alternates: dict[str, str] = {}
+
+    # 已发布分类使用自身 canonical 路径；分类筛选不再重复进入 query。
+    if category:
+        category_entity = await session.scalar(
+            select(ProductCategory).where(
+                ProductCategory.slug == category,
+                ProductCategory.status == "enabled",
+            )
+        )
+        if category_entity is not None:
+            try:
+                route, _seo, _geo = await _public_route(
+                    session,
+                    "product_category",
+                    category_entity.id,
+                    locale.id,
+                )
+            except AppException:
+                pass
+            else:
+                translation = await session.scalar(
+                    select(ProductCategoryTranslation).where(
+                        ProductCategoryTranslation.category_id == category_entity.id,
+                        ProductCategoryTranslation.locale_id == locale.id,
+                    )
+                )
+                if translation is not None:
+                    path = route.path
+                    title = translation.name
+                    description = translation.short_description or translation.description
+                    category_in_path = True
+                    alternates = await _published_alternates(
+                        session,
+                        "product_category",
+                        category_entity.id,
+                    )
+
+    suffix = _listing_query_suffix(
+        category=category,
+        material=material,
+        application=application,
+        page=page,
+        page_size=page_size,
+        category_in_path=category_in_path,
+    )
+    if not alternates:
+        locale_rows = list(
+            (
+                await session.scalars(
+                    select(Locale)
+                    .where(Locale.is_enabled.is_(True))
+                    .order_by(Locale.sort_order, Locale.code)
+                )
+            ).all()
+        )
+        alternates = {item.code: f"{OFFICIAL_ORIGIN}/{item.slug}/products/" for item in locale_rows}
+        default_locale = next((item for item in locale_rows if item.is_default), None)
+        if default_locale is not None:
+            alternates["x-default"] = f"{OFFICIAL_ORIGIN}/{default_locale.slug}/products/"
+
+    canonical = f"{OFFICIAL_ORIGIN}{path}{suffix}"
+    return {
+        "title": title,
+        "description": description,
+        "canonical": canonical,
+        "robots": "index, follow",
+        "hreflang": {key: f"{value}{suffix}" for key, value in alternates.items()},
     }
 
 
@@ -613,11 +849,16 @@ async def get_public_listing(
             statement.order_by(*order_columns).offset((page - 1) * page_size).limit(page_size)
         )
     ).all()
-    return {
-        "items": [
+    items = (
+        await _product_card_payloads(session, locale, rows)
+        if owner_type == "product"
+        else [
             _card_payload(owner_type, entity, translation, route)
             for entity, translation, route in rows
-        ],
+        ]
+    )
+    payload: dict[str, Any] = {
+        "items": items,
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -628,6 +869,48 @@ async def get_public_listing(
             "application": application,
         },
     }
+    if owner_type == "product":
+        seo = await _product_listing_seo(
+            session,
+            locale,
+            page,
+            page_size,
+            category,
+            material,
+            application,
+        )
+        products_name = "产品" if locale.slug == "zh-cn" else "Products"
+        breadcrumb = [
+            {
+                "name": "首页" if locale.slug == "zh-cn" else "Home",
+                "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/",
+            }
+        ]
+        category_in_path = bool(
+            category
+            and seo["canonical"].split("?", maxsplit=1)[0].endswith(f"/products/{category}/")
+        )
+        if category_in_path:
+            breadcrumb.append(
+                {
+                    "name": products_name,
+                    "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/products/",
+                }
+            )
+        breadcrumb.append({"name": seo["title"], "url": seo["canonical"]})
+        payload["seo"] = seo
+        payload["breadcrumb"] = breadcrumb
+        payload["schema"] = [
+            build_webpage_schema(
+                {
+                    "name": seo["title"],
+                    "description": seo["description"],
+                    "url": seo["canonical"],
+                }
+            ),
+            build_breadcrumb_schema(breadcrumb),
+        ]
+    return payload
 
 
 def _combined_text(columns: list[Any]) -> Any:

@@ -171,9 +171,32 @@ async def serialize_public_specifications(
     输出：
         list[PublicSpecDto]，过滤停用定义、缺少翻译及非法存储组合后的规格。
     """
+    grouped = await serialize_public_specifications_for_products(session, [product_id], locale)
+    return grouped.get(product_id, [])
+
+
+async def serialize_public_specifications_for_products(
+    session: AsyncSession,
+    product_ids: list[Any],
+    locale: Locale,
+) -> dict[Any, list[PublicSpecDto]]:
+    """
+    批量查询多个产品当前语言下的公开规格，供列表避免逐卡 N+1 查询。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        product_ids: list[Any]，已通过产品发布门禁的产品 ID。
+        locale: Locale，已启用的当前语言。
+
+    输出：
+        dict[Any, list[PublicSpecDto]]，按产品 ID 分组且保留稳定规格顺序。
+    """
+    if not product_ids:
+        return {}
     rows = (
         await session.execute(
             select(
+                ProductSpecValue.product_id,
                 ProductSpecValue,
                 SpecificationDefinition,
                 SpecificationDefinitionTranslation,
@@ -198,7 +221,7 @@ async def serialize_public_specifications(
                 & (SpecificationGroupTranslation.locale_id == locale.id),
             )
             .where(
-                ProductSpecValue.product_id == product_id,
+                ProductSpecValue.product_id.in_(product_ids),
                 ProductSpecValue.is_public.is_(True),
                 SpecificationDefinition.status == "enabled",
                 SpecificationGroup.status == "enabled",
@@ -211,8 +234,8 @@ async def serialize_public_specifications(
         )
     ).all()
 
-    result: list[PublicSpecDto] = []
-    for value, definition, definition_translation, group_translation in rows:
+    result: dict[Any, list[PublicSpecDto]] = {product_id: [] for product_id in product_ids}
+    for product_id, value, definition, definition_translation, group_translation in rows:
         dto = serialize_public_spec(
             value,
             definition,
@@ -222,5 +245,5 @@ async def serialize_public_specifications(
         )
         # 数据库约束之外仍采用失败闭合，避免历史脏数据进入公开响应。
         if dto is not None:
-            result.append(dto)
+            result.setdefault(product_id, []).append(dto)
     return result

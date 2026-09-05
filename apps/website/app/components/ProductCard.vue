@@ -7,6 +7,8 @@ import { useTelemetry } from '~/composables/useTelemetry'
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, PublicCardDto } from '~/types/public'
 
+import PublicImage from './PublicImage.vue'
+
 const props = defineProps<{ item: PublicCardDto; locale: LocaleSlug }>()
 const labels = computed(() => ui[props.locale])
 const specifications = computed(() => (props.item.specifications ?? []).slice(0, 4))
@@ -15,14 +17,12 @@ const telemetry = useTelemetry()
 
 <template>
   <article class="product-card">
-    <img
+    <PublicImage
       v-if="item.media?.type === 'image'"
-      data-testid="card-media"
-      :src="item.media.src"
-      :alt="item.media.alt"
-      :width="item.media.width ?? undefined"
-      :height="item.media.height ?? undefined"
-      loading="lazy"
+      :media="{ ...item.media, loading: 'lazy' }"
+      :locale="locale"
+      test-id="card-media"
+      sizes="(max-width: 40rem) 100vw, (max-width: 64rem) 50vw, 33vw"
     />
     <div class="product-card__body">
       <a v-if="item.category" class="eyebrow" :href="item.category.url">
@@ -72,7 +72,7 @@ const telemetry = useTelemetry()
   border: var(--border-subtle);
 }
 
-.product-card > img {
+.product-card > :deep(.public-image img) {
   width: 100%;
   aspect-ratio: 3 / 2;
   object-fit: cover;

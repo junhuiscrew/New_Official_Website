@@ -23,7 +23,9 @@ defineProps<{
     <div class="page-hero__inner public-container">
       <div class="page-hero__content">
         <p v-if="eyebrow" class="page-hero__eyebrow">{{ eyebrow }}</p>
-        <h1>{{ title }}</h1>
+        <slot name="heading"
+          ><h1>{{ title }}</h1></slot
+        >
         <p>{{ summary }}</p>
         <div class="page-hero__actions">
           <a class="page-hero__primary" data-testid="hero-cta" :href="primaryHref">
@@ -73,6 +75,10 @@ defineProps<{
 }
 
 .page-hero h1 {
+  color: var(--color-white);
+}
+
+.page-hero :slotted(h1) {
   color: var(--color-white);
 }
 

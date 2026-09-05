@@ -31,6 +31,7 @@ async def phase36_factory(
     from app.modules.auth import models as _auth_models  # noqa: F401
     from app.modules.authority import models as _authority_models  # noqa: F401
     from app.modules.catalog import models as _catalog_models  # noqa: F401
+    from app.modules.company import models as _company_models  # noqa: F401
     from app.modules.content import models as _content_models  # noqa: F401
     from app.modules.discovery import models as _discovery_models  # noqa: F401
     from app.modules.localization import models as _localization_models  # noqa: F401
@@ -220,6 +221,7 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
     from app.modules.catalog.models import (
         Product,
         ProductCategory,
+        ProductCategoryTranslation,
         ProductSpecValue,
         ProductTranslation,
         SpecificationDefinition,
@@ -227,7 +229,14 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         SpecificationGroup,
         SpecificationGroupTranslation,
     )
+    from app.modules.company.models import (
+        CompanyProfile,
+        CompanyProfileTranslation,
+        ManufacturingCapability,
+        ManufacturingCapabilityTranslation,
+    )
     from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+    from app.modules.discovery.public_collections import get_public_listing
     from app.modules.discovery.public_delivery import get_public_product
     from app.modules.localization.models import Locale
     from app.modules.media.models import MediaAsset, MediaAssetTranslation
@@ -243,7 +252,39 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         )
         category = ProductCategory(slug="screws", status="enabled")
         group = SpecificationGroup(code="dimensions", status="enabled")
-        session.add_all([locale, category, group])
+        unpublished_company = CompanyProfile(status="enabled", founded_year=1900)
+        company = CompanyProfile(
+            status="enabled",
+            founded_year=1985,
+            years_experience=40,
+            annual_capacity_text="Published annual capacity",
+        )
+        capability = ManufacturingCapability(
+            slug="precision-machining",
+            capability_type="machining",
+            status="enabled",
+            sort_order=8,
+        )
+        unpublished_capabilities = [
+            ManufacturingCapability(
+                slug=f"draft-capability-{index}",
+                capability_type="machining",
+                status="enabled",
+                sort_order=index,
+            )
+            for index in range(8)
+        ]
+        session.add_all(
+            [
+                locale,
+                category,
+                group,
+                unpublished_company,
+                company,
+                *unpublished_capabilities,
+                capability,
+            ]
+        )
         await session.flush()
 
         public_asset = MediaAsset(
@@ -306,6 +347,24 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
                     name="Extrusion screw",
                     short_description="Visible product",
                 ),
+                ProductCategoryTranslation(
+                    category_id=category.id,
+                    locale_id=locale.id,
+                    name="Screws",
+                ),
+                CompanyProfileTranslation(
+                    company_profile_id=company.id,
+                    locale_id=locale.id,
+                    company_name="Junhui",
+                    short_intro="Published company profile",
+                    full_intro="Published company details",
+                ),
+                ManufacturingCapabilityTranslation(
+                    capability_id=capability.id,
+                    locale_id=locale.id,
+                    name="Precision machining",
+                    summary="Published capability",
+                ),
                 SpecificationGroupTranslation(
                     group_id=group.id,
                     locale_id=locale.id,
@@ -343,6 +402,69 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
                     active=True,
                     indexable=True,
                 ),
+                TranslationStatus(
+                    owner_type="product_category",
+                    owner_id=category.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="product_category",
+                    owner_id=category.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="product_category",
+                    owner_id=category.id,
+                    locale_id=locale.id,
+                    path="/en/products/screws/",
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
+                TranslationStatus(
+                    owner_type="company_profile",
+                    owner_id=company.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="company_profile",
+                    owner_id=company.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="company_profile",
+                    owner_id=company.id,
+                    locale_id=locale.id,
+                    path="/en/about/",
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
+                TranslationStatus(
+                    owner_type="manufacturing_capability",
+                    owner_id=capability.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="manufacturing_capability",
+                    owner_id=capability.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="manufacturing_capability",
+                    owner_id=capability.id,
+                    locale_id=locale.id,
+                    path="/en/capabilities/precision-machining/",
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
             ]
         )
         await session.flush()
@@ -374,7 +496,43 @@ async def test_public_product_uses_proxy_media_and_clean_specifications(
         assert "storage_key" not in repr(payload)
         assert "definition_id" not in repr(payload)
         assert payload["alternates"]["en"].endswith("/en/products/screws/extrusion-screw/")
+        assert payload["relations"]["capabilities"] == [
+            {
+                "type": "manufacturing_capability",
+                "slug": "precision-machining",
+                "name": "Precision machining",
+                "url": "/en/capabilities/precision-machining/",
+                "summary": "Published capability",
+            }
+        ]
+        assert payload["trust_summary"] == {
+            "founded_year": 1985,
+            "years_experience": 40,
+            "annual_capacity_text": "Published annual capacity",
+        }
         assert payload["schema"]
+
+        listing = await get_public_listing(session, "product", "en", 1, 24)
+        assert listing["items"] == [
+            {
+                "type": "product",
+                "slug": "extrusion-screw",
+                "name": "Extrusion screw",
+                "url": "/en/products/screws/extrusion-screw/",
+                "summary": "Visible product",
+                "media": {**expected_media, "loading": "lazy"},
+                "category": {
+                    "type": "product_category",
+                    "slug": "screws",
+                    "name": "Screws",
+                    "url": "/en/products/screws/",
+                    "summary": "",
+                },
+                "specifications": payload["specifications"],
+            }
+        ]
+        assert listing["seo"]["canonical"] == "https://junhuiscrewbarrel.com/en/products/"
+        assert listing["seo"]["robots"] == "index, follow"
 
         media_translation = MediaAssetTranslation(
             media_asset_id=public_asset.id,

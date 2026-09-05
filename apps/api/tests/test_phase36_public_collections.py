@@ -711,16 +711,25 @@ async def test_product_listing_filters_paginates_and_isolates_locale(
 
     assert filtered_response.status_code == 200
     payload = filtered_response.json()["data"]
-    assert payload == {
-        "items": [
-            {
-                "type": "product",
-                "slug": "filtered-product",
-                "name": "en filtered-product",
-                "url": "/en/products/screws/filtered-product/",
-                "summary": "filtered-product public summary",
-            }
-        ],
+    assert payload["items"] == [
+        {
+            "type": "product",
+            "slug": "filtered-product",
+            "name": "en filtered-product",
+            "url": "/en/products/screws/filtered-product/",
+            "summary": "filtered-product public summary",
+            "media": None,
+            "category": {
+                "type": "product_category",
+                "slug": "screws",
+                "name": "Screws",
+                "url": "/en/products/screws/",
+                "summary": "",
+            },
+            "specifications": [],
+        }
+    ]
+    assert {key: payload[key] for key in ("page", "page_size", "total", "pages", "filters")} == {
         "page": 1,
         "page_size": 1,
         "total": 1,
@@ -731,12 +740,29 @@ async def test_product_listing_filters_paginates_and_isolates_locale(
             "application": "medical",
         },
     }
+    assert payload["seo"]["canonical"] == (
+        "https://junhuiscrewbarrel.com/en/products/screws/"
+        "?material=peek&application=medical&page_size=1"
+    )
+    assert payload["seo"]["hreflang"]["en"] == payload["seo"]["canonical"]
+    assert payload["schema"][0]["url"] == payload["seo"]["canonical"]
+    assert payload["breadcrumb"][-1]["url"] == payload["seo"]["canonical"]
+    assert payload["schema"][1]["itemListElement"][-1]["item"] == (payload["breadcrumb"][-1]["url"])
     serialized = repr(payload)
     assert "PRIVATE-filtered-product" not in serialized
     assert "draft-product" not in serialized
     assert "zh-only-product" not in serialized
     assert second_page_response.status_code == 200
-    assert second_page_response.json()["data"]["items"][0]["slug"] == "second-product"
+    second_page = second_page_response.json()["data"]
+    assert second_page["items"][0]["slug"] == "second-product"
+    assert second_page["seo"]["canonical"] == (
+        "https://junhuiscrewbarrel.com/en/products/?page=2&page_size=1"
+    )
+    assert second_page["seo"]["hreflang"]["en"] == second_page["seo"]["canonical"]
+    assert second_page["seo"]["hreflang"]["zh-CN"] == (
+        "https://junhuiscrewbarrel.com/zh-cn/products/?page=2&page_size=1"
+    )
+    assert second_page["schema"][0]["url"] == second_page["seo"]["canonical"]
     assert invalid_page_response.status_code == 422
     assert oversized_page_response.status_code == 422
 
@@ -932,7 +958,7 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
     for resource, response in responses.items():
         assert response.status_code == 200, resource
         envelope = response.json()["data"]
-        assert set(envelope) == {
+        expected_envelope_keys = {
             "items",
             "page",
             "page_size",
@@ -940,8 +966,14 @@ async def test_all_public_list_endpoints_return_the_common_clean_envelope(
             "pages",
             "filters",
         }
+        if resource == "products":
+            expected_envelope_keys.update({"seo", "schema", "breadcrumb"})
+        assert set(envelope) == expected_envelope_keys
         assert envelope["total"] == 1, resource
-        assert set(envelope["items"][0]) == {"type", "slug", "name", "url", "summary"}
+        expected_item_keys = {"type", "slug", "name", "url", "summary"}
+        if resource == "products":
+            expected_item_keys.update({"media", "category", "specifications"})
+        assert set(envelope["items"][0]) == expected_item_keys
     assert responses["experts"].json()["data"]["items"][0]["slug"] == "verified-engineer"
     assert "private-engineer" not in repr(responses["experts"].json())
 

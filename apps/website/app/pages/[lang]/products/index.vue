@@ -1,4 +1,4 @@
-<!-- 页面用途：以 category 路径为主筛选，服务端渲染对应公开产品集合。 -->
+<!-- 页面用途：按 URL 查询参数服务端渲染全部公开产品，并提供三项轻量筛选。 -->
 <script setup lang="ts">
 import { computed } from 'vue'
 
@@ -8,10 +8,7 @@ import type {
   ProductFilterOptions,
   ProductFilters,
   PublicCollectionDto,
-  PublicBreadcrumbDto,
-  GeoDto,
   PublicLinkDto,
-  SeoDto,
 } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
 
@@ -21,39 +18,25 @@ interface Envelope<T> {
   error: unknown
 }
 
-interface CategoryPageDto {
-  translation: {
-    name: string
-    short_description?: string | null
-    description?: string | null
-  }
-  seo: SeoDto
-  geo: GeoDto | null
-  breadcrumb: PublicBreadcrumbDto[]
-  schema: unknown
-  alternates?: Record<string, string>
-}
-
 const route = useRoute()
 const api = useApi()
 const locale = normalizeLocale(route.params.lang)
 
-/** 将动态参数或查询参数规整为单个字符串。 */
+/** 将未知 query 值归一化为单个公开 slug。 */
 function queryText(value: unknown): string {
   const candidate = Array.isArray(value) ? value[0] : value
   return typeof candidate === 'string' ? candidate.trim() : ''
 }
 
-/** 限制公开分页整数，page_size 最大为 48。 */
+/** 将页码限制在正整数范围，并确保 page_size 不超过 API 上限 48。 */
 function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
   const parsed = Number.parseInt(queryText(value), 10)
   const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
   return maximum ? Math.min(maximum, safe) : safe
 }
 
-const category = computed(() => queryText(route.params.category))
 const filters = computed<ProductFilters>(() => ({
-  category: category.value,
+  category: queryText(route.query.category),
   material: queryText(route.query.material),
   application: queryText(route.query.application),
 }))
@@ -62,20 +45,20 @@ const pageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
 const requestQuery = computed(() => ({
   page: page.value,
   page_size: pageSize.value,
-  category: filters.value.category,
+  category: filters.value.category || undefined,
   material: filters.value.material || undefined,
   application: filters.value.application || undefined,
 }))
 
-/** 将公开 canonical 链接转换为筛选选项。 */
+/** 将公开链接集合转为 FilterBar 使用的 slug/name 选项。 */
 function filterOptions(items: PublicLinkDto[]): Array<{ value: string; label: string }> {
   return items.map((item) => ({ value: item.slug, label: item.name }))
 }
 
 const { data: response, error } = await useAsyncData(
-  `products:category:${locale}:${route.fullPath}`,
+  `products:${locale}:${route.fullPath}`,
   async () => {
-    const [products, categories, materials, applications, categoryPage] = await Promise.all([
+    const [products, categories, materials, applications] = await Promise.all([
       api<Envelope<PublicCollectionDto>>(`/public/products/${locale}`, {
         query: requestQuery.value,
       }),
@@ -88,63 +71,57 @@ const { data: response, error } = await useAsyncData(
       api<Envelope<PublicCollectionDto<PublicLinkDto>>>(`/public/applications/${locale}`, {
         query: { page_size: 48 },
       }),
-      api<Envelope<CategoryPageDto>>(`/public/product-categories/${locale}/${category.value}`),
     ])
     const options: ProductFilterOptions = {
       categories: filterOptions(categories.data.items),
       materials: filterOptions(materials.data.items),
       applications: filterOptions(applications.data.items),
     }
-    return { collection: products.data, options, categoryPage: categoryPage.data }
+    return { collection: products.data, options }
   },
   { watch: [requestQuery] },
 )
 if (error.value || !response.value) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
-  throw createError({
-    statusCode,
-    statusMessage:
-      statusCode === 404 ? 'Product category not found' : 'Products could not be loaded',
-  })
+  throw createError({ statusCode: 500, statusMessage: 'Products could not be loaded' })
 }
 const pageData = computed(() => response.value!)
 
-// 分类页继续消费分类详情端点的 canonical、hreflang、robots 与 Schema。
+// 列表页只序列化后端返回的 SEO DTO，不在 Vue 生成 Schema 或索引规则。
 useHead(() => {
-  const categoryPage = pageData.value.categoryPage
-  const listingSeo = pageData.value.collection.seo
+  const seo = pageData.value.collection.seo
+  if (!seo) return { htmlAttrs: { lang: locale === 'zh-cn' ? 'zh-CN' : 'en' } }
   return {
     htmlAttrs: { lang: locale === 'zh-cn' ? 'zh-CN' : 'en' },
-    title: categoryPage.seo.title,
+    title: seo.title,
     meta: [
-      ...(categoryPage.seo.description
-        ? [{ name: 'description', content: categoryPage.seo.description }]
-        : []),
-      { name: 'robots', content: categoryPage.seo.robots },
+      ...(seo.description ? [{ name: 'description', content: seo.description }] : []),
+      { name: 'robots', content: seo.robots },
     ],
     link: [
-      { rel: 'canonical', href: listingSeo?.canonical ?? categoryPage.seo.canonical },
-      ...Object.entries(
-        listingSeo?.hreflang ?? categoryPage.alternates ?? categoryPage.seo.hreflang ?? {},
-      ).map(([hreflang, href]) => ({ rel: 'alternate' as const, hreflang, href })),
+      { rel: 'canonical', href: seo.canonical },
+      ...Object.entries(seo.hreflang ?? {}).map(([hreflang, href]) => ({
+        rel: 'alternate' as const,
+        hreflang,
+        href,
+      })),
     ],
-    script: [
-      {
-        type: 'application/ld+json',
-        innerHTML: serializeJsonLd(pageData.value.collection.schema),
-      },
-    ],
+    script: pageData.value.collection.schema
+      ? [
+          {
+            type: 'application/ld+json',
+            innerHTML: serializeJsonLd(pageData.value.collection.schema),
+          },
+        ]
+      : [],
   }
 })
 
-/** 将筛选变更写入目标分类 URL；清空分类时回到全部产品页。 */
+/** 把筛选变更写回 URL，并按契约将 page 重置为 1。 */
 async function onFilterChange(next: ProductFilters & { page: 1 }): Promise<void> {
-  const path = next.category
-    ? `/${locale}/products/${encodeURIComponent(next.category)}/`
-    : `/${locale}/products/`
   await navigateTo({
-    path,
+    path: `/${locale}/products/`,
     query: {
+      category: next.category || undefined,
       material: next.material || undefined,
       application: next.application || undefined,
       page: 1,
@@ -159,16 +136,9 @@ async function onFilterChange(next: ProductFilters & { page: 1 }): Promise<void>
     :locale="locale"
     :collection="pageData.collection"
     :filters="filters"
-    :pagination-query="{ material: filters.material, application: filters.application }"
     :options="pageData.options"
-    :base-path="route.path"
-    :title="pageData.categoryPage.translation.name"
-    :intro="
-      pageData.categoryPage.translation.short_description ??
-      pageData.categoryPage.translation.description
-    "
+    :base-path="`/${locale}/products/`"
     :breadcrumb="pageData.collection.breadcrumb"
-    :geo="pageData.categoryPage.geo"
     @filter-change="onFilterChange"
   />
 </template>

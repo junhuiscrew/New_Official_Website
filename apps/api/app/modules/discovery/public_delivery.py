@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import or_, select
+from sqlalchemy import literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -55,6 +55,12 @@ from app.modules.catalog.models import (
     Technology,
     TechnologyTranslation,
 )
+from app.modules.company.models import (
+    CompanyProfile,
+    CompanyProfileTranslation,
+    ManufacturingCapability,
+    ManufacturingCapabilityTranslation,
+)
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.discovery.models import GeoDocument, SeoDocument, SourceCitation
 from app.modules.discovery.schema_generator import (
@@ -100,7 +106,13 @@ CATALOG_PUBLIC_TYPES: dict[str, tuple[type, type, str, tuple[str, ...]]] = {
         Material,
         MaterialTranslation,
         "material_id",
-        ("definition", "processing_characteristics", "screw_impact", "recommendations", "limitations"),
+        (
+            "definition",
+            "processing_characteristics",
+            "screw_impact",
+            "recommendations",
+            "limitations",
+        ),
     ),
     "technology": (
         Technology,
@@ -130,7 +142,9 @@ def _columns(entity: Any) -> dict[str, Any]:
     输入：entity，SQLAlchemy 实体。
     输出：dict，列值字典。
     """
-    return jsonable_encoder({column.name: getattr(entity, column.name) for column in entity.__table__.columns})
+    return jsonable_encoder(
+        {column.name: getattr(entity, column.name) for column in entity.__table__.columns}
+    )
 
 
 async def _locale(session: AsyncSession, locale_slug: str) -> Locale:
@@ -140,7 +154,9 @@ async def _locale(session: AsyncSession, locale_slug: str) -> Locale:
     输入：session 与 URL locale_slug。
     输出：Locale；不存在或停用时返回公开 404。
     """
-    locale = await session.scalar(select(Locale).where(Locale.slug == locale_slug, Locale.is_enabled.is_(True)))
+    locale = await session.scalar(
+        select(Locale).where(Locale.slug == locale_slug, Locale.is_enabled.is_(True))
+    )
     if locale is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     return locale
@@ -248,7 +264,13 @@ async def _public_route(
     if row is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     route, seo = row
-    geo = await session.scalar(select(GeoDocument).where(GeoDocument.owner_type == owner_type, GeoDocument.owner_id == owner_id, GeoDocument.locale_id == locale_id))
+    geo = await session.scalar(
+        select(GeoDocument).where(
+            GeoDocument.owner_type == owner_type,
+            GeoDocument.owner_id == owner_id,
+            GeoDocument.locale_id == locale_id,
+        )
+    )
     return route, seo, geo
 
 
@@ -324,18 +346,14 @@ async def _published_link(
     输出：dict 或 None；不可公开、非 self-canonical 或缺少翻译时返回 None。
     """
     try:
-        route, seo, _geo = await _public_route(
-            session, owner_type, owner_id, locale.id
-        )
+        route, seo, _geo = await _public_route(session, owner_type, owner_id, locale.id)
     except AppException:
         return None
     if seo and seo.canonical_override and seo.canonical_override != OFFICIAL_ORIGIN + route.path:
         return None
 
     if owner_type in CATALOG_PUBLIC_TYPES:
-        model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[
-            owner_type
-        ]
+        model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[owner_type]
         entity = await session.get(model, owner_id)
         translation = await session.scalar(
             select(translation_model).where(
@@ -414,7 +432,183 @@ async def _published_link(
             "url": route.path,
             "summary": translation.summary or "",
         }
+    if owner_type == "manufacturing_capability":
+        entity = await session.get(ManufacturingCapability, owner_id)
+        translation = await session.scalar(
+            select(ManufacturingCapabilityTranslation).where(
+                ManufacturingCapabilityTranslation.capability_id == owner_id,
+                ManufacturingCapabilityTranslation.locale_id == locale.id,
+            )
+        )
+        if entity is None or entity.status != "enabled" or translation is None:
+            return None
+        return {
+            "type": owner_type,
+            "slug": entity.slug,
+            "name": translation.name,
+            "url": route.path,
+            "summary": translation.summary or "",
+        }
     return None
+
+
+async def _published_capability_links(
+    session: AsyncSession,
+    locale: Locale,
+) -> list[dict[str, str]]:
+    """
+    返回经过统一发布与 canonical 门禁的全局制造能力链接。
+
+    输入：session: AsyncSession，数据库会话；locale: Locale，当前语言。
+    输出：list[dict[str, str]]，最多八项公开制造能力链接。
+    """
+    capability_ids = list(
+        (
+            await session.scalars(
+                select(ManufacturingCapability.id)
+                .join(
+                    ManufacturingCapabilityTranslation,
+                    ManufacturingCapabilityTranslation.capability_id == ManufacturingCapability.id,
+                )
+                .join(
+                    ContentRoute,
+                    (ContentRoute.owner_type == "manufacturing_capability")
+                    & (ContentRoute.owner_id == ManufacturingCapability.id)
+                    & (ContentRoute.locale_id == locale.id),
+                )
+                .join(
+                    ContentPublication,
+                    (ContentPublication.owner_type == ContentRoute.owner_type)
+                    & (ContentPublication.owner_id == ContentRoute.owner_id)
+                    & (ContentPublication.locale_id == ContentRoute.locale_id),
+                )
+                .join(
+                    TranslationStatus,
+                    (TranslationStatus.owner_type == ContentRoute.owner_type)
+                    & (TranslationStatus.owner_id == ContentRoute.owner_id)
+                    & (TranslationStatus.locale_id == ContentRoute.locale_id),
+                )
+                .outerjoin(
+                    SeoDocument,
+                    (SeoDocument.owner_type == ContentRoute.owner_type)
+                    & (SeoDocument.owner_id == ContentRoute.owner_id)
+                    & (SeoDocument.locale_id == ContentRoute.locale_id),
+                )
+                .where(
+                    ManufacturingCapability.status == "enabled",
+                    ManufacturingCapabilityTranslation.locale_id == locale.id,
+                    ContentRoute.is_canonical.is_(True),
+                    ContentRoute.active.is_(True),
+                    ContentRoute.indexable.is_(True),
+                    ContentPublication.status == "published",
+                    TranslationStatus.status == "published",
+                    or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+                    or_(
+                        SeoDocument.id.is_(None),
+                        SeoDocument.canonical_override.is_(None),
+                        SeoDocument.canonical_override
+                        == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+                    ),
+                )
+                .order_by(
+                    ManufacturingCapability.sort_order,
+                    ManufacturingCapability.created_at,
+                )
+                .limit(8)
+            )
+        ).all()
+    )
+    links: list[dict[str, str]] = []
+    for capability_id in capability_ids:
+        link = await _published_link(
+            session,
+            "manufacturing_capability",
+            capability_id,
+            locale,
+        )
+        if link is not None:
+            links.append(link)
+    return links
+
+
+async def _published_trust_summary(
+    session: AsyncSession,
+    locale: Locale,
+) -> dict[str, Any] | None:
+    """
+    返回已发布公司档案中的公开可信度事实，不推导或补造数值。
+
+    输入：session: AsyncSession，数据库会话；locale: Locale，当前语言。
+    输出：dict[str, Any] | None，公开事实白名单；档案未发布时返回 None。
+    """
+    profile = await session.scalar(
+        select(CompanyProfile)
+        .join(
+            CompanyProfileTranslation,
+            CompanyProfileTranslation.company_profile_id == CompanyProfile.id,
+        )
+        .join(
+            ContentRoute,
+            (ContentRoute.owner_type == "company_profile")
+            & (ContentRoute.owner_id == CompanyProfile.id)
+            & (ContentRoute.locale_id == locale.id),
+        )
+        .join(
+            ContentPublication,
+            (ContentPublication.owner_type == ContentRoute.owner_type)
+            & (ContentPublication.owner_id == ContentRoute.owner_id)
+            & (ContentPublication.locale_id == ContentRoute.locale_id),
+        )
+        .join(
+            TranslationStatus,
+            (TranslationStatus.owner_type == ContentRoute.owner_type)
+            & (TranslationStatus.owner_id == ContentRoute.owner_id)
+            & (TranslationStatus.locale_id == ContentRoute.locale_id),
+        )
+        .outerjoin(
+            SeoDocument,
+            (SeoDocument.owner_type == ContentRoute.owner_type)
+            & (SeoDocument.owner_id == ContentRoute.owner_id)
+            & (SeoDocument.locale_id == ContentRoute.locale_id),
+        )
+        .where(
+            CompanyProfile.status == "enabled",
+            CompanyProfileTranslation.locale_id == locale.id,
+            ContentRoute.is_canonical.is_(True),
+            ContentRoute.active.is_(True),
+            ContentRoute.indexable.is_(True),
+            ContentPublication.status == "published",
+            TranslationStatus.status == "published",
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+            or_(
+                SeoDocument.id.is_(None),
+                SeoDocument.canonical_override.is_(None),
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+            ),
+        )
+        .order_by(CompanyProfile.created_at)
+        .limit(1)
+    )
+    if profile is None:
+        return None
+    try:
+        await _public_route(session, "company_profile", profile.id, locale.id)
+    except AppException:
+        return None
+    fact_fields = (
+        "founded_year",
+        "years_experience",
+        "employee_count_range",
+        "factory_area_sqm",
+        "annual_capacity_text",
+        "export_markets_json",
+    )
+    summary = {
+        ("export_markets" if field == "export_markets_json" else field): getattr(profile, field)
+        for field in fact_fields
+        if getattr(profile, field) not in (None, [], "")
+    }
+    return summary or None
 
 
 async def _published_relation_links(
@@ -443,9 +637,7 @@ async def _published_relation_links(
     )
     links: list[dict[str, str]] = []
     for target_id in target_ids:
-        link = await _published_link(
-            session, target_type, target_id, locale
-        )
+        link = await _published_link(session, target_type, target_id, locale)
         if link is not None:
             links.append(link)
     return links
@@ -510,15 +702,11 @@ async def get_relation_health(
         article_ids = list(
             (
                 await session.scalars(
-                    select(KnowledgeArticle.id).where(
-                        KnowledgeArticle.author_id == owner_id
-                    )
+                    select(KnowledgeArticle.id).where(KnowledgeArticle.author_id == owner_id)
                 )
             ).all()
         )
-        target_pairs.extend(
-            ("knowledge_article", article_id) for article_id in article_ids
-        )
+        target_pairs.extend(("knowledge_article", article_id) for article_id in article_ids)
 
     valid_count = 0
     for target_type, target_id in target_pairs:
@@ -601,7 +789,13 @@ async def _published_related_cases(
             )
         )
         if translation:
-            result.append({"slug": case.slug, "title": translation.title, "summary": translation.summary or ""})
+            result.append(
+                {
+                    "slug": case.slug,
+                    "title": translation.title,
+                    "summary": translation.summary or "",
+                }
+            )
     return result
 
 
@@ -644,11 +838,23 @@ async def _published_related_articles(
             )
         )
         if category and translation:
-            result.append({"category_slug": category.slug, "slug": article.slug, "title": translation.title, "summary": translation.summary or ""})
+            result.append(
+                {
+                    "category_slug": category.slug,
+                    "slug": article.slug,
+                    "title": translation.title,
+                    "summary": translation.summary or "",
+                }
+            )
     return result
 
 
-def _seo_payload(seo: SeoDocument | None, route: ContentRoute, fallback_title: str, fallback_description: str | None) -> dict[str, Any]:
+def _seo_payload(
+    seo: SeoDocument | None,
+    route: ContentRoute,
+    fallback_title: str,
+    fallback_description: str | None,
+) -> dict[str, Any]:
     """
     构造公开 SEO meta，默认 canonical 来自 ContentRoute。
 
@@ -657,8 +863,12 @@ def _seo_payload(seo: SeoDocument | None, route: ContentRoute, fallback_title: s
     """
     return {
         "title": seo.seo_title if seo and seo.seo_title else fallback_title,
-        "description": seo.meta_description if seo and seo.meta_description else fallback_description,
-        "canonical": seo.canonical_override if seo and seo.canonical_override else OFFICIAL_ORIGIN + route.path,
+        "description": seo.meta_description
+        if seo and seo.meta_description
+        else fallback_description,
+        "canonical": seo.canonical_override
+        if seo and seo.canonical_override
+        else OFFICIAL_ORIGIN + route.path,
         "robots": "index, follow",
         "og_title": seo.og_title if seo else None,
         "og_description": seo.og_description if seo else None,
@@ -712,15 +922,32 @@ async def get_public_product(
     product = await session.scalar(
         select(Product)
         .join(ProductCategory, ProductCategory.id == Product.category_id)
-        .where(Product.slug == slug, Product.status == "enabled", ProductCategory.slug == category_slug, ProductCategory.status == "enabled")
+        .where(
+            Product.slug == slug,
+            Product.status == "enabled",
+            ProductCategory.slug == category_slug,
+            ProductCategory.status == "enabled",
+        )
     )
     if product is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     route, seo, geo = await _public_route(session, "product", product.id, locale.id)
-    translation = await session.scalar(select(ProductTranslation).where(ProductTranslation.product_id == product.id, ProductTranslation.locale_id == locale.id))
+    translation = await session.scalar(
+        select(ProductTranslation).where(
+            ProductTranslation.product_id == product.id, ProductTranslation.locale_id == locale.id
+        )
+    )
     if translation is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
-    models = list((await session.scalars(select(ProductModel).where(ProductModel.product_id == product.id, ProductModel.status == "enabled").order_by(ProductModel.sort_order))).all())
+    models = list(
+        (
+            await session.scalars(
+                select(ProductModel)
+                .where(ProductModel.product_id == product.id, ProductModel.status == "enabled")
+                .order_by(ProductModel.sort_order)
+            )
+        ).all()
+    )
     specifications = await serialize_public_specifications(session, product.id, locale)
     primary_media = await _public_media(
         session,
@@ -766,18 +993,32 @@ async def get_public_product(
     )
     relations["cases"] = cases
     relations["knowledge"] = knowledge
+    relations["capabilities"] = await _published_capability_links(session, locale)
     url = OFFICIAL_ORIGIN + route.path
     breadcrumb = [
         {"name": "Home", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
         {"name": "Products", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/products/"},
         {"name": translation.name, "url": url},
     ]
-    product_schema = build_product_schema({"name": translation.name, "description": translation.description or translation.short_description, "url": url})
+    product_schema = build_product_schema(
+        {
+            "name": translation.name,
+            "description": translation.description or translation.short_description,
+            "url": url,
+        }
+    )
     return {
         "slug": product.slug,
         "category_slug": category_slug,
-        "translation": {"name": translation.name, "short_description": translation.short_description, "description": translation.description, "highlights": translation.highlights_jsonb},
-        "models": [{"model_code": item.model_code, "sort_order": item.sort_order} for item in models],
+        "translation": {
+            "name": translation.name,
+            "short_description": translation.short_description,
+            "description": translation.description,
+            "highlights": translation.highlights_jsonb,
+        },
+        "models": [
+            {"model_code": item.model_code, "sort_order": item.sort_order} for item in models
+        ],
         "specifications": [item.model_dump() for item in specifications],
         "media": [primary_media.model_dump()] if primary_media else [],
         "primary_media": primary_media.model_dump() if primary_media else None,
@@ -785,6 +1026,7 @@ async def get_public_product(
         "faqs": faqs,
         "cases": cases,
         "knowledge": knowledge,
+        "trust_summary": await _published_trust_summary(session, locale),
         "seo": _seo_payload(seo, route, translation.name, translation.short_description),
         "geo": _geo_payload(geo),
         "breadcrumb": breadcrumb,
@@ -801,11 +1043,18 @@ async def get_public_case(session: AsyncSession, locale_slug: str, slug: str) ->
     输出：dict，公开案例、关系、FAQ、SEO/GEO 与无敏感信息 Schema。
     """
     locale = await _locale(session, locale_slug)
-    case = await session.scalar(select(CaseStudy).where(CaseStudy.slug == slug, CaseStudy.status == "enabled"))
+    case = await session.scalar(
+        select(CaseStudy).where(CaseStudy.slug == slug, CaseStudy.status == "enabled")
+    )
     if case is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     route, seo, geo = await _public_route(session, "case_study", case.id, locale.id)
-    translation = await session.scalar(select(CaseStudyTranslation).where(CaseStudyTranslation.case_study_id == case.id, CaseStudyTranslation.locale_id == locale.id))
+    translation = await session.scalar(
+        select(CaseStudyTranslation).where(
+            CaseStudyTranslation.case_study_id == case.id,
+            CaseStudyTranslation.locale_id == locale.id,
+        )
+    )
     if translation is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     public_case = serialize_public_case(case, _columns(translation))
@@ -878,26 +1127,62 @@ async def get_public_knowledge(
     article = await session.scalar(
         select(KnowledgeArticle)
         .join(KnowledgeCategory, KnowledgeCategory.id == KnowledgeArticle.category_id)
-        .where(KnowledgeArticle.slug == slug, KnowledgeArticle.status == "enabled", KnowledgeCategory.slug == category_slug, KnowledgeCategory.status == "enabled")
+        .where(
+            KnowledgeArticle.slug == slug,
+            KnowledgeArticle.status == "enabled",
+            KnowledgeCategory.slug == category_slug,
+            KnowledgeCategory.status == "enabled",
+        )
     )
     if article is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     route, seo, geo = await _public_route(session, "knowledge_article", article.id, locale.id)
-    translation = await session.scalar(select(KnowledgeArticleTranslation).where(KnowledgeArticleTranslation.article_id == article.id, KnowledgeArticleTranslation.locale_id == locale.id))
+    translation = await session.scalar(
+        select(KnowledgeArticleTranslation).where(
+            KnowledgeArticleTranslation.article_id == article.id,
+            KnowledgeArticleTranslation.locale_id == locale.id,
+        )
+    )
     author = await session.get(AuthorExpert, article.author_id)
-    author_translation = await session.scalar(select(AuthorExpertTranslation).where(AuthorExpertTranslation.author_expert_id == article.author_id, AuthorExpertTranslation.locale_id == locale.id))
-    if translation is None or author is None or author_translation is None or not author.is_real_person_verified:
+    author_translation = await session.scalar(
+        select(AuthorExpertTranslation).where(
+            AuthorExpertTranslation.author_expert_id == article.author_id,
+            AuthorExpertTranslation.locale_id == locale.id,
+        )
+    )
+    if (
+        translation is None
+        or author is None
+        or author_translation is None
+        or not author.is_real_person_verified
+    ):
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     reviewer = None
     if article.reviewer_id:
         reviewer_model = await session.get(AuthorExpert, article.reviewer_id)
-        reviewer_translation = await session.scalar(select(AuthorExpertTranslation).where(AuthorExpertTranslation.author_expert_id == article.reviewer_id, AuthorExpertTranslation.locale_id == locale.id))
+        reviewer_translation = await session.scalar(
+            select(AuthorExpertTranslation).where(
+                AuthorExpertTranslation.author_expert_id == article.reviewer_id,
+                AuthorExpertTranslation.locale_id == locale.id,
+            )
+        )
         if reviewer_model and reviewer_model.is_real_person_verified and reviewer_translation:
-            reviewer = {"name": reviewer_translation.name, "job_title": reviewer_translation.job_title}
+            reviewer = {
+                "name": reviewer_translation.name,
+                "job_title": reviewer_translation.job_title,
+            }
     source_conditions = [SourceCitation.article_id == article.id]
     if geo is not None:
         source_conditions.append(SourceCitation.geo_document_id == geo.id)
-    sources = list((await session.scalars(select(SourceCitation).where(or_(*source_conditions)).order_by(SourceCitation.sort_order))).all())
+    sources = list(
+        (
+            await session.scalars(
+                select(SourceCitation)
+                .where(or_(*source_conditions))
+                .order_by(SourceCitation.sort_order)
+            )
+        ).all()
+    )
     relations: dict[str, list[dict[str, str]]] = {}
     for field_name, relation_model, target_column, target_type in (
         ("products", ArticleProduct, "product_id", "product"),
@@ -923,15 +1208,41 @@ async def get_public_knowledge(
         {"name": "Knowledge", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/knowledge/"},
         {"name": translation.title, "url": url},
     ]
-    author_payload = {"name": author_translation.name, "job_title": author_translation.job_title, "short_bio": author_translation.short_bio, "is_real_person_verified": True}
-    article_schema = build_article_schema({"headline": translation.title, "description": translation.summary, "url": url, "date_modified": article.updated_at.isoformat()}, author_payload)
+    author_payload = {
+        "name": author_translation.name,
+        "job_title": author_translation.job_title,
+        "short_bio": author_translation.short_bio,
+        "is_real_person_verified": True,
+    }
+    article_schema = build_article_schema(
+        {
+            "headline": translation.title,
+            "description": translation.summary,
+            "url": url,
+            "date_modified": article.updated_at.isoformat(),
+        },
+        author_payload,
+    )
     return {
         "slug": article.slug,
         "category_slug": category_slug,
-        "translation": {"title": translation.title, "summary": translation.summary, "body_markdown": translation.body_markdown},
+        "translation": {
+            "title": translation.title,
+            "summary": translation.summary,
+            "body_markdown": translation.body_markdown,
+        },
         "author": author_payload,
         "reviewer": reviewer,
-        "sources": [{"title": item.title, "url": item.url, "publisher": item.publisher, "publication_date": item.publication_date, "source_type": item.source_type} for item in sources],
+        "sources": [
+            {
+                "title": item.title,
+                "url": item.url,
+                "publisher": item.publisher,
+                "publication_date": item.publication_date,
+                "source_type": item.source_type,
+            }
+            for item in sources
+        ],
         "relations": relations,
         "faqs": faqs,
         "seo": _seo_payload(seo, route, translation.title, translation.summary),
@@ -964,9 +1275,7 @@ async def get_public_expert(
     )
     if expert is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
-    route, seo, geo = await _public_route(
-        session, "author_expert", expert.id, locale.id
-    )
+    route, seo, geo = await _public_route(session, "author_expert", expert.id, locale.id)
     translation = await session.scalar(
         select(AuthorExpertTranslation).where(
             AuthorExpertTranslation.author_expert_id == expert.id,
@@ -987,9 +1296,7 @@ async def get_public_expert(
     )
     authored_knowledge: list[dict[str, str]] = []
     for article_id in article_ids:
-        link = await _published_link(
-            session, "knowledge_article", article_id, locale
-        )
+        link = await _published_link(session, "knowledge_article", article_id, locale)
         if link:
             authored_knowledge.append(link)
 
@@ -1018,9 +1325,7 @@ async def get_public_expert(
         "geo": _geo_payload(geo),
         "breadcrumb": breadcrumb,
         "schema": [build_person_schema(person), build_breadcrumb_schema(breadcrumb)],
-        "alternates": await _published_alternates(
-            session, "author_expert", expert.id
-        ),
+        "alternates": await _published_alternates(session, "author_expert", expert.id),
     }
 
 
@@ -1039,17 +1344,13 @@ async def get_public_catalog_entity(
     if owner_type not in CATALOG_PUBLIC_TYPES:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     locale = await _locale(session, locale_slug)
-    model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[
-        owner_type
-    ]
+    model, translation_model, foreign_key, summary_fields = CATALOG_PUBLIC_TYPES[owner_type]
     entity = await session.scalar(
         select(model).where(model.slug == slug, model.status == "enabled")
     )
     if entity is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
-    route, seo, geo = await _public_route(
-        session, owner_type, entity.id, locale.id
-    )
+    route, seo, geo = await _public_route(session, owner_type, entity.id, locale.id)
     translation = await session.scalar(
         select(translation_model).where(
             getattr(translation_model, foreign_key) == entity.id,
@@ -1061,8 +1362,7 @@ async def get_public_catalog_entity(
     translation_payload = {
         field: value
         for field, value in _columns(translation).items()
-        if field
-        not in {"id", foreign_key, "locale_id", "created_at", "updated_at"}
+        if field not in {"id", foreign_key, "locale_id", "created_at", "updated_at"}
     }
     summary = next(
         (
@@ -1085,12 +1385,8 @@ async def get_public_catalog_entity(
         "geo": _geo_payload(geo),
         "breadcrumb": breadcrumb,
         "schema": [
-            build_webpage_schema(
-                {"name": translation.name, "description": summary, "url": url}
-            ),
+            build_webpage_schema({"name": translation.name, "description": summary, "url": url}),
             build_breadcrumb_schema(breadcrumb),
         ],
-        "alternates": await _published_alternates(
-            session, owner_type, entity.id
-        ),
+        "alternates": await _published_alternates(session, owner_type, entity.id),
     }

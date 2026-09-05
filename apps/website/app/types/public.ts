@@ -159,3 +159,77 @@ export interface GeoDto {
   related_questions: string[]
   last_reviewed_at: string | null
 }
+
+/** 公开集合端点返回的统一分页 envelope。 */
+export interface PublicCollectionDto<T extends PublicLinkDto = PublicCardDto> {
+  items: T[]
+  page: number
+  page_size: number
+  total: number
+  pages: number
+  filters: { [Key in keyof ProductFilters]: string | null }
+  seo?: SeoDto
+  schema?: unknown
+  breadcrumb?: PublicBreadcrumbDto[]
+}
+
+/** 产品列表 URL 中允许出现的三项业务筛选。 */
+export interface ProductFilters {
+  category: string
+  material: string
+  application: string
+}
+
+/** 单个筛选选项只保留公开 slug 与显示名称。 */
+export interface PublicFilterOption {
+  value: string
+  label: string
+}
+
+/** Product FilterBar 的三组已发布选项。 */
+export interface ProductFilterOptions {
+  categories: PublicFilterOption[]
+  materials: PublicFilterOption[]
+  applications: PublicFilterOption[]
+}
+
+/** 面包屑正文与后端 Breadcrumb Schema 共用的链接字段。 */
+export interface PublicBreadcrumbDto {
+  name: string
+  url: string
+}
+
+/** 产品详情中的公开型号。 */
+export interface PublicProductModelDto {
+  model_code: string
+  sort_order: number
+}
+
+/** 产品详情当前语言的结构化正文。 */
+export interface PublicProductTranslationDto {
+  name: string
+  short_description: string | null
+  description: string | null
+  highlights: string[] | null
+}
+
+/** 产品详情端点的完整公开白名单 DTO。 */
+export interface PublicProductDetailDto {
+  slug: string
+  category_slug: string
+  translation: PublicProductTranslationDto
+  models: PublicProductModelDto[]
+  specifications: PublicSpecDto[]
+  media: PublicMediaDto[]
+  primary_media: PublicMediaDto | null
+  relations: Record<string, PublicLinkDto[]>
+  faqs: Array<{ question: string; answer: string }>
+  cases: PublicLinkDto[]
+  knowledge: PublicLinkDto[]
+  trust_summary: PublicTrustSummaryDto | null
+  seo: SeoDto
+  geo: GeoDto | null
+  breadcrumb: PublicBreadcrumbDto[]
+  schema: unknown
+  alternates?: Record<string, string>
+}

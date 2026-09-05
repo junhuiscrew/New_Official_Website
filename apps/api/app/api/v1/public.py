@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,10 @@ from app.modules.company.services import (
     get_public_company_profile,
     get_public_trust,
     list_public_trust,
+)
+from app.modules.discovery.public_collections import (
+    get_public_home,
+    get_public_navigation,
 )
 from app.modules.discovery.public_delivery import (
     get_public_case,
@@ -27,6 +31,40 @@ from app.modules.media.services import list_public_downloads
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 
 router = APIRouter(prefix="/public", tags=["public"])
+
+PUBLIC_COLLECTION_CACHE_CONTROL = "public, max-age=60, stale-while-revalidate=300"
+
+
+@router.get("/navigation/{locale_slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_navigation(
+    locale_slug: str,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回全局导航和 Footer 所需的严格发布内容。
+
+    输入：语言 slug、HTTP 响应与数据库 session。
+    输出：ApiResponse，包含 canonical Link DTO 和真实公司联系方式。
+    """
+    response.headers["Cache-Control"] = PUBLIC_COLLECTION_CACHE_CONTROL
+    return success_response(await get_public_navigation(session, locale_slug))
+
+
+@router.get("/home/{locale_slug}", response_model=ApiResponse[dict[str, Any]])
+async def public_home(
+    locale_slug: str,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回首页单次 SSR 请求所需的严格发布聚合数据。
+
+    输入：语言 slug、HTTP 响应与数据库 session。
+    输出：ApiResponse，缺失内容族保持空数组或 None。
+    """
+    response.headers["Cache-Control"] = PUBLIC_COLLECTION_CACHE_CONTROL
+    return success_response(await get_public_home(session, locale_slug))
 
 
 @router.get("/downloads/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])

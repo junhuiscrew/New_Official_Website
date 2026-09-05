@@ -207,6 +207,21 @@ describe('Phase 3.6 RFQ journey', () => {
     expect(source).toContain('role="status"')
     expect(source).not.toContain('<main id="main-content"')
   })
+
+  it('keeps the anti-bot honeypot out of the accessibility tree and keyboard order', async () => {
+    vi.stubGlobal('useApi', () => vi.fn())
+    vi.stubGlobal('useRoute', () => ({ params: { lang: 'en' }, query: {} }))
+    vi.stubGlobal('useHead', vi.fn())
+    const { default: RfqPage } = await import('../app/pages/[lang]/request-a-quote/index.vue')
+    const wrapper = mount(RfqPage)
+    const honeypot = wrapper.get('label.honeypot')
+
+    expect(honeypot.attributes('hidden')).toBeDefined()
+    expect(honeypot.get('input').attributes('tabindex')).toBe('-1')
+    expect(readAppSource('pages/[lang]/request-a-quote/index.vue')).toMatch(
+      /\.honeypot\[hidden\][\s\S]*display:\s*none/,
+    )
+  })
 })
 
 describe('Phase 3.6 language, error, and telemetry behavior', () => {

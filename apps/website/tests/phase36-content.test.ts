@@ -569,6 +569,7 @@ describe('Phase 3.6 company trust presentation', () => {
     ]) {
       const source = sourceAt(`app/pages/[lang]/${resource}/index.vue`)
       expect(source).toContain(`/public/page-metadata/${resource}/`)
+      expect(source).toContain("htmlAttrs: { lang: locale.value === 'zh-cn' ? 'zh-CN' : 'en' }")
       expect(source).toContain('metadata.value.seo.canonical')
       expect(source).toContain('serializeJsonLd(metadata.value.schema)')
     }

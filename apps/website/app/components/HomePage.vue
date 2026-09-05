@@ -110,6 +110,8 @@ useHead(() => {
       : []
   const head: Record<string, unknown> = {
     htmlAttrs: { lang: props.locale === 'zh-cn' ? 'zh-CN' : 'en' },
+    // 空数据环境仍提供与可见 H1 一致的页面标题，避免浏览器标签和辅助技术名称为空。
+    title: heroTitle.value,
     ...(heroPreload.length ? { link: heroPreload } : {}),
   }
 

@@ -288,4 +288,13 @@ describe('Phase 3.6 public foundation', () => {
       }
     }
   })
+
+  it('sets browser security headers at the public reverse-proxy boundary', () => {
+    const nginx = readFileSync(resolve(process.cwd(), '../../infra/nginx/nginx.conf'), 'utf8')
+
+    expect(nginx).toContain('Content-Security-Policy')
+    expect(nginx).toContain('X-Content-Type-Options')
+    expect(nginx).toContain('Referrer-Policy')
+    expect(nginx).toContain('X-Frame-Options')
+  })
 })

@@ -369,7 +369,10 @@ describe('Phase 3.6 homepage SSR and metadata contract', () => {
     const englishHeadFactory = vi.mocked(useHead).mock.calls.at(-1)?.[0]
     expect(typeof englishHeadFactory).toBe('function')
     const englishHead = (englishHeadFactory as () => Record<string, unknown>)()
-    expect(englishHead).toMatchObject({ htmlAttrs: { lang: 'en' } })
+    expect(englishHead).toMatchObject({
+      htmlAttrs: { lang: 'en' },
+      title: 'API supplied introduction.',
+    })
     expect(englishHead.link).toContainEqual({
       rel: 'preload',
       as: 'image',

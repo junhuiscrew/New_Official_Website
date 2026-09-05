@@ -519,27 +519,35 @@ Seed 必须：
 建议：
 
 ## super_admin
+
 全部权限。
 
 ## content_admin
+
 内容、发布、Page Builder、Navigation 等内容权限。
 
 ## editor
+
 创建/编辑，不能最终发布关键内容。
 
 ## translator
+
 翻译相关。
 
 ## reviewer
+
 review / approval。
 
 ## seo_manager
+
 SEO / GEO / Redirect。
 
 ## sales
+
 RFQ。
 
 ## media_manager
+
 公开媒体管理，不允许 RFQ 私有附件权限。
 
 ---

@@ -59,6 +59,7 @@ const downloads = computed(() =>
 
 // 聚合页 Head 只序列化后端页面元数据。
 useHead(() => ({
+  htmlAttrs: { lang: locale.value === 'zh-cn' ? 'zh-CN' : 'en' },
   title: metadata.value.seo.title,
   meta: [
     { name: 'description', content: metadata.value.seo.description },

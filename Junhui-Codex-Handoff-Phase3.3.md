@@ -610,31 +610,37 @@ Product / Material / Technology / Application / Solution 必须通过已有统�
 公开路径至少支持：
 
 ### Product
+
 ```text
 /{lang}/products/{category-slug}/{product-slug}/
 ```
 
 ### Material
+
 ```text
 /{lang}/materials/{slug}/
 ```
 
 ### Technology
+
 ```text
 /{lang}/technologies/{slug}/
 ```
 
 ### Application
+
 ```text
 /{lang}/applications/{slug}/
 ```
 
 ### Solution
+
 ```text
 /{lang}/solutions/{slug}/
 ```
 
 ### ProductCategory
+
 ```text
 /{lang}/products/{category-slug}/
 ```
@@ -942,38 +948,47 @@ Fixture 只用于开发测试，不自动成为生产正式内容。
 至少覆盖：
 
 ## Category
+
 - self parent reject
 - circular hierarchy reject
 
 ## Product
+
 - category FK
 - translation unique
 
 ## ProductModel
+
 - duplicate model_code scoped to product reject
 
 ## Specification
+
 - product/product_model XOR
 - value_type consistency
 - invalid range reject
 - duplicate definition/value reject
 
 ## Relations
+
 - duplicate reject
 - delete behavior
 
 ## Publication
+
 - human_reviewed gate
 - published route active/indexable
 
 ## Route
+
 - duplicate path
 - canonical uniqueness
 
 ## Audit
+
 - write API 会生成 audit
 
 ## RBAC
+
 - editor 可编辑不能发布
 - reviewer 可发布
 - sales 禁止 Catalog 写

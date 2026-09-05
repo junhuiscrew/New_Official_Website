@@ -41,17 +41,17 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Seed 可重复执行，只补充缺失的 2 个 Locale、8 个系统 Role、完整 Permission Matrix、9 个 Knowledge Category 和缺失的系统映射，不删除后续自定义映射。
 
-| 服务 | 地址 / 端口 |
-| --- | --- |
-| Website | http://localhost:3000/zh-cn/ 与 http://localhost:3000/en/ |
-| Admin | http://localhost:3001/login |
-| API live | http://localhost:8010/api/v1/health/live |
-| API ready | http://localhost:8010/api/v1/health/ready |
-| API Docs | http://localhost:8010/docs |
-| Nginx 同源入口 | http://localhost:8080/ |
-| PostgreSQL | localhost:5432 |
-| Redis | localhost:6379 |
-| MinIO S3 / Console | http://localhost:9000 / http://localhost:9001 |
+| 服务               | 地址 / 端口                                               |
+| ------------------ | --------------------------------------------------------- |
+| Website            | http://localhost:3000/zh-cn/ 与 http://localhost:3000/en/ |
+| Admin              | http://localhost:3001/login                               |
+| API live           | http://localhost:8010/api/v1/health/live                  |
+| API ready          | http://localhost:8010/api/v1/health/ready                 |
+| API Docs           | http://localhost:8010/docs                                |
+| Nginx 同源入口     | http://localhost:8080/                                    |
+| PostgreSQL         | localhost:5432                                            |
+| Redis              | localhost:6379                                            |
+| MinIO S3 / Console | http://localhost:9000 / http://localhost:9001             |
 
 `worker` 通过 Redis 接收 RFQ 私有附件扫描任务。开发环境可关闭外部扫描器；Staging/Production 在扫描器不可用时会 fail-closed，将文件保持为不可下载状态。
 

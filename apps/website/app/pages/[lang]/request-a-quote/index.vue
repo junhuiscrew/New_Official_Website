@@ -449,7 +449,7 @@ useHead(() => ({
           >
         </fieldset>
 
-        <label class="honeypot" aria-hidden="true"
+        <label class="honeypot" hidden aria-hidden="true"
           >Website confirmation<input v-model="form.honeypot" tabindex="-1" autocomplete="off"
         /></label>
         <button class="rfq-form__submit" type="submit" :disabled="isSubmitting || Boolean(result)">
@@ -596,13 +596,8 @@ useHead(() => ({
   min-height: 1.2rem;
   margin-block-start: 0.2rem;
 }
-.honeypot {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.honeypot[hidden] {
+  display: none;
 }
 @media (max-width: 40rem) {
   .rfq-form__grid {

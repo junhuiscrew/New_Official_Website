@@ -1,6 +1,6 @@
 <!-- 页面用途：按 URL 查询参数服务端渲染全部公开产品，并提供三项轻量筛选。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import ProductListingView from '~/components/ProductListingView.vue'
 import { normalizeLocale } from '~/composables/useLocalePath'
@@ -11,6 +11,7 @@ import type {
   PublicLinkDto,
 } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 interface Envelope<T> {
   success: boolean
@@ -28,37 +29,13 @@ function queryText(value: unknown): string {
   return typeof candidate === 'string' ? candidate.trim() : ''
 }
 
-/** 严格解析公开分页参数，SSR 直达非法值时返回明确 400。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const raw = queryText(value)
-  if (!raw) return fallback
-  if (!/^\d+$/.test(raw))
-    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
-  const parsed = Number(raw)
-  if (parsed < 1 || (maximum !== undefined && parsed > maximum)) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
-  }
-  return parsed
-}
-
-/** 从 Nuxt/$fetch 错误中保留后端真实 HTTP 状态。 */
-function requestStatus(value: unknown): number {
-  if (!value || typeof value !== 'object') return 500
-  const candidate = value as {
-    statusCode?: number
-    status?: number
-    response?: { status?: number }
-  }
-  return candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 500
-}
-
 const filters = computed<ProductFilters>(() => ({
   category: queryText(route.query.category),
   material: queryText(route.query.material),
   application: queryText(route.query.application),
 }))
-const page = computed(() => positiveInteger(route.query.page, 1))
-const pageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const page = computed(() => strictPositiveInteger(route.query.page, 1))
+const pageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 const requestQuery = computed(() => ({
   page: page.value,
   page_size: pageSize.value,
@@ -99,12 +76,23 @@ const { data: response, error } = await useAsyncData(
   { watch: [requestQuery] },
 )
 if (error.value || !response.value) {
-  const statusCode = requestStatus(error.value)
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Products not found' : 'Products could not be loaded',
   })
 }
+// 客户端切换筛选后的错误也进入 Nuxt 错误页，不能遗留上一组卡片与 head。
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage: statusCode === 404 ? 'Products not found' : 'Products could not be loaded',
+    }),
+  )
+})
 const pageData = computed(() => response.value!)
 
 // 列表页只序列化后端返回的 SEO DTO，不在 Vue 生成 Schema 或索引规则。

@@ -7,49 +7,104 @@ import os
 import re
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
+from app.modules.authority.models import CaseStudy, KnowledgeArticle
 from app.modules.authority.schemas import (
     AuthorExpertCreate,
     AuthorityRelationUpdate,
     AuthorityTranslationInput,
+    CaseStudyCreate,
     KnowledgeArticleCreate,
     KnowledgeCategoryCreate,
 )
 from app.modules.authority.services import (
     create_author_expert,
+    create_case_study,
     create_knowledge_article,
     create_knowledge_category,
     replace_authority_relations,
 )
-from app.modules.catalog.models import Product
+from app.modules.catalog.models import (
+    Application,
+    Material,
+    Product,
+    ProductCategory,
+    ProductSpecValue,
+    ProductTranslation,
+    Solution,
+    SpecificationDefinition,
+    SpecificationGroup,
+    Technology,
+)
 from app.modules.catalog.schemas import (
     CategoryCreate,
+    EntityCreate,
     ProductCreate,
+    ProductUpdate,
     RelationUpdate,
+    SpecificationDefinitionCreate,
+    SpecificationGroupCreate,
+    SpecificationValueCreate,
     TranslationInput,
 )
-from app.modules.catalog.services import create_category, create_product, replace_product_relations
+from app.modules.catalog.services import (
+    create_category,
+    create_core_entity,
+    create_product,
+    create_specification_definition,
+    create_specification_group,
+    create_specification_value,
+    replace_product_relations,
+    update_product,
+)
+from app.modules.company.models import (
+    CapabilityEquipment,
+    CompanyProfileTranslation,
+    Equipment,
+    ManufacturingCapability,
+)
+from app.modules.company.schemas import CompanyProfileInput, TrustEntityInput, TrustTranslation
+from app.modules.company.services import create_trust_entity, upsert_company_profile
 from app.modules.content.enums import PublicationStatus
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.publication import transition_publication
+from app.modules.discovery.models import SeoDocument, SourceCitation
 from app.modules.localization.models import Locale
-from app.modules.media.models import MediaAsset, MediaAssetTranslation
+from app.modules.media.models import (
+    DownloadResource,
+    DownloadResourceTranslation,
+    MediaAsset,
+    MediaAssetTranslation,
+)
 from app.modules.media.services import validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter
 
 _RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,39}$")
 _QA_CONFIRMATION = "LOCAL_QA_ONLY"
+_QA_ISOLATION = "LOCAL_COMPOSE_ONLY"
+_LOCAL_SERVICE_HOSTS = {"localhost", "127.0.0.1", "postgres", "redis", "minio"}
 # 公开样本图片只用于本地 E2E；字节经过正常签名/SHA256校验并真实写入 MinIO。
 _QA_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlI6wAAAABJRU5ErkJggg=="
 )
+_QA_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
+
+_CORE_MODELS = {
+    "material": Material,
+    "technology": Technology,
+    "application": Application,
+    "solution": Solution,
+}
 
 
 class Phase36QaManifest(BaseModel):
@@ -61,8 +116,22 @@ class Phase36QaManifest(BaseModel):
     knowledge_slug: str
     knowledge_category_slug: str
     missing_translation_slug: str
-    public_media_path: str
+    material_slug: str
+    technology_slug: str
+    application_slug: str
+    solution_slug: str
+    capability_slug: str
+    equipment_slug: str
+    case_slug: str
+    expert_slug: str
+    draft_slug: str
+    noindex_slug: str
+    unmatched_material_slug: str
+    download_slug: str
+    public_object_keys: list[str]
+    resource_slugs: dict[str, list[str]]
     product_count: int
+    specification_types: list[str]
 
 
 def _assert_qa_allowed(run_id: str) -> str:
@@ -72,10 +141,26 @@ def _assert_qa_allowed(run_id: str) -> str:
     输入：run_id: str，调用方指定的短期运行标识。
     输出：str，校验后的运行标识；不安全时抛出 AppException。
     """
-    if get_settings().app_env == "production":
-        raise AppException(409, "qa_forbidden_in_production", "QA 数据命令禁止在生产环境运行")
+    settings = get_settings()
+    if settings.app_env not in {"development", "test"}:
+        raise AppException(409, "qa_forbidden_environment", "QA 数据命令仅允许本地开发或测试环境")
     if os.getenv("PHASE36_QA_CONFIRM") != _QA_CONFIRMATION:
         raise AppException(409, "qa_confirmation_required", "必须显式确认本地 QA 数据准备")
+    if os.getenv("PHASE36_QA_ISOLATION") != _QA_ISOLATION:
+        raise AppException(409, "qa_isolation_required", "必须显式确认使用本地 Compose 隔离资源")
+
+    # 除环境名外再次校验实际连接目标，避免误把 QA 样本写入远端 DB/Redis/MinIO。
+    database_host = (make_url(settings.database_url).host or "").lower()
+    redis_host = (urlparse(settings.redis_url).hostname or "").lower()
+    minio_host = (urlparse(f"//{settings.minio_endpoint}").hostname or "").lower()
+    if (
+        database_host not in _LOCAL_SERVICE_HOSTS
+        or redis_host not in _LOCAL_SERVICE_HOSTS
+        or minio_host not in _LOCAL_SERVICE_HOSTS
+        or settings.minio_public_bucket != "public-media"
+        or settings.minio_private_bucket != "private-rfq"
+    ):
+        raise AppException(409, "qa_target_not_local", "QA 连接目标不是受控本地 Compose 资源")
     normalized = run_id.strip().lower()
     if not _RUN_ID.fullmatch(normalized):
         raise AppException(
@@ -167,6 +252,104 @@ async def _publish_many(
         )
 
 
+async def _ensure_representative_product_copy(
+    session: AsyncSession,
+    *,
+    product: Product,
+    locales: Sequence[Locale],
+) -> None:
+    """
+    让重复执行的既有 QA 产品收敛到长标题与完整正文，并重新走审核发布流程。
+
+    输入：session、代表产品与 en/zh-CN 语言集合。
+    输出：None；内容无变化时不写库，有变化时通过正式 Product 更新和 Publication 状态机发布。
+    """
+    translations = list(
+        (
+            await session.scalars(
+                select(ProductTranslation).where(ProductTranslation.product_id == product.id)
+            )
+        ).all()
+    )
+    by_locale = {translation.locale_id: translation for translation in translations}
+    expected_names = {
+        "en": "QA ONLY Long-title Extrusion Screw for Responsive Browser Validation",
+        "zh-CN": "仅测试：用于响应式浏览器验收的长标题挤出机螺杆",
+    }
+    if all(
+        by_locale.get(locale.id) is not None
+        and by_locale[locale.id].name == expected_names[locale.code]
+        for locale in locales
+    ):
+        return
+
+    payload_translations: list[TranslationInput] = []
+    for locale in locales:
+        existing = by_locale.get(locale.id)
+        if existing is None:
+            raise AppException(409, "qa_product_translation_missing", "既有 QA 产品缺少双语翻译")
+        payload_translations.append(
+            TranslationInput(
+                locale_id=locale.id,
+                name=expected_names[locale.code],
+                fields={
+                    "short_description": existing.short_description,
+                    "description": existing.description,
+                    "highlights_jsonb": existing.highlights_jsonb,
+                },
+            )
+        )
+
+    # 正式服务会撤销已发布正文；QA 随后记录人工审核并从 review 重新发布。
+    await update_product(
+        session,
+        product.id,
+        ProductUpdate(translations=payload_translations),
+    )
+    for locale in locales:
+        publication = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.owner_type == "product",
+                ContentPublication.owner_id == product.id,
+                ContentPublication.locale_id == locale.id,
+            )
+        )
+        translation_status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == "product",
+                TranslationStatus.owner_id == product.id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        route = await session.scalar(
+            select(ContentRoute).where(
+                ContentRoute.owner_type == "product",
+                ContentRoute.owner_id == product.id,
+                ContentRoute.locale_id == locale.id,
+                ContentRoute.is_canonical.is_(True),
+            )
+        )
+        if publication is None or translation_status is None or route is None:
+            raise AppException(409, "qa_lifecycle_missing", "既有 QA 产品缺少发布生命周期")
+        translation_status.status = "human_reviewed"
+        write_audit_log(
+            session,
+            action="translation.review",
+            target_type="product",
+            target_id=str(product.id),
+            metadata={"qa_run": True, "locale_id": str(locale.id)},
+        )
+        await transition_publication(
+            session,
+            publication=publication,
+            translation=translation_status,
+            route=route,
+            target_status=PublicationStatus.PUBLISHED,
+            actor_permissions={"content.publish"},
+            actor_id=None,
+        )
+
+
 async def _create_public_media(
     session: AsyncSession,
     storage: MinioStorageAdapter,
@@ -187,6 +370,8 @@ async def _create_public_media(
         )
     )
     if existing is not None:
+        if not await storage.object_exists("public-media", key):
+            await storage.put_object("public-media", key, _QA_PNG, "image/png")
         return existing
     metadata = validate_upload_bytes("phase36-product.png", "image/png", _QA_PNG)
     await storage.put_object("public-media", key, _QA_PNG, "image/png")
@@ -220,6 +405,488 @@ async def _create_public_media(
     return asset
 
 
+async def _create_public_pdf(
+    session: AsyncSession,
+    storage: MinioStorageAdapter,
+    run_id: str,
+    locales: Sequence[Locale],
+) -> tuple[MediaAsset, DownloadResource]:
+    """
+    创建真实 public-media PDF 与公开下载记录。
+
+    输入：数据库会话、MinIO 适配器、run_id 和语言集合。
+    输出：tuple[MediaAsset, DownloadResource]，可由公开下载页读取的真实对象和资源。
+    """
+    key = f"qa/phase36/{run_id}/qa-datasheet.pdf"
+    slug = f"qa36-{run_id}-datasheet"
+    asset = await session.scalar(
+        select(MediaAsset).where(
+            MediaAsset.storage_bucket == "public-media",
+            MediaAsset.storage_key == key,
+        )
+    )
+    if asset is None:
+        metadata = validate_upload_bytes("qa-datasheet.pdf", "application/pdf", _QA_PDF)
+        await storage.put_object("public-media", key, _QA_PDF, "application/pdf")
+        asset = MediaAsset(
+            visibility="public",
+            storage_bucket="public-media",
+            storage_key=key,
+            checksum_verified=True,
+            malware_scan_status="not_required",
+            upload_status="ready",
+            **metadata,
+        )
+        session.add(asset)
+        await session.flush()
+    elif not await storage.object_exists("public-media", key):
+        await storage.put_object("public-media", key, _QA_PDF, "application/pdf")
+
+    resource = await session.scalar(select(DownloadResource).where(DownloadResource.slug == slug))
+    if resource is None:
+        resource = DownloadResource(
+            slug=slug,
+            resource_type="document",
+            media_asset_id=asset.id,
+            status="enabled",
+            version_label="QA ONLY",
+        )
+        session.add(resource)
+        await session.flush()
+        for locale in locales:
+            session.add(
+                DownloadResourceTranslation(
+                    download_resource_id=resource.id,
+                    locale_id=locale.id,
+                    title=(
+                        "QA ONLY technical datasheet" if locale.code == "en" else "仅测试技术资料"
+                    ),
+                    summary="Local isolated browser QA file.",
+                )
+            )
+        await session.flush()
+    return asset, resource
+
+
+async def _ensure_core_entity(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    slug: str,
+    locales: Sequence[Locale],
+) -> object:
+    """
+    通过 Catalog 服务幂等创建并发布一个结构化核心实体。
+
+    输入：session、owner_type、slug 与双语 Locale。
+    输出：object，已完成统一生命周期的 Material/Technology/Application/Solution。
+    """
+    model = _CORE_MODELS[owner_type]
+    entity = await session.scalar(select(model).where(model.slug == slug))
+    if entity is None:
+        label = owner_type.replace("_", " ").title()
+        entity = await create_core_entity(
+            session,
+            owner_type,
+            EntityCreate(
+                slug=slug,
+                featured=True,
+                translations=_catalog_translations(
+                    locales,
+                    f"QA ONLY {label}",
+                    f"仅测试 {label}",
+                ),
+            ),
+        )
+        await _publish_many(session, owner_type, entity.id, locales)
+    return entity
+
+
+async def _publish_non_route_translation(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locales: Sequence[Locale],
+) -> None:
+    """
+    发布无独立 Route/Publication 的 Trust TranslationStatus。
+
+    输入：数据库会话、owner 类型/ID 与语言集合。
+    输出：None；状态与现有 FAQ-style review/publish 流程一致并写入审计。
+    """
+    for locale in locales:
+        status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == owner_type,
+                TranslationStatus.owner_id == owner_id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        if status is None:
+            raise AppException(409, "qa_translation_status_missing", "QA Trust 翻译状态不存在")
+        status.status = "published"
+        status.published_at = datetime.now(UTC)
+        write_audit_log(
+            session,
+            action="translation.publish",
+            target_type=owner_type,
+            target_id=str(owner_id),
+            metadata={"qa_run": True, "locale_id": str(locale.id)},
+        )
+    await session.flush()
+
+
+async def _ensure_extended_qa_content(
+    session: AsyncSession,
+    *,
+    storage: MinioStorageAdapter,
+    run_id: str,
+    locales: Sequence[Locale],
+    category: object,
+    product: Product,
+    media: MediaAsset,
+) -> dict[str, object]:
+    """
+    补齐 Company/Core/Trust/Case/Download 与负向发布样本。
+
+    输入：会话、对象存储、run-id、语言、代表分类/产品/媒体。
+    输出：dict[str, object]，manifest 和浏览器旅程所需的精确资源清单。
+    """
+    slugs = {
+        "material": f"qa36-{run_id}-material",
+        "technology": f"qa36-{run_id}-technology",
+        "application": f"qa36-{run_id}-application",
+        "solution": f"qa36-{run_id}-solution",
+        "capability": f"qa36-{run_id}-capability",
+        "equipment": f"qa36-{run_id}-equipment",
+        "case_study": f"qa36-{run_id}-anonymous-case",
+        "draft": f"qa36-{run_id}-draft-product",
+        "noindex": f"qa36-{run_id}-noindex-product",
+        "unmatched_material": f"qa36-{run_id}-unmatched-material",
+    }
+    material = await _ensure_core_entity(
+        session, owner_type="material", slug=slugs["material"], locales=locales
+    )
+    technology = await _ensure_core_entity(
+        session, owner_type="technology", slug=slugs["technology"], locales=locales
+    )
+    application = await _ensure_core_entity(
+        session, owner_type="application", slug=slugs["application"], locales=locales
+    )
+    solution = await _ensure_core_entity(
+        session, owner_type="solution", slug=slugs["solution"], locales=locales
+    )
+    unmatched_material = await _ensure_core_entity(
+        session,
+        owner_type="material",
+        slug=slugs["unmatched_material"],
+        locales=locales,
+    )
+    await replace_product_relations(
+        session,
+        product.id,
+        RelationUpdate(
+            material_ids=[material.id],
+            technology_ids=[technology.id],
+            application_ids=[application.id],
+            solution_ids=[solution.id],
+        ),
+    )
+
+    # Company Profile 是单例；隔离库若已有非本轮档案则拒绝覆盖，避免破坏人工数据。
+    company = await session.scalar(select(CompanyProfileTranslation).limit(1))
+    expected_company_name = f"QA ONLY Junhui {run_id}"
+    if company is not None and company.company_name != expected_company_name:
+        raise AppException(409, "qa_company_conflict", "隔离库已有非本轮 Company Profile")
+    if company is None:
+        profile = await upsert_company_profile(
+            session,
+            CompanyProfileInput(
+                status="enabled",
+                primary_factory_media_id=media.id,
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={
+                            "company_name": expected_company_name,
+                            "short_intro": "Local isolated QA company profile.",
+                            "full_intro": "QA ONLY content used to verify the public homepage lifecycle.",
+                            "advantages_json": ["QA lifecycle evidence"],
+                        },
+                    )
+                    for locale in locales
+                ],
+            ),
+            None,
+        )
+        await _publish_many(session, "company_profile", profile.id, locales)
+
+    capability = await session.scalar(
+        select(ManufacturingCapability).where(ManufacturingCapability.slug == slugs["capability"])
+    )
+    if capability is None:
+        capability = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug=slugs["capability"],
+                fields={"capability_type": "qa-validation", "primary_media_id": media.id},
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={
+                            "name": "QA ONLY Manufacturing Capability",
+                            "summary": "Local isolated capability sample.",
+                            "description": "QA ONLY structured capability content.",
+                            "key_facts_json": ["QA-only evidence"],
+                        },
+                    )
+                    for locale in locales
+                ],
+            ),
+            None,
+        )
+        await _publish_many(session, "manufacturing_capability", capability.id, locales)
+
+    equipment = await session.scalar(select(Equipment).where(Equipment.slug == slugs["equipment"]))
+    if equipment is None:
+        equipment = await create_trust_entity(
+            session,
+            "equipment",
+            TrustEntityInput(
+                slug=slugs["equipment"],
+                fields={"equipment_type": "qa-machine", "manufacturer": "QA ONLY"},
+                translations=[
+                    TrustTranslation(
+                        locale_id=locale.id,
+                        fields={
+                            "name": "QA ONLY Equipment",
+                            "summary": "Local isolated equipment sample.",
+                        },
+                    )
+                    for locale in locales
+                ],
+            ),
+            None,
+        )
+        await _publish_non_route_translation(
+            session,
+            owner_type="equipment",
+            owner_id=equipment.id,
+            locales=locales,
+        )
+    capability_equipment = await session.scalar(
+        select(CapabilityEquipment).where(
+            CapabilityEquipment.capability_id == capability.id,
+            CapabilityEquipment.equipment_id == equipment.id,
+        )
+    )
+    if capability_equipment is None:
+        session.add(CapabilityEquipment(capability_id=capability.id, equipment_id=equipment.id))
+
+    case_study = await session.scalar(
+        select(CaseStudy).where(CaseStudy.slug == slugs["case_study"])
+    )
+    if case_study is None:
+        case_study = await create_case_study(
+            session,
+            CaseStudyCreate(
+                slug=slugs["case_study"],
+                country_code="ZZ",
+                client_name="QA PRIVATE CLIENT",
+                client_address="QA PRIVATE ADDRESS",
+                client_name_public=False,
+                client_address_public=False,
+                featured=True,
+                primary_media_id=media.id,
+                translations=[
+                    AuthorityTranslationInput(
+                        locale_id=locale.id,
+                        fields={
+                            "title": "QA ONLY Anonymous Case",
+                            "summary": "An anonymized local QA case.",
+                            "problem": "QA-only validation problem.",
+                            "solution": "QA-only validation solution.",
+                            "result": "QA-only validation result.",
+                        },
+                    )
+                    for locale in locales
+                ],
+            ),
+        )
+        await replace_authority_relations(
+            session,
+            "case_study",
+            case_study.id,
+            AuthorityRelationUpdate(
+                product_ids=[product.id],
+                material_ids=[material.id],
+                technology_ids=[technology.id],
+                application_ids=[application.id],
+                solution_ids=[solution.id],
+            ),
+        )
+        await _publish_many(session, "case_study", case_study.id, locales)
+
+    draft = await session.scalar(select(Product).where(Product.slug == slugs["draft"]))
+    if draft is None:
+        draft = await create_product(
+            session,
+            ProductCreate(
+                category_id=category.id,
+                code=f"QA36-{run_id.upper()}-DRAFT",
+                slug=slugs["draft"],
+                translations=_catalog_translations(
+                    locales, "QA ONLY Draft Product", "仅测试草稿产品"
+                ),
+            ),
+        )
+    noindex = await session.scalar(select(Product).where(Product.slug == slugs["noindex"]))
+    if noindex is None:
+        noindex = await create_product(
+            session,
+            ProductCreate(
+                category_id=category.id,
+                code=f"QA36-{run_id.upper()}-NOINDEX",
+                slug=slugs["noindex"],
+                translations=_catalog_translations(
+                    locales, "QA ONLY Noindex Product", "仅测试不索引产品"
+                ),
+            ),
+        )
+        await _publish_many(session, "product", noindex.id, locales)
+        for locale in locales:
+            session.add(
+                SeoDocument(
+                    owner_type="product",
+                    owner_id=noindex.id,
+                    locale_id=locale.id,
+                    robots_index=False,
+                    robots_follow=True,
+                )
+            )
+
+    _pdf_asset, download = await _create_public_pdf(session, storage, run_id, locales)
+    await session.flush()
+    return {
+        "slugs": slugs,
+        "material": material,
+        "technology": technology,
+        "application": application,
+        "solution": solution,
+        "unmatched_material": unmatched_material,
+        "capability": capability,
+        "equipment": equipment,
+        "case_study": case_study,
+        "draft": draft,
+        "noindex": noindex,
+        "download": download,
+    }
+
+
+async def _ensure_knowledge_source(
+    session: AsyncSession,
+    *,
+    article: KnowledgeArticle,
+) -> None:
+    """
+    为 QA Knowledge 添加真实可见 SourceCitation 记录。
+
+    输入：数据库会话与知识文章。
+    输出：None；已有引用时保持幂等。
+    """
+    citation = await session.scalar(
+        select(SourceCitation).where(
+            SourceCitation.article_id == article.id,
+            SourceCitation.url == "https://example.com/qa-only-source",
+        )
+    )
+    if citation is None:
+        session.add(
+            SourceCitation(
+                article_id=article.id,
+                title="QA ONLY public source",
+                url="https://example.com/qa-only-source",
+                publisher="Example QA Publisher",
+                source_type="official",
+            )
+        )
+        await session.flush()
+
+
+def _build_manifest(
+    *,
+    run_id: str,
+    category_slug: str,
+    product_slug: str,
+    knowledge_category_slug: str,
+    knowledge_slug: str,
+    missing_translation_slug: str,
+    specification_types: list[str],
+    product_count: int,
+    extended: dict[str, object],
+) -> Phase36QaManifest:
+    """
+    生成不含数据库 UUID 或凭据的精确 QA 资源清单。
+
+    输入：run-id、页面 slug、规格类型、数量与扩展资源。
+    输出：Phase36QaManifest，可用于复验和按 manifest 精确清理。
+    """
+    slugs = extended["slugs"]
+    assert isinstance(slugs, dict)
+    expert_slug = f"qa36-{run_id}-verified-author"
+    download_slug = f"qa36-{run_id}-datasheet"
+    product_slugs = [
+        product_slug,
+        *[f"qa36-{run_id}-product-{index:02d}" for index in range(1, product_count)],
+        str(slugs["draft"]),
+        str(slugs["noindex"]),
+    ]
+    return Phase36QaManifest(
+        run_id=run_id,
+        product_slug=product_slug,
+        product_category_slug=category_slug,
+        knowledge_slug=knowledge_slug,
+        knowledge_category_slug=knowledge_category_slug,
+        missing_translation_slug=missing_translation_slug,
+        material_slug=str(slugs["material"]),
+        technology_slug=str(slugs["technology"]),
+        application_slug=str(slugs["application"]),
+        solution_slug=str(slugs["solution"]),
+        capability_slug=str(slugs["capability"]),
+        equipment_slug=str(slugs["equipment"]),
+        case_slug=str(slugs["case_study"]),
+        expert_slug=expert_slug,
+        draft_slug=str(slugs["draft"]),
+        noindex_slug=str(slugs["noindex"]),
+        unmatched_material_slug=str(slugs["unmatched_material"]),
+        download_slug=download_slug,
+        public_object_keys=[
+            f"qa/phase36/{run_id}/product.png",
+            f"qa/phase36/{run_id}/qa-datasheet.pdf",
+        ],
+        resource_slugs={
+            "company_profile_marker": [f"QA ONLY Junhui {run_id}"],
+            "product_category": [category_slug],
+            "product": product_slugs,
+            "material": [str(slugs["material"]), str(slugs["unmatched_material"])],
+            "technology": [str(slugs["technology"])],
+            "application": [str(slugs["application"])],
+            "solution": [str(slugs["solution"])],
+            "manufacturing_capability": [str(slugs["capability"])],
+            "equipment": [str(slugs["equipment"])],
+            "case_study": [str(slugs["case_study"])],
+            "author_expert": [expert_slug],
+            "knowledge_category": [knowledge_category_slug],
+            "knowledge_article": [knowledge_slug, missing_translation_slug],
+            "download_resource": [download_slug],
+        },
+        product_count=product_count,
+        specification_types=specification_types,
+    )
+
+
 def _catalog_translations(
     locales: Sequence[Locale], en_name: str, zh_name: str
 ) -> list[TranslationInput]:
@@ -243,6 +910,90 @@ def _catalog_translations(
         )
         for locale in locales
     ]
+
+
+async def _ensure_product_specifications(
+    session: AsyncSession,
+    *,
+    run_id: str,
+    product: Product,
+    locales: Sequence[Locale],
+) -> list[str]:
+    """
+    通过正式 Catalog 服务为代表产品准备五类结构化规格。
+
+    输入：session、run_id、product、locales。
+    输出：list[str]，实际存在的 text/number/range/boolean/enum 类型。
+    """
+    group_code = f"qa36-{run_id}-specifications"
+    group = await session.scalar(
+        select(SpecificationGroup).where(SpecificationGroup.code == group_code)
+    )
+    if group is None:
+        group = await create_specification_group(
+            session,
+            SpecificationGroupCreate(
+                code=group_code,
+                translations=_catalog_translations(
+                    locales,
+                    "QA Product Specifications",
+                    "QA 产品规格",
+                ),
+            ),
+        )
+
+    typed_values: dict[str, dict[str, object]] = {
+        "text": {"value_text": "QA alloy steel"},
+        "number": {"value_number": 65.0, "unit_override": "mm"},
+        "range": {"value_min": 20.0, "value_max": 80.0, "unit_override": "mm"},
+        "boolean": {"value_boolean": True},
+        "enum": {"enum_value": "QA nitrided"},
+    }
+    names = {
+        "text": ("QA Material Note", "QA 材料说明"),
+        "number": ("QA Diameter", "QA 直径"),
+        "range": ("QA Working Range", "QA 工作范围"),
+        "boolean": ("QA Cooling", "QA 冷却"),
+        "enum": ("QA Surface", "QA 表面处理"),
+    }
+    for sort_order, value_type in enumerate(typed_values):
+        definition_code = f"qa36-{run_id}-{value_type}"
+        definition = await session.scalar(
+            select(SpecificationDefinition).where(
+                SpecificationDefinition.group_id == group.id,
+                SpecificationDefinition.code == definition_code,
+            )
+        )
+        if definition is None:
+            en_name, zh_name = names[value_type]
+            definition = await create_specification_definition(
+                session,
+                SpecificationDefinitionCreate(
+                    group_id=group.id,
+                    code=definition_code,
+                    value_type=value_type,
+                    sort_order=sort_order,
+                    translations=_catalog_translations(locales, en_name, zh_name),
+                ),
+            )
+        existing_value = await session.scalar(
+            select(ProductSpecValue).where(
+                ProductSpecValue.product_id == product.id,
+                ProductSpecValue.definition_id == definition.id,
+            )
+        )
+        if existing_value is None:
+            await create_specification_value(
+                session,
+                SpecificationValueCreate(
+                    product_id=product.id,
+                    definition_id=definition.id,
+                    sort_order=sort_order,
+                    **typed_values[value_type],
+                ),
+            )
+    await session.flush()
+    return list(typed_values)
 
 
 async def _prepare_phase36_qa(
@@ -275,15 +1026,48 @@ async def _prepare_phase36_qa(
         missing_translation_slug = f"qa36-{run_id}-english-only"
         existing_product = await session.scalar(select(Product).where(Product.slug == product_slug))
         if existing_product is not None:
-            return Phase36QaManifest(
+            # 已存在 run 仍重新核对 MinIO 对象并幂等补齐后来新增的 QA 场景。
+            media = await _create_public_media(session, storage, run_id, locales)
+            existing_category = await session.scalar(
+                select(ProductCategory).where(ProductCategory.slug == category_slug)
+            )
+            if existing_category is None:
+                raise AppException(409, "qa_category_missing", "既有 QA 产品缺少对应分类")
+            await _ensure_representative_product_copy(
+                session,
+                product=existing_product,
+                locales=locales,
+            )
+            specification_types = await _ensure_product_specifications(
+                session,
                 run_id=run_id,
+                product=existing_product,
+                locales=locales,
+            )
+            extended = await _ensure_extended_qa_content(
+                session,
+                storage=storage,
+                run_id=run_id,
+                locales=locales,
+                category=existing_category,
+                product=existing_product,
+                media=media,
+            )
+            article = await session.scalar(
+                select(KnowledgeArticle).where(KnowledgeArticle.slug == knowledge_slug)
+            )
+            if article is not None:
+                await _ensure_knowledge_source(session, article=article)
+            return _build_manifest(
+                run_id=run_id,
+                category_slug=category_slug,
                 product_slug=product_slug,
-                product_category_slug=category_slug,
-                knowledge_slug=knowledge_slug,
                 knowledge_category_slug=knowledge_category_slug,
+                knowledge_slug=knowledge_slug,
                 missing_translation_slug=missing_translation_slug,
-                public_media_path=f"qa/phase36/{run_id}/product.png",
+                specification_types=specification_types,
                 product_count=26,
+                extended=extended,
             )
 
         media = await _create_public_media(session, storage, run_id, locales)
@@ -310,8 +1094,16 @@ async def _prepare_phase36_qa(
                     sort_order=index,
                     translations=_catalog_translations(
                         locales,
-                        "QA Extrusion Screw" if index == 0 else f"QA Product {index:02d}",
-                        "QA 挤出机螺杆" if index == 0 else f"QA 产品 {index:02d}",
+                        (
+                            "QA ONLY Long-title Extrusion Screw for Responsive Browser Validation"
+                            if index == 0
+                            else f"QA Product {index:02d}"
+                        ),
+                        (
+                            "仅测试：用于响应式浏览器验收的长标题挤出机螺杆"
+                            if index == 0
+                            else f"QA 产品 {index:02d}"
+                        ),
                     ),
                 ),
             )
@@ -322,6 +1114,12 @@ async def _prepare_phase36_qa(
 
         # 产品关系由正式服务维护；本地 QA 不创建任何虚构公开材料事实。
         await replace_product_relations(session, products[0].id, RelationUpdate())
+        specification_types = await _ensure_product_specifications(
+            session,
+            run_id=run_id,
+            product=products[0],
+            locales=locales,
+        )
 
         knowledge_category = await create_knowledge_category(
             session,
@@ -399,6 +1197,7 @@ async def _prepare_phase36_qa(
             AuthorityRelationUpdate(product_ids=[products[0].id]),
         )
         await _publish_many(session, "knowledge_article", article.id, locales)
+        await _ensure_knowledge_source(session, article=article)
 
         # 只发布英文版本，用于验证缺少 alternate 时语言切换安全回退首页。
         en_locale = next(locale for locale in locales if locale.code == "en")
@@ -428,15 +1227,25 @@ async def _prepare_phase36_qa(
             locale_id=en_locale.id,
         )
 
-        return Phase36QaManifest(
+        extended = await _ensure_extended_qa_content(
+            session,
+            storage=storage,
             run_id=run_id,
+            locales=locales,
+            category=category,
+            product=products[0],
+            media=media,
+        )
+        return _build_manifest(
+            run_id=run_id,
+            category_slug=category_slug,
             product_slug=product_slug,
-            product_category_slug=category_slug,
-            knowledge_slug=knowledge_slug,
             knowledge_category_slug=knowledge_category_slug,
+            knowledge_slug=knowledge_slug,
             missing_translation_slug=missing_translation_slug,
-            public_media_path=f"qa/phase36/{run_id}/product.png",
+            specification_types=specification_types,
             product_count=len(products),
+            extended=extended,
         )
 
 

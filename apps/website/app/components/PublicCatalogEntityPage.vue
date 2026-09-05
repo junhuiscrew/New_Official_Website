@@ -1,6 +1,6 @@
 <!-- 组件职责：以一份类型化配置服务四类 Catalog 的 SSR 列表与详情页面。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { normalizeLocale, rfqUrl } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
@@ -14,6 +14,7 @@ import type {
   PublicContentType,
 } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 import EmptyState from './EmptyState.vue'
 import GeoAnswer from './GeoAnswer.vue'
@@ -111,16 +112,8 @@ type CatalogPagePayload =
   | { mode: 'list'; data: PublicCollectionDto }
   | { mode: 'detail'; data: PublicCatalogDetailDto }
 
-/** 将未知 URL query 转为受 API 约束的正整数。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const candidate = Array.isArray(value) ? value[0] : value
-  const parsed = typeof candidate === 'string' ? Number.parseInt(candidate, 10) : Number.NaN
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
-}
-
-const requestedPage = computed(() => positiveInteger(route.query.page, 1))
-const requestedPageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const requestedPage = computed(() => strictPositiveInteger(route.query.page, 1))
+const requestedPageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 // key 仅由真正影响 API 响应的响应式参数组成，避免 fragment 引发 SSR hydration 重复请求。
 const requestKey = computed(() =>
   props.mode === 'list'
@@ -144,12 +137,24 @@ const { data: response, error } = await useAsyncData<CatalogPagePayload>(request
 })
 
 if (error.value || !response.value) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Catalog content not found' : 'Catalog content unavailable',
   })
 }
+// 同一列表组件的客户端页码变化失败时，不允许继续显示旧卡片和旧 metadata。
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage:
+        statusCode === 404 ? 'Catalog content not found' : 'Catalog content unavailable',
+    }),
+  )
+})
 
 const collection = computed(() => (response.value?.mode === 'list' ? response.value.data : null))
 const page = computed(() => (response.value?.mode === 'detail' ? response.value.data : null))

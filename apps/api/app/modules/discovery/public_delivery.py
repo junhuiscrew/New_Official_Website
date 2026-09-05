@@ -294,11 +294,13 @@ async def _public_route(
     owner_type: str,
     owner_id: Any,
     locale_id: Any,
+    *,
+    require_robots_index: bool = True,
 ) -> tuple[ContentRoute, SeoDocument | None, GeoDocument | None]:
     """
     强制公开页面满足发布、翻译、canonical、路由和 robots_index 条件。
 
-    输入：session、owner 标识与 locale_id。
+    输入：session、owner 标识、locale_id，以及是否要求 SEO 允许索引。
     输出：(route, seo, geo)；任一公开门槛不满足时返回 404。
     """
     statement = (
@@ -330,9 +332,12 @@ async def _public_route(
             ContentRoute.indexable.is_(True),
             ContentPublication.status == "published",
             TranslationStatus.status == "published",
-            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
         )
     )
+    if require_robots_index:
+        statement = statement.where(
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True))
+        )
     row = (await session.execute(statement)).one_or_none()
     if row is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
@@ -1253,6 +1258,8 @@ def _seo_payload(
     输入：seo、route 与正文回退标题/描述。
     输出：dict，SSR 可直接消费的 SEO 字段。
     """
+    robots_index = seo.robots_index if seo else True
+    robots_follow = seo.robots_follow if seo else True
     return {
         "title": seo.seo_title if seo and seo.seo_title else fallback_title,
         "description": seo.meta_description
@@ -1261,7 +1268,10 @@ def _seo_payload(
         "canonical": seo.canonical_override
         if seo and seo.canonical_override
         else OFFICIAL_ORIGIN + route.path,
-        "robots": "index, follow",
+        "robots": (
+            f"{'index' if robots_index else 'noindex'}, "
+            f"{'follow' if robots_follow else 'nofollow'}"
+        ),
         "og_title": seo.og_title if seo else None,
         "og_description": seo.og_description if seo else None,
     }
@@ -1807,7 +1817,13 @@ async def get_public_catalog_entity(
     )
     if entity is None:
         raise AppException(404, "public_content_not_found", "公开内容不存在")
-    route, seo, geo = await _public_route(session, owner_type, entity.id, locale.id)
+    route, seo, geo = await _public_route(
+        session,
+        owner_type,
+        entity.id,
+        locale.id,
+        require_robots_index=owner_type != "product_category",
+    )
     translation = await session.scalar(
         select(translation_model).where(
             getattr(translation_model, foreign_key) == entity.id,

@@ -11,6 +11,7 @@ import {
   type RfqInquiryItem,
   type RfqPendingAttachment,
 } from '~/utils/rfqSubmission'
+import { publicRequestStatus } from '~/utils/publicRequest'
 
 const ACCEPTED_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.pdf,.dwg,.dxf,.step,.stp,.iges,.igs'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -33,25 +34,36 @@ const RFQ_SOURCE_TYPES = new Set<RfqSourceType>([
   'author_expert',
   'exhibition',
 ])
+const rawSourceType = computed(() => String(route.query.source_type ?? '').trim())
+const rawSourceSlug = computed(() => String(route.query.source_slug ?? '').trim())
+const sourceQueryPresent = computed(() => Boolean(rawSourceType.value || rawSourceSlug.value))
 const sourceType = computed<RfqSourceType | null>(() => {
-  const candidate = String(route.query.source_type ?? '') as RfqSourceType
+  const candidate = rawSourceType.value as RfqSourceType
   return RFQ_SOURCE_TYPES.has(candidate) ? candidate : null
 })
 const sourceSlug = computed(() => {
-  const candidate = String(route.query.source_slug ?? '')
-    .trim()
-    .toLowerCase()
+  const candidate = rawSourceSlug.value.toLowerCase()
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(candidate) ? candidate.slice(0, 180) : ''
 })
 const sourceDismissed = ref(false)
+const sourceInvalid = computed(
+  () => sourceQueryPresent.value && (!sourceType.value || !sourceSlug.value),
+)
 const activeSource = computed(() =>
   !sourceDismissed.value && sourceType.value && sourceSlug.value
     ? { type: sourceType.value, slug: sourceSlug.value }
     : null,
 )
-const sourceContext = computed(() =>
-  activeSource.value ? `${activeSource.value.type}: ${activeSource.value.slug}` : '',
+const invalidSourceMessage = computed(() =>
+  locale === 'zh-cn'
+    ? '来源页面无效、未发布或已撤回。请移除来源后继续提交。'
+    : 'The source page is invalid, unpublished, or withdrawn. Remove it before continuing.',
 )
+const sourceContext = computed(() => {
+  if (sourceDismissed.value) return ''
+  if (activeSource.value) return `${activeSource.value.type}: ${activeSource.value.slug}`
+  return sourceQueryPresent.value ? invalidSourceMessage.value : ''
+})
 
 /** 创建结构一致的询价项目，仅 Product 来源预填产品提示，其他来源只做服务端归因。 */
 function createItem(fromProduct = false): RfqInquiryItem {
@@ -200,6 +212,13 @@ async function submit(): Promise<void> {
   if (submissionReference.value) return
   errorMessage.value = ''
   result.value = ''
+  // 来源参数成对且由白名单约束；非法来源必须由用户明确移除，不能静默丢弃后提交。
+  if (!sourceDismissed.value && sourceInvalid.value) {
+    errorMessage.value = invalidSourceMessage.value
+    await nextTick()
+    errorSummary.value?.focus()
+    return
+  }
   if (!validateForm()) {
     errorMessage.value = labels.value.error.validation
     await nextTick()
@@ -220,8 +239,12 @@ async function submit(): Promise<void> {
     submissionToken.value = response.data.submission_token
     // 短期提交令牌只允许为刚创建的 RFQ 写入 private-rfq。
     await uploadAttachments(response.data.reference, response.data.submission_token)
-  } catch {
-    errorMessage.value = labels.value.error.loadingFailed
+  } catch (failure: unknown) {
+    // 已撤回或未发布的来源由后端返回 422；保留上下文并引导客户移除后重试。
+    errorMessage.value =
+      publicRequestStatus(failure) === 422 && activeSource.value
+        ? invalidSourceMessage.value
+        : labels.value.error.loadingFailed
   } finally {
     isSubmitting.value = false
   }

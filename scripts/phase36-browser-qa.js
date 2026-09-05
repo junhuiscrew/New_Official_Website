@@ -2,12 +2,21 @@
 const { chromium } = require('playwright')
 const { mkdirSync, writeFileSync } = require('node:fs')
 
+const RUN_ID = process.env.PHASE36_QA_RUN_ID || 'remediation-20260905'
+const BASE_URL = process.env.PHASE36_QA_BASE_URL || 'http://localhost:8080'
+
+function assertQa(condition, message) {
+  if (!condition) throw new Error(`QA assertion failed: ${message}`)
+}
+
 async function runQa(page) {
   const consoleErrors = []
+  const pageErrors = []
   const network = []
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
+  page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('response', (response) => {
     const url = response.url()
     if (url.includes('/api/v1/public/')) {
@@ -16,7 +25,7 @@ async function runQa(page) {
   })
 
   await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.goto('http://localhost:8080/en/', { waitUntil: 'networkidle' })
+  await page.goto(`${BASE_URL}/en/`, { waitUntil: 'networkidle' })
   const home = await page.evaluate(() => {
     const ids = [...document.querySelectorAll('[id]')].map((node) => node.id)
     return {
@@ -29,6 +38,7 @@ async function runQa(page) {
       h1Count: document.querySelectorAll('h1').length,
       duplicateIds: ids.filter((id, index) => ids.indexOf(id) !== index),
       skipTarget: document.querySelector('a[href="#main-content"]')?.getAttribute('href'),
+      horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
     }
   })
   await page.screenshot({
@@ -36,16 +46,20 @@ async function runQa(page) {
     fullPage: true,
   })
 
-  const productHref =
-    '/en/products/qa36-remediation-20260905-screws/qa36-remediation-20260905-extrusion-screw/'
+  const productHref = `/en/products/qa36-${RUN_ID}-screws/qa36-${RUN_ID}-extrusion-screw/`
   await page.locator(`.product-card a[href="${productHref}"]`).first().click()
   await page.waitForLoadState('networkidle')
   const product = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.textContent?.trim(),
     imageSrc: document.querySelector('main img')?.getAttribute('src'),
+    imageNaturalWidth: document.querySelector('main img')?.naturalWidth ?? 0,
     mainCount: document.querySelectorAll('main').length,
     mainContentCount: document.querySelectorAll('#main-content').length,
     h1Count: document.querySelectorAll('h1').length,
+    specificationCount: document.querySelectorAll('.spec-table tbody tr').length,
+    specificationValues: [...document.querySelectorAll('.spec-table tbody td')].map((node) =>
+      node.textContent?.trim(),
+    ),
   }))
   const rfqHref = await page
     .locator('a[href*="/request-a-quote/"][href*="source_type=product"]')
@@ -80,9 +94,8 @@ async function runQa(page) {
   const secondItemPresent = (await page.locator('#rfq-product-1').count()) === 1
 
   // Search → Knowledge → Product，验证关系链接来自真实 Public DTO。
-  await page.goto('http://localhost:8080/en/search/?q=Extrusion', { waitUntil: 'networkidle' })
-  const knowledgeHref =
-    '/en/knowledge/qa36-remediation-20260905-guides/qa36-remediation-20260905-screw-selection/'
+  await page.goto(`${BASE_URL}/en/search/?q=Extrusion`, { waitUntil: 'networkidle' })
+  const knowledgeHref = `/en/knowledge/qa36-${RUN_ID}-guides/qa36-${RUN_ID}-screw-selection/`
   await page.locator(`a[href="${knowledgeHref}"]`).first().click()
   await page.waitForLoadState('networkidle')
   const relatedProductVisible = (await page.locator(`a[href="${productHref}"]`).count()) > 0
@@ -93,7 +106,7 @@ async function runQa(page) {
   await page.goto(new URL(knowledgeRfqHref, page.url()).toString(), { waitUntil: 'networkidle' })
   const knowledgeSourceVisible =
     (await page.locator('.source-context').textContent())?.includes(
-      'knowledge_article: qa36-remediation-20260905-screw-selection',
+      `knowledge_article: qa36-${RUN_ID}-screw-selection`,
     ) ?? false
   await page.locator('#rfq-company').fill('Phase36 Knowledge QA')
   await page.locator('#rfq-contact').fill('Local QA Contact')
@@ -106,12 +119,12 @@ async function runQa(page) {
     (await page.locator('.status-success .technical-number').count()) === 1
 
   // 双语详情与缺失翻译回退：首页 alternate 存在，英文单语页回退 zh-cn 首页。
-  await page.goto(`http://localhost:8080${productHref}`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE_URL}${productHref}`, { waitUntil: 'networkidle' })
   const productZhAlternate = await page
     .locator('link[rel="alternate"][hreflang="zh-CN"]')
     .getAttribute('href')
   await page.goto(
-    'http://localhost:8080/en/knowledge/qa36-remediation-20260905-guides/qa36-remediation-20260905-english-only/',
+    `${BASE_URL}/en/knowledge/qa36-${RUN_ID}-guides/qa36-${RUN_ID}-english-only/`,
     { waitUntil: 'networkidle' },
   )
   await page.getByRole('button', { name: /language/i }).click()
@@ -120,19 +133,64 @@ async function runQa(page) {
     .getAttribute('href')
 
   // 分页正常可达，越界分页返回 404；随后返回有效列表验证错误恢复。
-  const validPage = await page.goto('http://localhost:8080/en/products/?page=2', {
+  const validPage = await page.goto(`${BASE_URL}/en/products/?page=2`, {
     waitUntil: 'networkidle',
   })
   const validPageCanonical = await page.locator('link[rel="canonical"]').getAttribute('href')
-  const outOfRange = await page.goto('http://localhost:8080/en/products/?page=99', {
+  const invalidFilter = await page.goto(`${BASE_URL}/en/products/?material=missing-filter`, {
     waitUntil: 'networkidle',
   })
-  await page.goto('http://localhost:8080/en/products/?page=1', { waitUntil: 'networkidle' })
+  const zeroResult = await page.goto(
+    `${BASE_URL}/en/products/?material=qa36-${RUN_ID}-unmatched-material`,
+    { waitUntil: 'networkidle' },
+  )
+  const outOfRange = await page.goto(`${BASE_URL}/en/products/?page=99`, {
+    waitUntil: 'networkidle',
+  })
+  await page.goto(`${BASE_URL}/en/products/?page=1`, { waitUntil: 'networkidle' })
   const recoveredProductCount = await page.locator('.product-card').count()
+
+  // 匿名 Case → RFQ，证明非 Product CTA 不只停留在 query 字符串。
+  const caseHref = `/en/case-studies/qa36-${RUN_ID}-anonymous-case/`
+  await page.goto(`${BASE_URL}${caseHref}`, { waitUntil: 'networkidle' })
+  const privateCaseLeak = (await page.locator('body').textContent())?.includes('QA PRIVATE CLIENT')
+  const caseRfqHref = await page
+    .locator('a[href*="source_type=case_study"]')
+    .first()
+    .getAttribute('href')
+  await page.goto(new URL(caseRfqHref, page.url()).toString(), { waitUntil: 'networkidle' })
+  const caseSourceVisible =
+    (await page.locator('.source-context').textContent())?.includes(
+      `case_study: qa36-${RUN_ID}-anonymous-case`,
+    ) ?? false
+  await page.locator('#rfq-company').fill('Phase36 Case QA')
+  await page.locator('#rfq-contact').fill('Local QA Contact')
+  await page.locator('#rfq-email').fill('phase36-qa-case@example.com')
+  await page.locator('#rfq-message').fill('Local-only Case source persistence QA.')
+  await page.locator('.rfq-form__check input[type="checkbox"]').first().check()
+  await page.locator('button[type="submit"]').click()
+  await page.locator('.status-success').waitFor({ state: 'visible', timeout: 30000 })
+  const caseRfqCreated = (await page.locator('.status-success .technical-number').count()) === 1
+
+  // 首页与代表产品覆盖全部冻结宽度，检查文档级溢出和结构地标。
+  const viewportSmoke = []
+  for (const width of [320, 375, 430, 768, 1024, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: width < 768 ? 800 : 1000 })
+    for (const path of ['/en/', productHref]) {
+      const response = await page.goto(`${BASE_URL}${path}`, { waitUntil: 'networkidle' })
+      const dom = await page.evaluate(() => ({
+        mainCount: document.querySelectorAll('main').length,
+        h1Count: document.querySelectorAll('h1').length,
+        duplicateMainId: document.querySelectorAll('#main-content').length,
+        horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      }))
+      viewportSmoke.push({ width, path, status: response?.status(), ...dom })
+    }
+  }
 
   // 移动菜单及基本画廊交互可操作；截图作为 320px 响应式证据。
   await page.setViewportSize({ width: 320, height: 800 })
-  await page.goto(`http://localhost:8080${productHref}`, { waitUntil: 'networkidle' })
+  await page.goto(`${BASE_URL}${productHref}`, { waitUntil: 'networkidle' })
   const mobileToggle = page.locator('[data-testid="mobile-nav-toggle"]')
   await mobileToggle.click()
   await page.locator('[data-testid="mobile-nav"]').waitFor({ state: 'visible' })
@@ -150,11 +208,12 @@ async function runQa(page) {
     ...entry,
     url: entry.url.replace(/\/public\/rfqs\/[^/]+\/files$/, '/public/rfqs/[REDACTED]/files'),
   }))
-  return {
+  const result = {
+    browserVersion: await page.context().browser()?.version(),
     home,
     product,
     productSourceVisible: Boolean(
-      sourceContext?.includes('product: qa36-remediation-20260905-extrusion-screw'),
+      sourceContext?.includes(`product: qa36-${RUN_ID}-extrusion-screw`),
     ),
     secondItemPresent,
     successReferenceVisible,
@@ -173,18 +232,59 @@ async function runQa(page) {
     pagination: {
       validStatus: validPage?.status(),
       validPageCanonical,
+      invalidFilterStatus: invalidFilter?.status(),
+      zeroResultStatus: zeroResult?.status(),
       outOfRangeStatus: outOfRange?.status(),
       recoveredProductCount,
     },
     mobileMenuExpanded,
+    caseSourceVisible,
+    caseRfqCreated,
+    privateCaseLeak: Boolean(privateCaseLeak),
+    viewportSmoke,
     network: redactedNetwork,
     consoleErrors: consoleErrors.filter(
       (message) => !message.includes('404') || !message.includes('Products not found'),
     ),
+    pageErrors,
     expectedOutOfRangeConsoleObserved: consoleErrors.some(
       (message) => message.includes('404') && message.includes('Products not found'),
     ),
   }
+  assertQa(result.home.mainCount === 1 && result.home.mainContentCount === 1, 'home landmarks')
+  assertQa(result.home.h1Count === 1 && result.home.duplicateIds.length === 0, 'home heading/ids')
+  assertQa(Boolean(result.home.description && result.home.canonical), 'home SEO')
+  assertQa(result.product.mainCount === 1 && result.product.h1Count === 1, 'product landmarks')
+  assertQa(result.product.imageNaturalWidth > 0, 'real public image decoded')
+  assertQa(result.product.specificationCount === 5, 'all five specifications rendered')
+  assertQa(result.productSourceVisible && result.rfqCreated, 'product RFQ source')
+  assertQa(result.secondItemPresent && result.attachmentUploaded, 'multi-item private attachment')
+  assertQa(result.relatedProductVisible && result.knowledgeSourceVisible, 'knowledge relation/source')
+  assertQa(result.knowledgeRfqCreated, 'knowledge RFQ created')
+  assertQa(result.caseSourceVisible && result.caseRfqCreated, 'case RFQ created')
+  assertQa(!result.privateCaseLeak, 'anonymous Case privacy')
+  assertQa(Boolean(result.productZhAlternate), 'bilingual alternate')
+  assertQa(result.missingTranslationFallback === '/zh-cn/', 'missing translation fallback')
+  assertQa(result.pagination.validStatus === 200, 'valid page 2')
+  assertQa(result.pagination.invalidFilterStatus === 404, 'invalid filter 404')
+  assertQa(result.pagination.zeroResultStatus === 404, 'zero result 404')
+  assertQa(result.pagination.outOfRangeStatus === 404, 'out-of-range 404')
+  assertQa(result.pagination.recoveredProductCount > 0, 'pagination recovery')
+  assertQa(result.mobileMenuExpanded, 'mobile menu')
+  assertQa(result.viewportSmoke.every((item) => item.status === 200), 'viewport HTTP')
+  assertQa(
+    result.viewportSmoke.every(
+      (item) =>
+        item.mainCount === 1 &&
+        item.h1Count === 1 &&
+        item.duplicateMainId === 1 &&
+        !item.horizontalOverflow,
+    ),
+    'viewport DOM/overflow',
+  )
+  assertQa(result.pageErrors.length === 0, 'no browser pageerror')
+  assertQa(result.consoleErrors.length === 0, 'no unexpected console errors')
+  return result
 }
 
 async function main() {

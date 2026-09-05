@@ -158,8 +158,9 @@ describe('Phase 3.6 product list filters and pagination', () => {
       'utf8',
     )
 
-    expect(categoryPage).toContain('requestStatus(error.value)')
-    expect(categoryPage).toContain('statusCode: 400')
+    expect(categoryPage).toContain('publicRequestStatus(error.value)')
+    expect(categoryPage).toContain('strictPositiveInteger(route.query.page')
+    expect(categoryPage).toContain('watch(error')
     expect(categoryPage).toContain('listingSeo?.robots')
     expect(categoryPage).toContain(':title="pageData.categoryPage.translation.name"')
     expect(categoryPage).toContain(':breadcrumb="pageData.collection.breadcrumb"')

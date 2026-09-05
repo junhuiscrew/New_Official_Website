@@ -147,7 +147,8 @@ describe('Phase 3.6 catalog page system', () => {
   it('distinguishes 404 from 500 and consumes only backend SEO, alternates, and schema', () => {
     const shell = sourceAt('app/components/PublicCatalogEntityPage.vue')
 
-    expect(shell).toContain('error.value?.statusCode === 404 ? 404 : 500')
+    expect(shell).toContain('publicRequestStatus(error.value)')
+    expect(shell).toContain('watch(error')
     expect(shell).toContain('page.value.seo.canonical')
     expect(shell).toContain('page.value.alternates')
     expect(shell).toContain('serializeJsonLd(page.value.schema)')

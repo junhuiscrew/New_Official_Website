@@ -1,11 +1,12 @@
 <!-- 页面用途：服务端渲染仅含后端隐私白名单内容的已发布案例列表。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { normalizeLocale } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, PublicCollectionDto } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 interface Envelope<T> {
   success: boolean
@@ -18,16 +19,8 @@ const api = useApi()
 const locale = computed<LocaleSlug>(() => normalizeLocale(route.params.lang))
 const labels = computed(() => ui[locale.value])
 
-/** 将不可信分页 query 约束为 Public API 允许的正整数。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const candidate = Array.isArray(value) ? value[0] : value
-  const parsed = typeof candidate === 'string' ? Number.parseInt(candidate, 10) : Number.NaN
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
-}
-
-const requestedPage = computed(() => positiveInteger(route.query.page, 1))
-const requestedPageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const requestedPage = computed(() => strictPositiveInteger(route.query.page, 1))
+const requestedPageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 const requestKey = computed(
   () => `authority:list:cases:${locale.value}:${requestedPage.value}:${requestedPageSize.value}`,
 )
@@ -37,12 +30,22 @@ const { data: response, error } = await useAsyncData(requestKey, () =>
   }),
 )
 if (error.value || !response.value?.data) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Case studies not found' : 'Case studies unavailable',
   })
 }
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage: statusCode === 404 ? 'Case studies not found' : 'Case studies unavailable',
+    }),
+  )
+})
 const collection = computed(() => response.value!.data)
 
 // Index SEO、hreflang 与 Schema 只序列化后端返回值。

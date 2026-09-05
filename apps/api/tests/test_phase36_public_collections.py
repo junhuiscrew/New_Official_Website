@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.core.database import (
@@ -471,6 +471,127 @@ async def test_empty_collections_return_empty_arrays_without_fabricated_facts(
     serialized_payloads = f"{navigation!r}{home!r}".lower()
     for fabricated_fact in ("iso", "certificate", "employees", "products available"):
         assert fabricated_fact not in serialized_payloads
+
+
+@pytest.mark.asyncio
+async def test_home_without_company_uses_webpage_schema_only(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """输入有公开产品但无 Company 的首页；输出仅 WebPage，禁止虚构 Organization。"""
+    async with public_collections_factory() as session, session.begin():
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="qa-components", status="enabled")
+        session.add_all([locale, category])
+        await session.flush()
+        session.add(
+            ProductCategoryTranslation(
+                category_id=category.id,
+                locale_id=locale.id,
+                name="QA Components",
+            )
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=locale.id,
+            path="/en/products/qa-components/",
+        )
+        product = Product(category_id=category.id, slug="qa-screw", status="enabled")
+        session.add(product)
+        await session.flush()
+        session.add(ProductTranslation(product_id=product.id, locale_id=locale.id, name="QA Screw"))
+        _add_lifecycle(
+            session,
+            owner_type="product",
+            owner_id=product.id,
+            locale_id=locale.id,
+            path="/en/products/qa-components/qa-screw/",
+        )
+
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get("/api/v1/public/home/en")
+
+    assert response.status_code == 200
+    schema_types = [item["@type"] for item in response.json()["data"]["schema"]]
+    assert schema_types == ["WebPage"]
+
+
+@pytest.mark.asyncio
+async def test_noindex_category_remains_accessible_with_backend_owned_seo(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """输入已发布 noindex 分类；输出 200、自身 canonical、自定义 SEO 与无 hreflang。"""
+    async with public_collections_factory() as session, session.begin():
+        locale = Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="private-series", status="enabled")
+        session.add_all([locale, category])
+        await session.flush()
+        session.add(
+            ProductCategoryTranslation(
+                category_id=category.id,
+                locale_id=locale.id,
+                name="Private Series",
+                short_description="Fallback category description",
+            )
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=locale.id,
+            path="/en/products/private-series/",
+            robots_index=False,
+        )
+        seo = await session.scalar(select(SeoDocument).where(SeoDocument.owner_id == category.id))
+        assert seo is not None
+        seo.seo_title = "Private Series SEO"
+        seo.meta_description = "Backend category description"
+        product = Product(category_id=category.id, slug="private-screw", status="enabled")
+        session.add(product)
+        await session.flush()
+        session.add(
+            ProductTranslation(product_id=product.id, locale_id=locale.id, name="Private Screw")
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product",
+            owner_id=product.id,
+            locale_id=locale.id,
+            path="/en/products/private-series/private-screw/",
+        )
+
+    async with _public_client(public_collections_factory) as client:
+        listing = await client.get(
+            "/api/v1/public/products/en", params={"category": "private-series"}
+        )
+        category_page = await client.get("/api/v1/public/product-categories/en/private-series")
+
+    assert listing.status_code == 200
+    payload = listing.json()["data"]
+    assert payload["seo"] == {
+        "title": "Private Series SEO",
+        "description": "Backend category description",
+        "canonical": "https://junhuiscrewbarrel.com/en/products/private-series/",
+        "robots": "noindex, follow",
+        "hreflang": {},
+    }
+    assert category_page.status_code == 200
+    assert category_page.json()["data"]["seo"]["robots"] == "noindex, follow"
 
 
 @pytest.mark.asyncio

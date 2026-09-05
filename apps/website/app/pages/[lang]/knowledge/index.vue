@@ -1,11 +1,12 @@
 <!-- 页面用途：服务端渲染已发布 Knowledge 列表、分类筛选与稳定分页。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { normalizeLocale } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, PublicCollectionDto } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 interface Envelope<T> {
   success: boolean
@@ -18,22 +19,14 @@ const api = useApi()
 const locale = computed<LocaleSlug>(() => normalizeLocale(route.params.lang))
 const labels = computed(() => ui[locale.value])
 
-/** 将外部 query 约束为 API 接受的正整数。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const candidate = Array.isArray(value) ? value[0] : value
-  const parsed = typeof candidate === 'string' ? Number.parseInt(candidate, 10) : Number.NaN
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
-}
-
 /** 只回显单个分类 slug，不把任意数组或超长值发给 Public API。 */
 function singleQuery(value: unknown, maximum: number): string {
   const candidate = Array.isArray(value) ? value[0] : value
   return typeof candidate === 'string' ? candidate.trim().slice(0, maximum) : ''
 }
 
-const requestedPage = computed(() => positiveInteger(route.query.page, 1))
-const requestedPageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const requestedPage = computed(() => strictPositiveInteger(route.query.page, 1))
+const requestedPageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 const selectedCategory = computed(() => singleQuery(route.query.category, 120))
 const requestKey = computed(
   () =>
@@ -49,12 +42,22 @@ const { data: response, error } = await useAsyncData(requestKey, () =>
   }),
 )
 if (error.value || !response.value?.data) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Knowledge not found' : 'Knowledge unavailable',
   })
 }
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage: statusCode === 404 ? 'Knowledge not found' : 'Knowledge unavailable',
+    }),
+  )
+})
 const collection = computed(() => response.value!.data)
 
 // Index SEO、hreflang 与 Schema 均直接消费后端，不在 Vue 重建索引规则。

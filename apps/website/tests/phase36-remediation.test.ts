@@ -43,4 +43,22 @@ describe('Phase 3.6 remediation contracts', () => {
     expect(layout).toContain('<main id="main-content" tabindex="-1">')
     expect(layout).toContain('href="#main-content"')
   })
+
+  it('rejects malformed RFQ source pairs instead of silently dropping attribution', () => {
+    const source = readFileSync(resolve(appRoot, 'pages/[lang]/request-a-quote/index.vue'), 'utf8')
+
+    expect(source).toContain('sourceQueryPresent')
+    expect(source).toContain('sourceInvalid')
+    expect(source).toContain('invalidSourceMessage')
+    expect(source).toContain('publicRequestStatus(failure) === 422')
+    expect(source).toContain('Remove it before continuing')
+  })
+
+  it('preserves public HTTP status and validates pagination strictly', () => {
+    const utility = readFileSync(resolve(appRoot, 'utils/publicRequest.ts'), 'utf8')
+
+    expect(utility).toContain('strictPositiveInteger')
+    expect(utility).toContain('error.statusCode = 400')
+    expect(utility).toContain('publicRequestStatus')
+  })
 })

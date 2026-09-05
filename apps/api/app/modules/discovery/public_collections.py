@@ -224,6 +224,8 @@ _AUTHORITY_LISTING_LABELS: dict[str, dict[str, tuple[str, str]]] = {
 def _public_collection_statement(
     owner_type: str,
     locale: Locale,
+    *,
+    require_robots_index: bool = True,
 ) -> Select[Any] | None:
     """
     构造复用完整发布/路由/SEO 门禁的公开集合查询。
@@ -231,6 +233,7 @@ def _public_collection_statement(
     输入：
         owner_type: str，集合实体类型。
         locale: Locale，已启用目标语言。
+        require_robots_index: bool，是否排除明确 noindex 的内容。
 
     输出：
         Select[Any] | None，可继续添加筛选、排序或搜索列的查询；不支持时返回 None。
@@ -274,7 +277,7 @@ def _public_collection_statement(
             AuthorExpert.public_profile_enabled.is_(True),
         )
 
-    return (
+    statement = (
         statement.join(
             ContentRoute,
             (ContentRoute.owner_type == owner_type)
@@ -310,7 +313,6 @@ def _public_collection_statement(
             ContentRoute.indexable.is_(True),
             ContentPublication.status == "published",
             TranslationStatus.status == "published",
-            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
             or_(
                 SeoDocument.id.is_(None),
                 SeoDocument.canonical_override.is_(None),
@@ -318,6 +320,11 @@ def _public_collection_statement(
             ),
         )
     )
+    if require_robots_index:
+        statement = statement.where(
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True))
+        )
+    return statement
 
 
 def _card_payload(
@@ -691,6 +698,7 @@ async def _product_listing_seo(
     category_in_path = False
     alternates: dict[str, str] = {}
     category_entity: ProductCategory | None = None
+    category_seo: SeoDocument | None = None
 
     # 已发布分类使用自身 canonical 路径；分类筛选不再重复进入 query。
     if category:
@@ -702,11 +710,12 @@ async def _product_listing_seo(
         )
         if category_entity is not None:
             try:
-                route, _seo, _geo = await _public_route(
+                route, category_seo, _geo = await _public_route(
                     session,
                     "product_category",
                     category_entity.id,
                     locale.id,
+                    require_robots_index=False,
                 )
             except AppException:
                 pass
@@ -719,8 +728,16 @@ async def _product_listing_seo(
                 )
                 if translation is not None:
                     path = route.path
-                    title = translation.name
-                    description = translation.short_description or translation.description
+                    title = (
+                        category_seo.seo_title or translation.name
+                        if category_seo
+                        else translation.name
+                    )
+                    description = (
+                        category_seo.meta_description
+                        if category_seo and category_seo.meta_description
+                        else translation.short_description or translation.description
+                    )
                     category_in_path = True
 
     suffix = _listing_query_suffix(
@@ -732,7 +749,8 @@ async def _product_listing_seo(
         category_in_path=category_in_path,
     )
     temporary_view = bool(material or application or page_size != 24)
-    if not temporary_view and total > 0:
+    category_allows_index = category_seo is None or category_seo.robots_index
+    if not temporary_view and total > 0 and category_allows_index:
         locale_rows = list(
             (
                 await session.scalars(
@@ -778,11 +796,13 @@ async def _product_listing_seo(
             alternates["x-default"] = alternates["zh-CN"]
 
     canonical = f"{OFFICIAL_ORIGIN}{path}{suffix}"
+    follows = category_seo is None or category_seo.robots_follow
+    indexable = total > 0 and not temporary_view and category_allows_index
     return {
         "title": title,
         "description": description,
         "canonical": canonical,
-        "robots": "index, follow" if total > 0 and not temporary_view else "noindex, follow",
+        "robots": f"{'index' if indexable else 'noindex'}, {'follow' if follows else 'nofollow'}",
         "hreflang": alternates,
     }
 
@@ -792,6 +812,8 @@ async def _require_public_filter(
     owner_type: str,
     locale: Locale,
     slug: str,
+    *,
+    allow_noindex: bool = False,
 ) -> tuple[Any, Any, ContentRoute]:
     """
     验证筛选资源本身在当前语言可公开访问。
@@ -800,7 +822,11 @@ async def _require_public_filter(
     输出：(entity, translation, route)；不存在或未发布时抛出公开 404。
     """
     config = _COLLECTION_CONFIG[owner_type]
-    statement = _public_collection_statement(owner_type, locale)
+    statement = _public_collection_statement(
+        owner_type,
+        locale,
+        require_robots_index=not allow_noindex,
+    )
     if statement is None:
         raise AppException(404, "public_filter_not_found", "公开筛选不存在")
     row = (await session.execute(statement.where(config.model.slug == slug))).one_or_none()
@@ -1048,17 +1074,16 @@ async def _home_metadata(
         "robots": "index, follow" if has_content else "noindex, follow",
         "hreflang": eligible if has_content else {},
     }
-    schema = (
-        [
+    schema: list[dict[str, Any]] = []
+    if has_content:
+        schema.append(
             build_webpage_schema(
                 {"name": title, "description": seo["description"], "url": canonical}
-            ),
-            build_website_schema(),
-            build_organization_schema(),
-        ]
-        if has_content
-        else []
-    )
+            )
+        )
+        # WebSite generator 带 Organization publisher；只有真实 Company Profile 已发布时才输出。
+        if company:
+            schema.extend((build_website_schema(), build_organization_schema()))
     return seo, schema
 
 
@@ -1338,7 +1363,11 @@ async def get_public_listing(
     if owner_type == "product":
         if category:
             category_row = await _require_public_filter(
-                session, "product_category", locale, category
+                session,
+                "product_category",
+                locale,
+                category,
+                allow_noindex=True,
             )
             statement = statement.where(ProductCategory.slug == category)
         if material:

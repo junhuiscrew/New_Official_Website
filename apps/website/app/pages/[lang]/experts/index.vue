@@ -1,11 +1,12 @@
 <!-- 页面用途：服务端渲染已核验、已授权公开的真实人物列表与职责筛选。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import { normalizeLocale } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, PublicCollectionDto, PublicPersonRole } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 interface Envelope<T> {
   success: boolean
@@ -18,20 +19,14 @@ const api = useApi()
 const locale = computed<LocaleSlug>(() => normalizeLocale(route.params.lang))
 const labels = computed(() => ui[locale.value])
 
-/** 将外部分页 query 约束为 Public API 允许的正整数。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const candidate = Array.isArray(value) ? value[0] : value
-  const parsed = typeof candidate === 'string' ? Number.parseInt(candidate, 10) : Number.NaN
-  const safe = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-  return maximum ? Math.min(maximum, safe) : safe
-}
-
-/** 仅允许后端人物枚举进入筛选，未知输入按无筛选处理。 */
+/** 仅允许后端人物枚举进入筛选，未知输入返回明确 400。 */
 function personType(value: unknown): PublicPersonRole | '' {
   const candidate = Array.isArray(value) ? value[0] : value
-  return candidate === 'author' || candidate === 'expert' || candidate === 'author_expert'
-    ? candidate
-    : ''
+  if (candidate === undefined || candidate === '') return ''
+  if (candidate === 'author' || candidate === 'expert' || candidate === 'author_expert') {
+    return candidate
+  }
+  throw createError({ statusCode: 400, statusMessage: 'Invalid expert type' })
 }
 
 /** 将公开人物类型映射为本地化标签，避免模板动态访问未知翻译键。 */
@@ -42,8 +37,8 @@ function personTypeLabel(value: PublicPersonRole | undefined): string {
   return ''
 }
 
-const requestedPage = computed(() => positiveInteger(route.query.page, 1))
-const requestedPageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const requestedPage = computed(() => strictPositiveInteger(route.query.page, 1))
+const requestedPageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 const selectedType = computed(() => personType(route.query.type))
 const requestKey = computed(
   () =>
@@ -59,12 +54,22 @@ const { data: response, error } = await useAsyncData(requestKey, () =>
   }),
 )
 if (error.value || !response.value?.data) {
-  const statusCode = error.value?.statusCode === 404 ? 404 : 500
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Experts not found' : 'Experts unavailable',
   })
 }
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage: statusCode === 404 ? 'Experts not found' : 'Experts unavailable',
+    }),
+  )
+})
 const collection = computed(() => response.value!.data)
 
 // Index SEO、hreflang 与 Schema 直接消费后端，不从人物卡片推导结构化数据。

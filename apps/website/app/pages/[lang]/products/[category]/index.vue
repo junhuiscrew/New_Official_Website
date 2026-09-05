@@ -1,6 +1,6 @@
 <!-- 页面用途：以 category 路径为主筛选，服务端渲染对应公开产品集合。 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import ProductListingView from '~/components/ProductListingView.vue'
 import { normalizeLocale } from '~/composables/useLocalePath'
@@ -14,6 +14,7 @@ import type {
   SeoDto,
 } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
+import { publicRequestStatus, strictPositiveInteger } from '~/utils/publicRequest'
 
 interface Envelope<T> {
   success: boolean
@@ -44,38 +45,14 @@ function queryText(value: unknown): string {
   return typeof candidate === 'string' ? candidate.trim() : ''
 }
 
-/** 严格解析公开分页参数，SSR 直达非法值时返回明确 400。 */
-function positiveInteger(value: unknown, fallback: number, maximum?: number): number {
-  const raw = queryText(value)
-  if (!raw) return fallback
-  if (!/^\d+$/.test(raw))
-    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
-  const parsed = Number(raw)
-  if (parsed < 1 || (maximum !== undefined && parsed > maximum)) {
-    throw createError({ statusCode: 400, statusMessage: 'Invalid pagination' })
-  }
-  return parsed
-}
-
-/** 从 Nuxt/$fetch 错误中保留后端真实 HTTP 状态。 */
-function requestStatus(value: unknown): number {
-  if (!value || typeof value !== 'object') return 500
-  const candidate = value as {
-    statusCode?: number
-    status?: number
-    response?: { status?: number }
-  }
-  return candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 500
-}
-
 const category = computed(() => queryText(route.params.category))
 const filters = computed<ProductFilters>(() => ({
   category: category.value,
   material: queryText(route.query.material),
   application: queryText(route.query.application),
 }))
-const page = computed(() => positiveInteger(route.query.page, 1))
-const pageSize = computed(() => positiveInteger(route.query.page_size, 24, 48))
+const page = computed(() => strictPositiveInteger(route.query.page, 1))
+const pageSize = computed(() => strictPositiveInteger(route.query.page_size, 24, 48))
 const requestQuery = computed(() => ({
   page: page.value,
   page_size: pageSize.value,
@@ -117,13 +94,25 @@ const { data: response, error } = await useAsyncData(
   { watch: [requestQuery] },
 )
 if (error.value || !response.value) {
-  const statusCode = requestStatus(error.value)
+  const statusCode = publicRequestStatus(error.value)
   throw createError({
     statusCode,
     statusMessage:
       statusCode === 404 ? 'Product category not found' : 'Products could not be loaded',
   })
 }
+// 分类内筛选 SPA 导航失败时清除旧正文/meta，保留后端 404 与 5xx。
+watch(error, (nextError) => {
+  if (!nextError) return
+  const statusCode = publicRequestStatus(nextError)
+  showError(
+    createError({
+      statusCode,
+      statusMessage:
+        statusCode === 404 ? 'Product category not found' : 'Products could not be loaded',
+    }),
+  )
+})
 const pageData = computed(() => response.value!)
 
 // 分类页继续消费分类详情端点的 canonical、hreflang、robots 与 Schema。

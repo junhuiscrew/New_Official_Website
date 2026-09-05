@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $homeResponse = Invoke-RestMethod "$BaseUrl/api/v1/public/home/en"
+$homeZhResponse = Invoke-RestMethod "$BaseUrl/api/v1/public/home/zh-cn"
 $productDetail = Invoke-RestMethod "$BaseUrl/api/v1/public/products/en/qa36-$RunId-screws/qa36-$RunId-extrusion-screw"
 $company = Invoke-RestMethod "$BaseUrl/api/v1/public/company-profile/en"
 $caseStudy = Invoke-RestMethod "$BaseUrl/api/v1/public/case-studies/en/qa36-$RunId-anonymous-case"
@@ -28,6 +29,10 @@ $ssr = Invoke-WebRequest -UseBasicParsing -SkipHttpErrorCheck "$BaseUrl/en/"
 $html = $ssr.Content
 $ids = [regex]::Matches($html, ' id="([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
 $duplicates = @($ids | Group-Object | Where-Object Count -gt 1 | Select-Object -ExpandProperty Name)
+$ssrZh = Invoke-WebRequest -UseBasicParsing -SkipHttpErrorCheck "$BaseUrl/zh-cn/"
+$htmlZh = $ssrZh.Content
+$zhIds = [regex]::Matches($htmlZh, ' id="([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+$zhDuplicates = @($zhIds | Group-Object | Where-Object Count -gt 1 | Select-Object -ExpandProperty Name)
 
 $evidence = [ordered]@{
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
@@ -41,6 +46,15 @@ $evidence = [ordered]@{
         featured_product_spec_types = @($homeResponse.data.featured_products[0].specifications | ForEach-Object { $_.type })
         knowledge_author_present = [bool]$knowledgeWithAuthor.author
         knowledge_published_at_present = [bool]$knowledgeWithAuthor.published_at
+    }
+    home_api_zh = [ordered]@{
+        success = $homeZhResponse.success
+        canonical = $homeZhResponse.data.seo.canonical
+        robots = $homeZhResponse.data.seo.robots
+        description_present = [bool]$homeZhResponse.data.seo.description
+        schema_count = @($homeZhResponse.data.schema).Count
+        english_alternate = $homeZhResponse.data.seo.hreflang.en
+        self_alternate = $homeZhResponse.data.seo.hreflang.'zh-CN'
     }
     product_detail_api = [ordered]@{
         specification_count = @($productDetail.data.specifications).Count
@@ -79,6 +93,18 @@ $evidence = [ordered]@{
         duplicate_ids = $duplicates
         skip_link_present = $html -match 'href="#main-content"'
     }
+    home_ssr_zh = [ordered]@{
+        status = $ssrZh.StatusCode
+        description_present = $htmlZh -match '<meta name="description"'
+        self_canonical_present = $htmlZh -match '<link rel="canonical" href="https://junhuiscrewbarrel.com/zh-cn/"'
+        alternate_present = $htmlZh -match 'hreflang="en"'
+        json_ld_present = $htmlZh -match 'application/ld\+json'
+        main_count = [regex]::Matches($htmlZh, '<main(?:\s|>)').Count
+        main_content_count = [regex]::Matches($htmlZh, 'id="main-content"').Count
+        h1_count = [regex]::Matches($htmlZh, '<h1(?:\s|>)').Count
+        duplicate_ids = $zhDuplicates
+        skip_link_present = $htmlZh -match 'href="#main-content"'
+    }
 }
 
 if (
@@ -90,6 +116,10 @@ if (
     @($evidence.product_detail_api.specification_types | Sort-Object) -join ',' -ne 'boolean,enum,number,range,text' -or
     -not $evidence.home_api.knowledge_author_present -or
     -not $evidence.home_api.knowledge_published_at_present -or
+    -not $evidence.home_api_zh.success -or
+    $evidence.home_api_zh.canonical -ne 'https://junhuiscrewbarrel.com/zh-cn/' -or
+    $evidence.home_api_zh.english_alternate -ne 'https://junhuiscrewbarrel.com/en/' -or
+    $evidence.home_api_zh.self_alternate -ne 'https://junhuiscrewbarrel.com/zh-cn/' -or
     -not $evidence.qa_fixture.company_public -or
     -not $evidence.qa_fixture.material_public -or
     -not $evidence.qa_fixture.solution_public -or
@@ -109,7 +139,16 @@ if (
     $evidence.home_ssr.main_count -ne 1 -or
     $evidence.home_ssr.main_content_count -ne 1 -or
     $evidence.home_ssr.h1_count -ne 1 -or
-    $evidence.home_ssr.duplicate_ids.Count -ne 0
+    $evidence.home_ssr.duplicate_ids.Count -ne 0 -or
+    $evidence.home_ssr_zh.status -ne 200 -or
+    -not $evidence.home_ssr_zh.description_present -or
+    -not $evidence.home_ssr_zh.self_canonical_present -or
+    -not $evidence.home_ssr_zh.alternate_present -or
+    -not $evidence.home_ssr_zh.json_ld_present -or
+    $evidence.home_ssr_zh.main_count -ne 1 -or
+    $evidence.home_ssr_zh.main_content_count -ne 1 -or
+    $evidence.home_ssr_zh.h1_count -ne 1 -or
+    $evidence.home_ssr_zh.duplicate_ids.Count -ne 0
 ) {
     throw 'Phase 3.6 HTTP/SSR evidence assertions failed.'
 }

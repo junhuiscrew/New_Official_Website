@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     minio_public_endpoint: str = "localhost:9000"
     minio_access_key: str = "junhui-local-admin"
     minio_secret_key: str = Field(default="change-me-minio-local-only", repr=False)
-    minio_secure: bool = False
+    minio_internal_secure: bool = False
+    minio_public_secure: bool = False
     minio_public_bucket: str = "public-media"
     minio_private_bucket: str = "private-rfq"
     minio_region: str = "us-east-1"
@@ -183,6 +184,8 @@ class Settings(BaseSettings):
             public_endpoint = urlparse(f"//{self.minio_public_endpoint}")
             if not public_endpoint.hostname or self._is_local_origin_hostname(public_endpoint.hostname) or public_endpoint.hostname == "minio":
                 invalid_fields.append("minio_public_endpoint")
+            if not self.minio_public_secure:
+                invalid_fields.append("minio_public_secure")
         if invalid_fields:
             joined_fields = ", ".join(sorted(set(invalid_fields)))
             raise ValueError(f"Unsafe {self.app_env} settings: {joined_fields}")

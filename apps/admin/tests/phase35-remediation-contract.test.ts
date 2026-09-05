@@ -38,6 +38,24 @@ describe('phase 3.5 remediation admin', () => {
     expect(source).toContain('media_asset_id')
     expect(source).toContain('translations')
     expect(source).toContain('archive')
+    expect(source).toContain('/downloads/broken-media')
+    expect(source).toContain('object_missing')
+  })
+
+  it('provides Trust translation review publish and publication archive actions', () => {
+    const shared = readFileSync(
+      resolve(process.cwd(), 'app/components/trust/TrustCrud.vue'),
+      'utf8',
+    )
+    const company = readFileSync(resolve(process.cwd(), 'app/pages/trust/company.vue'), 'utf8')
+    for (const source of [shared, company]) {
+      expect(source).toContain('translation_statuses')
+      expect(source).toContain('publications')
+      expect(source).toContain('/review')
+      expect(source).toContain('/publications/')
+      expect(source).toContain('published')
+      expect(source).toContain('archived')
+    }
   })
 
   it('links RFQ list to a detail page with files assignment and signed download', () => {

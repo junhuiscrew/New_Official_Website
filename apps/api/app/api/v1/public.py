@@ -24,14 +24,21 @@ from app.modules.discovery.public_delivery import (
 )
 from app.modules.discovery.services import resolve_redirect
 from app.modules.media.services import list_public_downloads
+from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 
 router = APIRouter(prefix="/public", tags=["public"])
 
 
 @router.get("/downloads/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])
-async def public_downloads(locale_slug: str, session: AsyncSession = Depends(get_session)) -> ApiResponse[list[dict[str, Any]]]:
+async def public_downloads(
+    locale_slug: str,
+    session: AsyncSession = Depends(get_session),
+    storage: MinioStorageAdapter = Depends(get_storage_adapter),
+) -> ApiResponse[list[dict[str, Any]]]:
     """返回 public-media 中已就绪的公开下载资源，不暴露私有 RFQ 文件。"""
-    return success_response(await list_public_downloads(session, locale_slug))
+    return success_response(
+        await list_public_downloads(session, locale_slug, storage=storage)
+    )
 
 
 @router.get("/company-profile/{locale_slug}", response_model=ApiResponse[dict[str, Any]])

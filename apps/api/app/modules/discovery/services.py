@@ -27,6 +27,8 @@ from app.modules.authority.models import (
 )
 from app.modules.catalog.models import Product, ProductSpecValue, ProductTranslation
 from app.modules.company.models import (
+    CompanyProfile,
+    CompanyProfileTranslation,
     Exhibition,
     ExhibitionTranslation,
     ManufacturingCapability,
@@ -117,7 +119,7 @@ async def build_visible_source_text(
     从数据库真实公开字段构造 GEO 可见事实文本，拒绝客户端自报正文。
 
     输入：session 异步会话、owner_type 内容类型、owner_id 实体 ID、locale_id 语言 ID。
-    输出：str，Product、Case、Knowledge 或 Expert 页面可见文本的稳定聚合。
+    输出：str，受支持公开页面可见文本的稳定聚合。
     """
     visible: list[str] = []
     if owner_type == "product":
@@ -275,6 +277,32 @@ async def build_visible_source_text(
         if exhibition is None or translation is None or exhibition.status != "enabled":
             raise AppException(404, "visible_content_not_found", "未找到对应语言的展会公开正文")
         visible.extend(_visible_values(translation.title, translation.summary, translation.description, exhibition.event_name, exhibition.country_code, exhibition.city, exhibition.start_date, exhibition.end_date, exhibition.booth_no))
+    elif owner_type == "company_profile":
+        profile = await session.get(CompanyProfile, owner_id)
+        translation = await session.scalar(
+            select(CompanyProfileTranslation).where(
+                CompanyProfileTranslation.company_profile_id == owner_id,
+                CompanyProfileTranslation.locale_id == locale_id,
+            )
+        )
+        if profile is None or translation is None or profile.status != "enabled":
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的公司公开正文")
+        visible.extend(
+            _visible_values(
+                translation.company_name,
+                translation.short_intro,
+                translation.full_intro,
+                translation.mission,
+                translation.advantages_json,
+                profile.founded_year,
+                profile.years_experience,
+                profile.employee_count_range,
+                profile.factory_area_sqm,
+                profile.annual_capacity_text,
+                profile.export_markets_json,
+                profile.public_address,
+            )
+        )
     else:
         raise AppException(422, "unsupported_geo_owner", "该内容类型不支持 GEO 文档")
     return "\n".join(visible)

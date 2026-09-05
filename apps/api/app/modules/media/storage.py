@@ -6,6 +6,7 @@ import asyncio
 import io
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from minio import Minio
 
@@ -30,14 +31,14 @@ class MinioStorageAdapter:
             settings.minio_endpoint,
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
-            secure=settings.minio_secure,
+            secure=settings.minio_internal_secure,
             region=settings.minio_region,
         )
         self.public_client = public_client or Minio(
             settings.minio_public_endpoint,
             access_key=settings.minio_access_key,
             secret_key=settings.minio_secret_key,
-            secure=settings.minio_secure,
+            secure=settings.minio_public_secure,
             # 显式 region 可避免签名阶段访问浏览器公网端点探测 bucket。
             region=settings.minio_region,
         )
@@ -89,12 +90,16 @@ class MinioStorageAdapter:
         if not key or key.startswith("/") or ".." in key:
             raise AppException(409, "unsafe_storage_key", "私有文件路径不安全")
         ttl = min(max(ttl_seconds, 60), 900)
-        return await asyncio.to_thread(
+        url = await asyncio.to_thread(
             self.public_client.presigned_get_object,
             bucket,
             key,
             expires=timedelta(seconds=ttl),
         )
+        # 生产环境绝不允许把私有文件凭据放进明文 HTTP URL。
+        if get_settings().app_env == "production" and urlparse(url).scheme != "https":
+            raise AppException(503, "insecure_presigned_url", "生产环境私有下载地址必须使用 HTTPS")
+        return url
 
 
 def get_storage_adapter() -> MinioStorageAdapter:

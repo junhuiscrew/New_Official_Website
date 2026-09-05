@@ -6,6 +6,8 @@ interface TrustItem {
   status: string
   sort_order: number
   translations?: Array<Record<string, unknown>>
+  translation_statuses?: Array<{ locale_id: string; status: string }>
+  publications?: Array<{ locale_id: string; status: string }>
   [key: string]: unknown
 }
 
@@ -97,8 +99,29 @@ async function save() {
   }
 }
 
-async function archive(item: TrustItem) {
+async function archiveEntity(item: TrustItem) {
   await api.update(`/trust/${props.resource}/${item.id}`, { slug: item.slug, status: 'retired' })
+  await load()
+}
+
+function publicationStatus(item: TrustItem, localeId: string) {
+  return (
+    item.publications?.find((publication) => publication.locale_id === localeId)?.status || 'draft'
+  )
+}
+
+// 审核、发布和归档均调用后端统一生命周期 API；前端按钮不承担权限判定。
+async function reviewTranslation(item: TrustItem, localeId: string) {
+  await api.archive(`/trust/${props.resource}/${item.id}/translations/${localeId}/review`)
+  await load()
+}
+
+async function transitionPublication(
+  item: TrustItem,
+  localeId: string,
+  status: 'published' | 'archived',
+) {
+  await api.archive(`/trust/${props.resource}/${item.id}/publications/${localeId}/${status}`)
   await load()
 }
 
@@ -141,7 +164,37 @@ onMounted(load)
           <td>{{ item.status }}</td>
           <td>
             <button type="button" @click="edit(item)">Edit</button
-            ><button type="button" @click="archive(item)">Archive</button>
+            ><button type="button" @click="archiveEntity(item)">Archive entity</button>
+            <div
+              v-for="translationStatus in item.translation_statuses || []"
+              :key="translationStatus.locale_id"
+            >
+              <span>
+                {{ translationStatus.locale_id }} · translation {{ translationStatus.status }} ·
+                publication {{ publicationStatus(item, translationStatus.locale_id) }}
+              </span>
+              <button
+                v-if="publicationStatus(item, translationStatus.locale_id) !== 'published'"
+                type="button"
+                @click="reviewTranslation(item, translationStatus.locale_id)"
+              >
+                Review
+              </button>
+              <button
+                v-if="publicationStatus(item, translationStatus.locale_id) === 'review'"
+                type="button"
+                @click="transitionPublication(item, translationStatus.locale_id, 'published')"
+              >
+                Publish
+              </button>
+              <button
+                v-if="publicationStatus(item, translationStatus.locale_id) === 'published'"
+                type="button"
+                @click="transitionPublication(item, translationStatus.locale_id, 'archived')"
+              >
+                Archive publication
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>

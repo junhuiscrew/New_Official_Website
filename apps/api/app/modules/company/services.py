@@ -58,15 +58,37 @@ def serialize(entity: Any) -> dict[str, Any]:
     )
 
 
-async def _lifecycle(session: AsyncSession, owner_type: str, owner_id: uuid.UUID, locale: Locale, slug: str) -> None:
-    """为可独立公开的 Trust 实体幂等创建统一翻译/发布/路由记录。"""
+async def _ensure_public_lifecycle(
+    session: AsyncSession,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale: Locale,
+    path: str,
+) -> None:
+    """
+    幂等创建统一翻译、发布和 canonical route。
+
+    输入：session、owner 标识、Locale 和站内绝对 path。
+    输出：None；缺失记录会以 draft/inactive/noindex 建立。
+    """
     await _translation_lifecycle(session, owner_type, owner_id, locale)
     publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_type == owner_type, ContentPublication.owner_id == owner_id, ContentPublication.locale_id == locale.id))
     if publication is None:
         session.add(ContentPublication(owner_type=owner_type, owner_id=owner_id, locale_id=locale.id, status="draft"))
     route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_type == owner_type, ContentRoute.owner_id == owner_id, ContentRoute.locale_id == locale.id, ContentRoute.is_canonical.is_(True)))
     if route is None:
-        await create_content_route(session, owner_type, owner_id, locale, f"/{locale.slug}/{_PATHS[owner_type]}/{slug}/")
+        await create_content_route(session, owner_type, owner_id, locale, path)
+
+
+async def _lifecycle(session: AsyncSession, owner_type: str, owner_id: uuid.UUID, locale: Locale, slug: str) -> None:
+    """为可独立公开的 Trust 实体幂等创建统一翻译/发布/路由记录。"""
+    await _ensure_public_lifecycle(
+        session,
+        owner_type,
+        owner_id,
+        locale,
+        f"/{locale.slug}/{_PATHS[owner_type]}/{slug}/",
+    )
 
 
 async def _translation_lifecycle(session: AsyncSession, owner_type: str, owner_id: uuid.UUID, locale: Locale) -> TranslationStatus:
@@ -79,10 +101,20 @@ async def _translation_lifecycle(session: AsyncSession, owner_type: str, owner_i
     return status
 
 
-async def upsert_company_profile(session: AsyncSession, payload: Any, actor_id: uuid.UUID) -> CompanyProfile:
-    """创建或更新唯一公司档案，并保存真实翻译。"""
+async def upsert_company_profile(
+    session: AsyncSession,
+    payload: Any,
+    actor_id: uuid.UUID | None,
+) -> CompanyProfile:
+    """
+    创建或更新唯一公司档案，并接入统一内容生命周期。
+
+    输入：session、CompanyProfileInput 与操作人 ID。
+    输出：CompanyProfile；任何已发布修改都会撤回公开状态。
+    """
     profile = await session.scalar(select(CompanyProfile).order_by(CompanyProfile.created_at).limit(1))
-    if profile is None:
+    is_new = profile is None
+    if is_new:
         profile = CompanyProfile(**{key: value for key, value in payload.model_dump().items() if key != "translations"})
         session.add(profile)
     else:
@@ -90,8 +122,98 @@ async def upsert_company_profile(session: AsyncSession, payload: Any, actor_id: 
             if key != "translations":
                 setattr(profile, key, value)
     await session.flush()
-    await _save_translations(session, profile, CompanyProfileTranslation, "company_profile_id", payload.translations)
-    write_audit_log(session, action="company_profile.update", target_type="company_profile", target_id=str(profile.id), user_id=actor_id)
+    saved_translations = await _save_translations(
+        session,
+        profile,
+        CompanyProfileTranslation,
+        "company_profile_id",
+        payload.translations,
+    )
+    for translation in saved_translations:
+        locale = await session.get(Locale, translation.locale_id)
+        if locale is None:
+            raise AppException(422, "locale_not_found", "Company Profile 翻译语言不存在")
+        await _ensure_public_lifecycle(
+            session,
+            "company_profile",
+            profile.id,
+            locale,
+            f"/{locale.slug}/about/",
+        )
+        await store_revision(
+            session,
+            "company_profile",
+            profile.id,
+            locale.id,
+            {
+                "master": serialize(profile),
+                "translation": _translation_snapshot(
+                    translation, "company_profile_id"
+                ),
+            },
+            actor_id,
+        )
+
+    if not is_new:
+        # Company Profile 主字段对所有语言均可见，因此任意更新都撤回全部已发布语言。
+        publications = list(
+            (
+                await session.scalars(
+                    select(ContentPublication).where(
+                        ContentPublication.owner_type == "company_profile",
+                        ContentPublication.owner_id == profile.id,
+                    )
+                )
+            ).all()
+        )
+        for publication in publications:
+            lifecycle_publication, translation_status, route = await _lifecycle_records(
+                session, "company_profile", profile.id, publication.locale_id
+            )
+            await invalidate_publication_after_translation_edit(
+                session,
+                publication=lifecycle_publication,
+                translation=translation_status,
+                route=route,
+                actor_id=actor_id,
+            )
+
+    if profile.status in {"disabled", "retired"}:
+        publications = list(
+            (
+                await session.scalars(
+                    select(ContentPublication).where(
+                        ContentPublication.owner_type == "company_profile",
+                        ContentPublication.owner_id == profile.id,
+                    )
+                )
+            ).all()
+        )
+        routes = list(
+            (
+                await session.scalars(
+                    select(ContentRoute).where(
+                        ContentRoute.owner_type == "company_profile",
+                        ContentRoute.owner_id == profile.id,
+                    )
+                )
+            ).all()
+        )
+        for publication in publications:
+            publication.status = "archived"
+            publication.published_at = None
+            publication.scheduled_at = None
+        for route in routes:
+            route.active = False
+            route.indexable = False
+    write_audit_log(
+        session,
+        action="company_profile.create" if is_new else "company_profile.update",
+        target_type="company_profile",
+        target_id=str(profile.id),
+        user_id=actor_id,
+    )
+    await session.flush()
     return profile
 
 
@@ -309,12 +431,14 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
     seo = await session.scalar(select(SeoDocument).where(SeoDocument.owner_type == owner_type, SeoDocument.owner_id == entity.id, SeoDocument.locale_id == locale.id))
     geo = await session.scalar(select(GeoDocument).where(GeoDocument.owner_type == owner_type, GeoDocument.owner_id == entity.id, GeoDocument.locale_id == locale.id))
     canonical = seo.canonical_override if seo and seo.canonical_override else f"https://junhuiscrewbarrel.com{route.path}"
-    alternates = []
-    alternate_routes = (await session.execute(select(ContentRoute, Locale).join(Locale, Locale.id == ContentRoute.locale_id).join(ContentPublication, (ContentPublication.owner_type == ContentRoute.owner_type) & (ContentPublication.owner_id == ContentRoute.owner_id) & (ContentPublication.locale_id == ContentRoute.locale_id)).where(ContentRoute.owner_type == owner_type, ContentRoute.owner_id == entity.id, ContentRoute.is_canonical.is_(True), ContentRoute.active.is_(True), ContentRoute.indexable.is_(True), ContentPublication.status == "published", Locale.is_enabled.is_(True)))).all()
-    for alternate_route, alternate_locale in alternate_routes:
-        alternate_seo = await session.scalar(select(SeoDocument).where(SeoDocument.owner_type == owner_type, SeoDocument.owner_id == entity.id, SeoDocument.locale_id == alternate_locale.id))
-        if not alternate_seo or not alternate_seo.canonical_override:
-            alternates.append({"hreflang": alternate_locale.code, "url": f"https://junhuiscrewbarrel.com{alternate_route.path}"})
+    # 与 Product/Case/Knowledge 共用同一严格规则，避免 Trust 产生第二套 hreflang 判定。
+    from app.modules.discovery.public_delivery import _published_alternates
+
+    published_alternates = await _published_alternates(session, owner_type, entity.id)
+    alternates = [
+        {"hreflang": hreflang, "url": url}
+        for hreflang, url in published_alternates.items()
+    ]
     return {
         "type": owner_type,
         "slug": entity.slug,
@@ -327,13 +451,63 @@ async def get_public_trust(session: AsyncSession, owner_type: str, locale_slug: 
 
 
 async def get_public_company_profile(session: AsyncSession, locale_slug: str) -> dict[str, Any]:
-    """从真实 Company Profile 生成 About/Organization 公开 DTO。"""
+    """
+    从正式发布的 Company Profile 生成 About/Organization 公开 DTO。
+
+    输入：session 与语言 slug。
+    输出：包含 SEO/GEO、严格 hreflang 和 Organization Schema 的公开 DTO。
+    """
     locale = await session.scalar(select(Locale).where(Locale.slug == locale_slug, Locale.is_enabled.is_(True)))
     profile = await session.scalar(select(CompanyProfile).where(CompanyProfile.status == "enabled").order_by(CompanyProfile.created_at).limit(1))
     if locale is None or profile is None:
         raise AppException(404, "public_content_not_found", "公司公开档案不存在")
     translation = await session.scalar(select(CompanyProfileTranslation).where(CompanyProfileTranslation.company_profile_id == profile.id, CompanyProfileTranslation.locale_id == locale.id))
-    if translation is None:
-        raise AppException(404, "public_content_not_found", "公司公开档案翻译不存在")
-    public = {"company_name": translation.company_name, "short_intro": translation.short_intro, "full_intro": translation.full_intro, "mission": translation.mission, "advantages": translation.advantages_json, "founded_year": profile.founded_year, "years_experience": profile.years_experience, "employee_count_range": profile.employee_count_range, "factory_area_sqm": profile.factory_area_sqm, "annual_capacity_text": profile.annual_capacity_text, "export_markets": profile.export_markets_json, "phone": profile.public_phone, "email": profile.public_email, "address": profile.public_address, "url": "https://junhuiscrewbarrel.com/"}
-    return {**public, "schema": {"@context": "https://schema.org", "@type": "Organization", "name": translation.company_name, "url": "https://junhuiscrewbarrel.com/", **({"address": {"@type": "PostalAddress", "streetAddress": profile.public_address}} if profile.public_address else {}), **({"telephone": profile.public_phone} if profile.public_phone else {}), **({"email": profile.public_email} if profile.public_email else {})}}
+    status = await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_type == "company_profile", TranslationStatus.owner_id == profile.id, TranslationStatus.locale_id == locale.id, TranslationStatus.status == "published"))
+    publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_type == "company_profile", ContentPublication.owner_id == profile.id, ContentPublication.locale_id == locale.id, ContentPublication.status == "published"))
+    route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_type == "company_profile", ContentRoute.owner_id == profile.id, ContentRoute.locale_id == locale.id, ContentRoute.is_canonical.is_(True), ContentRoute.active.is_(True), ContentRoute.indexable.is_(True)))
+    if translation is None or status is None or publication is None or route is None:
+        raise AppException(404, "public_content_not_found", "公司公开档案尚未正式发布")
+    seo = await session.scalar(select(SeoDocument).where(SeoDocument.owner_type == "company_profile", SeoDocument.owner_id == profile.id, SeoDocument.locale_id == locale.id))
+    geo = await session.scalar(select(GeoDocument).where(GeoDocument.owner_type == "company_profile", GeoDocument.owner_id == profile.id, GeoDocument.locale_id == locale.id))
+    canonical = seo.canonical_override if seo and seo.canonical_override else f"https://junhuiscrewbarrel.com{route.path}"
+    from app.modules.discovery.public_delivery import _published_alternates
+
+    published_alternates = await _published_alternates(
+        session, "company_profile", profile.id
+    )
+    alternates = [
+        {"hreflang": hreflang, "url": url}
+        for hreflang, url in published_alternates.items()
+    ]
+    public = {"company_name": translation.company_name, "short_intro": translation.short_intro, "full_intro": translation.full_intro, "mission": translation.mission, "advantages": translation.advantages_json, "founded_year": profile.founded_year, "years_experience": profile.years_experience, "employee_count_range": profile.employee_count_range, "factory_area_sqm": profile.factory_area_sqm, "annual_capacity_text": profile.annual_capacity_text, "export_markets": profile.export_markets_json, "phone": profile.public_phone, "email": profile.public_email, "address": profile.public_address, "url": f"https://junhuiscrewbarrel.com{route.path}"}
+    return {
+        **public,
+        "seo": {
+            "title": seo.seo_title if seo else None,
+            "description": seo.meta_description if seo else None,
+            "canonical": canonical,
+            "robots_index": bool(seo.robots_index) if seo else True,
+            "robots_follow": bool(seo.robots_follow) if seo else True,
+            "hreflang": alternates,
+        },
+        "geo": {"direct_answer": geo.direct_answer, "key_facts": geo.key_facts_json, "evidence": geo.evidence_json} if geo else None,
+        "schema": {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "name": translation.company_name,
+            "url": "https://junhuiscrewbarrel.com/",
+            **(
+                {
+                    "address": {
+                        "@type": "PostalAddress",
+                        "streetAddress": profile.public_address,
+                    }
+                }
+                if profile.public_address
+                else {}
+            ),
+            **({"telephone": profile.public_phone} if profile.public_phone else {}),
+            **({"email": profile.public_email} if profile.public_email else {}),
+            "mainEntityOfPage": canonical,
+        },
+    }

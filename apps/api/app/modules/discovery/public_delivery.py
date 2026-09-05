@@ -82,6 +82,7 @@ PUBLIC_HANDLER_OWNER_TYPES = frozenset(
         "author_expert",
         "manufacturing_capability",
         "exhibition",
+        "company_profile",
     }
 )
 

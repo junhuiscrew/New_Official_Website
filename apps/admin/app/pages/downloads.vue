@@ -4,6 +4,7 @@ useHead({ title: 'Downloads', meta: [{ name: 'robots', content: 'noindex, nofoll
 const api = useAuthorityApi()
 const items = ref<Array<Record<string, unknown>>>([])
 const media = ref<Array<Record<string, unknown>>>([])
+const brokenMedia = ref<Array<Record<string, unknown>>>([])
 const translationsJson = ref('[]')
 const editingId = ref<string | null>(null)
 const form = reactive({
@@ -21,6 +22,10 @@ async function load() {
   const result = await api.detail<{ items: Array<Record<string, unknown>> }>('/downloads')
   items.value = result.items
   media.value = await api.detail('/media')
+  const broken = await api.detail<{ items: Array<Record<string, unknown>> }>(
+    '/downloads/broken-media',
+  )
+  brokenMedia.value = broken.items
 }
 async function save() {
   form.translations = JSON.parse(translationsJson.value) as Array<Record<string, unknown>>
@@ -50,6 +55,14 @@ onMounted(load)
 <template>
   <main class="admin-shell">
     <h1>Downloads</h1>
+    <aside v-if="brokenMedia.length" role="alert">
+      <strong>Broken media</strong>
+      <ul>
+        <li v-for="item in brokenMedia" :key="String(item.asset_id)">
+          {{ item.download_slug }} · {{ item.reason || 'object_missing' }} · {{ item.storage_key }}
+        </li>
+      </ul>
+    </aside>
     <form @submit.prevent="save">
       <label>Slug <input v-model="form.slug" required /></label
       ><label>Type <input v-model="form.resource_type" /></label

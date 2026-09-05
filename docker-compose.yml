@@ -80,7 +80,8 @@ services:
       MINIO_PUBLIC_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-junhui-local-admin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-junhui-minio-development-secret-32-bytes}
-      MINIO_SECURE: 'false'
+      MINIO_INTERNAL_SECURE: 'false'
+      MINIO_PUBLIC_SECURE: 'false'
       MINIO_PUBLIC_BUCKET: public-media
       MINIO_PRIVATE_BUCKET: private-rfq
       CORS_ALLOWED_ORIGINS: '["http://localhost:3000","http://localhost:3001","http://localhost:8080"]'
@@ -130,7 +131,8 @@ services:
       MINIO_PUBLIC_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-junhui-local-admin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-junhui-minio-development-secret-32-bytes}
-      MINIO_SECURE: 'false'
+      MINIO_INTERNAL_SECURE: 'false'
+      MINIO_PUBLIC_SECURE: 'false'
       JWT_SIGNING_SECRET: ${JWT_SIGNING_SECRET:-change-me-jwt-local-only}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-change-me-refresh-local-only}
       MALWARE_SCANNER_ENABLED: ${MALWARE_SCANNER_ENABLED:-false}

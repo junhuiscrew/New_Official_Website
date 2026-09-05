@@ -7,6 +7,10 @@ const form = reactive({
   company_name: '',
   contact_name: '',
   email: '',
+  phone: '',
+  whatsapp: '',
+  country_code: '',
+  website: '',
   message: '',
   items: [
     {
@@ -77,10 +81,25 @@ async function submit() {
       <label>Company <input v-model="form.company_name" required /></label
       ><label>Contact <input v-model="form.contact_name" required /></label
       ><label>Email <input v-model="form.email" type="email" required /></label
+      ><label>Phone <input v-model="form.phone" type="tel" autocomplete="tel" /></label
+      ><label>WhatsApp <input v-model="form.whatsapp" type="tel" /></label
+      ><label>Country <input v-model="form.country_code" maxlength="2" placeholder="CN" /></label
+      ><label>Website <input v-model="form.website" type="url" placeholder="https://" /></label
       ><label>Message <textarea v-model="form.message" /></label>
       <fieldset>
         <legend>Items</legend>
         <div v-for="(item, index) in form.items" :key="index">
+          <label
+            >Item type
+            <select v-model="item.item_type">
+              <option value="product">Product</option>
+              <option value="screw">Screw</option>
+              <option value="barrel">Barrel</option>
+              <option value="component">Component</option>
+              <option value="custom">Custom</option>
+              <option value="other">Other</option>
+            </select></label
+          >
           <label>Product <input v-model="item.product_name_text" /></label>
           <label>Quantity <input v-model="item.quantity" /></label>
           <label>Material <input v-model="item.material_text" /></label>

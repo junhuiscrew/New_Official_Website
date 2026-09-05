@@ -7,6 +7,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi import Request
@@ -95,6 +96,7 @@ def test_origin_validation_uses_exact_scheme_host_and_port(monkeypatch: pytest.M
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("MINIO_SECRET_KEY", "phase35-production-minio-secret-at-least-32-bytes")
     monkeypatch.setenv("MINIO_PUBLIC_ENDPOINT", "storage.junhuiscrewbarrel.com")
+    monkeypatch.setenv("MINIO_PUBLIC_SECURE", "true")
     monkeypatch.setenv("JWT_SIGNING_SECRET", "phase35-production-jwt-secret-at-least-32-bytes")
     monkeypatch.setenv("REFRESH_TOKEN_SECRET", "phase35-production-refresh-secret-at-least-32-bytes")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["https://junhuiscrewbarrel.com"]')
@@ -357,3 +359,379 @@ async def test_capability_geo_source_and_public_index_use_server_visible_publish
         entity.status = "disabled"
         await session.flush()
         assert await list_public_trust(session, "capabilities", "en") == []
+
+
+async def test_company_profile_requires_full_publication_lifecycle(remediation_factory) -> None:
+    """Company Profile 必须完成统一生命周期后才公开，修改后立即撤回。"""
+    from app.modules.audit.models import AuditLog
+    from app.modules.company.schemas import CompanyProfileInput, TrustTranslation
+    from app.modules.company.services import get_public_company_profile, upsert_company_profile
+    from app.modules.content.enums import PublicationStatus
+    from app.modules.content.services.publication import transition_publication
+    from app.modules.discovery.models import GeoDocument, SeoDocument
+    from app.modules.discovery.services import build_visible_source_text
+
+    async with remediation_factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        payload = CompanyProfileInput(
+            founded_year=1985,
+            translations=[
+                TrustTranslation(
+                    locale_id=locale.id,
+                    fields={
+                        "company_name": "浙江精汇",
+                        "short_intro": "真实公司简介",
+                        "full_intro": "面向全球客户的真实制造能力介绍",
+                        "advantages_json": ["可核验制造能力"],
+                    },
+                )
+            ],
+        )
+        profile = await upsert_company_profile(session, payload, None)
+        publication = await session.scalar(
+            select(ContentPublication).where(
+                ContentPublication.owner_type == "company_profile",
+                ContentPublication.owner_id == profile.id,
+                ContentPublication.locale_id == locale.id,
+            )
+        )
+        status = await session.scalar(
+            select(TranslationStatus).where(
+                TranslationStatus.owner_type == "company_profile",
+                TranslationStatus.owner_id == profile.id,
+                TranslationStatus.locale_id == locale.id,
+            )
+        )
+        route = await session.scalar(
+            select(ContentRoute).where(
+                ContentRoute.owner_type == "company_profile",
+                ContentRoute.owner_id == profile.id,
+                ContentRoute.locale_id == locale.id,
+            )
+        )
+        assert publication is not None and status is not None and route is not None
+        assert route.path == "/zh-cn/about/" and route.active is False
+        with pytest.raises(AppException) as draft_error:
+            await get_public_company_profile(session, "zh-cn")
+        assert draft_error.value.code == "public_content_not_found"
+
+        status.status = "human_reviewed"
+        await transition_publication(
+            session,
+            publication=publication,
+            translation=status,
+            route=route,
+            target_status=PublicationStatus.REVIEW,
+            actor_permissions={"content.update"},
+            actor_id=None,
+        )
+        await transition_publication(
+            session,
+            publication=publication,
+            translation=status,
+            route=route,
+            target_status=PublicationStatus.PUBLISHED,
+            actor_permissions={"content.publish"},
+            actor_id=None,
+        )
+        session.add_all(
+            [
+                SeoDocument(
+                    owner_type="company_profile",
+                    owner_id=profile.id,
+                    locale_id=locale.id,
+                    seo_title="关于精汇",
+                    robots_index=True,
+                ),
+                GeoDocument(
+                    owner_type="company_profile",
+                    owner_id=profile.id,
+                    locale_id=locale.id,
+                    direct_answer="真实公司简介",
+                ),
+            ]
+        )
+        await session.flush()
+
+        public = await get_public_company_profile(session, "zh-cn")
+        assert public["seo"]["canonical"] == "https://junhuiscrewbarrel.com/zh-cn/about/"
+        assert public["seo"]["hreflang"] == [
+            {"hreflang": "zh-CN", "url": "https://junhuiscrewbarrel.com/zh-cn/about/"},
+            {"hreflang": "x-default", "url": "https://junhuiscrewbarrel.com/zh-cn/about/"},
+        ]
+        assert public["geo"]["direct_answer"] == "真实公司简介"
+        visible = await build_visible_source_text(session, "company_profile", profile.id, locale.id)
+        assert "真实公司简介" in visible and "可核验制造能力" in visible
+        from app.modules.content.services.indexable import list_indexable_routes
+
+        assert route in await list_indexable_routes(session)
+
+        changed = payload.model_copy(deep=True)
+        changed.translations[0].fields["short_intro"] = "已修改、待重新审核的简介"
+        await upsert_company_profile(session, changed, None)
+        assert status.status == "draft" and publication.status == "review"
+        assert route.active is False and route.indexable is False
+        assert await session.scalar(
+            select(ContentRevision.id).where(
+                ContentRevision.owner_type == "company_profile",
+                ContentRevision.owner_id == profile.id,
+            )
+        ) is not None
+        assert await session.scalar(
+            select(AuditLog.id).where(
+                AuditLog.target_type == "company_profile",
+                AuditLog.target_id == str(profile.id),
+            )
+        ) is not None
+
+
+async def test_trust_review_publish_archive_api_reuses_publication_transaction(
+    remediation_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trust API 必须形成 review→published→archived 的真实统一状态闭环。"""
+    from app.api.v1 import trust as trust_api
+    from app.modules.company.schemas import TrustEntityInput, TrustTranslation
+    from app.modules.company.services import create_trust_entity
+
+    async with remediation_factory() as session:
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        entity = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug="api-publication",
+                fields={"capability_type": "machining"},
+                translations=[
+                    TrustTranslation(locale_id=locale.id, fields={"name": "API publication"})
+                ],
+            ),
+            None,
+        )
+        await session.commit()
+        actor = SimpleNamespace(id=uuid.uuid4())
+        permissions = {
+            "capability.update",
+            "content.update",
+            "content.publish",
+            "content.archive",
+        }
+        monkeypatch.setattr(trust_api, "collect_authorization", lambda _user: (set(), permissions))
+
+        reviewed = await trust_api.review_trust_translation(
+            "capabilities", entity.id, locale.id, session, actor, None
+        )
+        assert reviewed.data == {"status": "human_reviewed", "publication": "review"}
+        published = await trust_api.transition_trust_publication(
+            "capabilities",
+            entity.id,
+            locale.id,
+            trust_api.PublicationStatus.PUBLISHED,
+            session,
+            actor,
+            None,
+        )
+        assert published.data == {"status": "published"}
+        archived = await trust_api.transition_trust_publication(
+            "capabilities",
+            entity.id,
+            locale.id,
+            trust_api.PublicationStatus.ARCHIVED,
+            session,
+            actor,
+            None,
+        )
+        assert archived.data == {"status": "archived"}
+        publication = await session.scalar(
+            select(ContentPublication).where(ContentPublication.owner_id == entity.id)
+        )
+        route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == entity.id))
+        assert publication.status == "archived"
+        assert route.active is False and route.indexable is False
+
+
+async def test_trust_hreflang_uses_strict_self_canonical_alternates(remediation_factory) -> None:
+    """Trust hreflang 必须保留 self-canonical，并排除 noindex 或非 self-canonical 语言。"""
+    from app.modules.company.schemas import TrustEntityInput, TrustTranslation
+    from app.modules.company.services import create_trust_entity, get_public_trust
+    from app.modules.discovery.models import SeoDocument
+
+    async with remediation_factory() as session, session.begin():
+        locales = {
+            locale.code: locale
+            for locale in (
+                await session.scalars(select(Locale).order_by(Locale.sort_order))
+            ).all()
+        }
+        entity = await create_trust_entity(
+            session,
+            "capabilities",
+            TrustEntityInput(
+                slug="strict-hreflang",
+                fields={"capability_type": "machining"},
+                translations=[
+                    TrustTranslation(locale_id=locales["zh-CN"].id, fields={"name": "精密加工"}),
+                    TrustTranslation(locale_id=locales["en"].id, fields={"name": "Precision machining"}),
+                ],
+            ),
+            None,
+        )
+        for locale in locales.values():
+            publication = await session.scalar(select(ContentPublication).where(ContentPublication.owner_id == entity.id, ContentPublication.locale_id == locale.id))
+            status = await session.scalar(select(TranslationStatus).where(TranslationStatus.owner_id == entity.id, TranslationStatus.locale_id == locale.id))
+            route = await session.scalar(select(ContentRoute).where(ContentRoute.owner_id == entity.id, ContentRoute.locale_id == locale.id))
+            publication.status = "published"
+            status.status = "published"
+            route.active = True
+            route.indexable = True
+        session.add_all(
+            [
+                SeoDocument(
+                    owner_type="manufacturing_capability",
+                    owner_id=entity.id,
+                    locale_id=locales["zh-CN"].id,
+                    canonical_override="https://junhuiscrewbarrel.com/zh-cn/capabilities/strict-hreflang/",
+                    robots_index=True,
+                ),
+                SeoDocument(
+                    owner_type="manufacturing_capability",
+                    owner_id=entity.id,
+                    locale_id=locales["en"].id,
+                    robots_index=False,
+                ),
+            ]
+        )
+        await session.flush()
+        public = await get_public_trust(session, "manufacturing_capability", "zh-cn", "strict-hreflang")
+        assert public["seo"]["hreflang"] == [
+            {
+                "hreflang": "zh-CN",
+                "url": "https://junhuiscrewbarrel.com/zh-cn/capabilities/strict-hreflang/",
+            },
+            {
+                "hreflang": "x-default",
+                "url": "https://junhuiscrewbarrel.com/zh-cn/capabilities/strict-hreflang/",
+            },
+        ]
+
+
+async def test_public_downloads_filter_missing_objects_and_report_broken_media(remediation_factory) -> None:
+    """数据库为 ready 但对象缺失的下载不得公开，并应进入 broken-media 报告。"""
+    from app.modules.media.models import DownloadResource, DownloadResourceTranslation
+    from app.modules.media.services import list_broken_public_downloads, list_public_downloads
+
+    class MissingStorage:
+        async def object_exists(self, bucket: str, key: str) -> bool:
+            return key == "downloads/present.pdf"
+
+    async with remediation_factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        assets = [
+            MediaAsset(
+                visibility="public",
+                media_type="document",
+                storage_bucket="public-media",
+                storage_key=key,
+                original_filename=key.rsplit("/", 1)[-1],
+                sanitized_filename=key.rsplit("/", 1)[-1],
+                mime_type="application/pdf",
+                file_extension=".pdf",
+                file_size_bytes=12,
+                sha256=marker * 64,
+                checksum_verified=True,
+                malware_scan_status="not_required",
+                upload_status="ready",
+            )
+            for key, marker in (("downloads/present.pdf", "a"), ("downloads/missing.pdf", "b"))
+        ]
+        session.add_all(assets)
+        await session.flush()
+        for index, asset in enumerate(assets):
+            resource = DownloadResource(
+                slug=f"download-{index}",
+                resource_type="document",
+                status="enabled",
+                media_asset_id=asset.id,
+            )
+            session.add(resource)
+            await session.flush()
+            session.add(
+                DownloadResourceTranslation(
+                    download_resource_id=resource.id,
+                    locale_id=locale.id,
+                    title=f"Download {index}",
+                )
+            )
+        await session.flush()
+
+        public = await list_public_downloads(session, "en", storage=MissingStorage())
+        broken = await list_broken_public_downloads(session, storage=MissingStorage())
+        assert [item["slug"] for item in public] == ["download-0"]
+        assert broken == [
+            {
+                "asset_id": str(assets[1].id),
+                "download_slug": "download-1",
+                "storage_bucket": "public-media",
+                "storage_key": "downloads/missing.pdf",
+                "reason": "object_missing",
+            }
+        ]
+
+
+def test_minio_internal_and_public_transport_security_are_independent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """内部 MinIO 与浏览器签名端点必须分别控制 TLS，生产外部端点强制 HTTPS。"""
+    from pydantic import ValidationError
+
+    from app.core.config import get_settings
+    from app.core.config.settings import Settings
+    from app.modules.media import storage as storage_module
+
+    created: list[tuple[str, bool]] = []
+
+    class FakeClient:
+        def __init__(self, endpoint: str, **kwargs) -> None:
+            created.append((endpoint, kwargs["secure"]))
+
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("MINIO_ENDPOINT", "internal.example:9000")
+    monkeypatch.setenv("MINIO_PUBLIC_ENDPOINT", "public.example:9000")
+    monkeypatch.setenv("MINIO_INTERNAL_SECURE", "true")
+    monkeypatch.setenv("MINIO_PUBLIC_SECURE", "false")
+    get_settings.cache_clear()
+    monkeypatch.setattr(storage_module, "Minio", FakeClient)
+    storage_module.MinioStorageAdapter()
+    assert created == [("internal.example:9000", True), ("public.example:9000", False)]
+
+    secure_values = {
+        "app_env": "production",
+        "database_url": "postgresql+asyncpg://prod_user:strong-db-secret@db:5432/junhui",
+        "minio_secret_key": "strong-minio-secret-at-least-32-bytes",
+        "minio_public_endpoint": "storage.junhuiscrewbarrel.com",
+        "jwt_signing_secret": "strong-jwt-signing-secret-at-least-32-bytes",
+        "refresh_token_secret": "strong-refresh-token-secret-at-least-32-bytes",
+        "cors_allowed_origins": ["https://junhuiscrewbarrel.com"],
+        "_env_file": None,
+    }
+    with pytest.raises(ValidationError):
+        Settings(**secure_values, minio_public_secure=False)
+    assert Settings(**secure_values, minio_public_secure=True).minio_public_secure is True
+
+
+async def test_production_rejects_http_private_presigned_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SDK 即使异常返回 HTTP，生产私有下载也必须 fail-closed。"""
+    from app.core.config import get_settings
+    from app.modules.media.storage import MinioStorageAdapter
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://prod_user:strong-db-secret@db:5432/junhui")
+    monkeypatch.setenv("MINIO_SECRET_KEY", "strong-minio-secret-at-least-32-bytes")
+    monkeypatch.setenv("MINIO_PUBLIC_ENDPOINT", "storage.junhuiscrewbarrel.com")
+    monkeypatch.setenv("MINIO_PUBLIC_SECURE", "true")
+    monkeypatch.setenv("JWT_SIGNING_SECRET", "strong-jwt-signing-secret-at-least-32-bytes")
+    monkeypatch.setenv("REFRESH_TOKEN_SECRET", "strong-refresh-token-secret-at-least-32-bytes")
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["https://junhuiscrewbarrel.com"]')
+    get_settings.cache_clear()
+    fake = _FakeMinioClient()
+    adapter = MinioStorageAdapter(client=fake, public_client=fake)
+    with pytest.raises(AppException) as raised:
+        await adapter.presigned_get("private-rfq", "rfq/unsafe.pdf")
+    assert raised.value.code == "insecure_presigned_url"

@@ -16,6 +16,8 @@ from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.company.schemas import DownloadInput
 from app.modules.media.models import DownloadResource, DownloadResourceTranslation, MediaAsset
+from app.modules.media.services import list_broken_public_downloads
+from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 from app.modules.users.models import User
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
@@ -57,6 +59,22 @@ async def list_downloads(session: AsyncSession = Depends(get_session), _user: Us
     for resource in resources:
         translations = list((await session.scalars(select(DownloadResourceTranslation).where(DownloadResourceTranslation.download_resource_id == resource.id))).all())
         items.append({**_serialize(resource), "translations": [_serialize(item) for item in translations]})
+    return success_response({"items": items, "total": len(items)})
+
+
+@router.get("/broken-media", response_model=ApiResponse[dict[str, Any]])
+async def get_broken_download_media(
+    session: AsyncSession = Depends(get_session),
+    storage: MinioStorageAdapter = Depends(get_storage_adapter),
+    _user: User = Depends(require_permission("download.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回公开下载引用的缺失对象提示。
+
+    输入：认证会话、对象存储适配器与 download.read 用户。
+    输出：ApiResponse，包含 object_missing 项和数量，供 Admin 修复坏链。
+    """
+    items = await list_broken_public_downloads(session, storage=storage)
     return success_response({"items": items, "total": len(items)})
 
 

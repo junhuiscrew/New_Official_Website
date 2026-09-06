@@ -29,6 +29,15 @@ interface MediaItem {
   type: string
   url: string | null
 }
+interface LifecycleItem {
+  locale_id: string
+  status: string
+}
+interface RouteItem {
+  locale_id: string
+  active: boolean
+  indexable: boolean
+}
 interface ProductDetail extends NamedItem {
   category_id: string
   slug: string
@@ -37,6 +46,9 @@ interface ProductDetail extends NamedItem {
   sort_order: number
   primary_media_id: string | null
   translations: Array<Record<string, unknown>>
+  translation_statuses: LifecycleItem[]
+  publications: LifecycleItem[]
+  routes: RouteItem[]
   models: ProductModelItem[]
   specifications: SpecValue[]
   relations: {
@@ -58,6 +70,9 @@ const solutions = ref<NamedItem[]>([])
 const definitions = ref<NamedItem[]>([])
 const locales = ref<LocaleItem[]>([])
 const media = ref<MediaItem[]>([])
+const translationStatuses = ref<LifecycleItem[]>([])
+const publications = ref<LifecycleItem[]>([])
+const routes = ref<RouteItem[]>([])
 const selectedId = ref<string | null>(null)
 const errorMessage = ref('')
 const modelCode = ref('')
@@ -134,6 +149,9 @@ function resetForm() {
     models: [],
     specifications: [],
   })
+  translationStatuses.value = []
+  publications.value = []
+  routes.value = []
 }
 
 async function editProduct(item: ProductDetail) {
@@ -149,6 +167,9 @@ async function editProduct(item: ProductDetail) {
     form.primary_media_id = detail.primary_media_id || ''
     form.models = detail.models
     form.specifications = detail.specifications
+    translationStatuses.value = detail.translation_statuses || []
+    publications.value = detail.publications || []
+    routes.value = detail.routes || []
     Object.assign(form, detail.relations)
     form.translations = detail.translations.map((translation) => ({
       locale_id: String(translation.locale_id),
@@ -214,6 +235,47 @@ async function archiveProduct() {
   await api.archive(`/catalog/products/${selectedId.value}/archive`)
   resetForm()
   await load()
+}
+
+// 获取当前语言的生命周期状态，供审核与发布按钮使用。
+function lifecycleStatus(items: LifecycleItem[], localeId: string, fallback: string) {
+  return items.find((item) => item.locale_id === localeId)?.status || fallback
+}
+
+function routeStatus(localeId: string) {
+  return routes.value.find((item) => item.locale_id === localeId)
+}
+
+async function reloadSelectedProduct() {
+  if (!selectedId.value) return
+  await editProduct({ id: selectedId.value } as ProductDetail)
+}
+
+// Translation Review 由后端同时校验 catalog.review、translation.review 与 content.review。
+async function reviewTranslation(localeId: string) {
+  if (!selectedId.value) return
+  try {
+    await api.request(`/catalog/products/${selectedId.value}/translations/${localeId}/review`, {
+      method: 'POST',
+    })
+    await reloadSelectedProduct()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to review translation.'
+  }
+}
+
+// Publication 状态转换继续由后端统一事务控制 Route、Translation 与 Audit。
+async function transitionPublication(localeId: string, targetStatus: 'published' | 'archived') {
+  if (!selectedId.value) return
+  try {
+    await api.request(
+      `/catalog/products/${selectedId.value}/publications/${localeId}/${targetStatus}`,
+      { method: 'POST' },
+    )
+    await reloadSelectedProduct()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Unable to change publication.'
+  }
 }
 
 async function addModel() {
@@ -328,6 +390,50 @@ onMounted(load)
           </div>
         </form>
       </div>
+      <section v-if="selectedId" class="sub-editor">
+        <h2>Translation review &amp; publication</h2>
+        <div v-for="locale in locales" :key="locale.id" class="lifecycle-row">
+          <p>
+            <strong>{{ locale.native_name }}</strong>
+            · translation {{ lifecycleStatus(translationStatuses, locale.id, 'missing') }} ·
+            publication {{ lifecycleStatus(publications, locale.id, 'draft') }}
+            · route
+            {{
+              routeStatus(locale.id)?.active && routeStatus(locale.id)?.indexable
+                ? 'public'
+                : 'inactive/noindex'
+            }}
+          </p>
+          <div class="form-actions">
+            <button
+              v-if="
+                ['draft', 'machine_translated'].includes(
+                  lifecycleStatus(translationStatuses, locale.id, 'missing'),
+                )
+              "
+              type="button"
+              @click="reviewTranslation(locale.id)"
+            >
+              Mark human reviewed
+            </button>
+            <button
+              v-if="lifecycleStatus(publications, locale.id, 'draft') === 'review'"
+              type="button"
+              @click="transitionPublication(locale.id, 'published')"
+            >
+              Publish
+            </button>
+            <button
+              v-if="lifecycleStatus(publications, locale.id, 'draft') === 'published'"
+              type="button"
+              class="danger"
+              @click="transitionPublication(locale.id, 'archived')"
+            >
+              Archive publication
+            </button>
+          </div>
+        </div>
+      </section>
       <section v-if="selectedId" class="sub-editor">
         <h2>Product Models</h2>
         <div class="inline-form">

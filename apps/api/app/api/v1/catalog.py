@@ -15,7 +15,8 @@ from app.core.database import get_session
 from app.core.exceptions.handlers import AppException
 from app.core.pagination import PaginationParams
 from app.core.responses import ApiResponse, success_response
-from app.modules.auth.dependencies import require_csrf, require_permission
+from app.modules.audit.service import write_audit_log
+from app.modules.auth.dependencies import get_current_user, require_csrf, require_permission
 from app.modules.catalog.models import (
     Application,
     ApplicationTranslation,
@@ -70,8 +71,11 @@ from app.modules.catalog.services import (
     update_product_model,
     update_specification_value,
 )
+from app.modules.content.enums import PublicationStatus, TranslationState
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+from app.modules.content.services.publication import transition_publication
 from app.modules.users.models import User
+from app.modules.users.service import collect_authorization
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
 _ENTITY_MODELS = {
@@ -80,6 +84,213 @@ _ENTITY_MODELS = {
     "applications": ("application", Application, ApplicationTranslation, "application_id"),
     "solutions": ("solution", Solution, SolutionTranslation, "solution_id"),
 }
+_CATALOG_LIFECYCLE_MODELS: dict[str, tuple[str, type]] = {
+    "categories": ("product_category", ProductCategory),
+    "products": ("product", Product),
+    "materials": ("material", Material),
+    "technologies": ("technology", Technology),
+    "applications": ("application", Application),
+    "solutions": ("solution", Solution),
+}
+_PUBLICATION_PERMISSION_ACTIONS: dict[PublicationStatus, str] = {
+    PublicationStatus.REVIEW: "review",
+    PublicationStatus.SCHEDULED: "publish",
+    PublicationStatus.PUBLISHED: "publish",
+    PublicationStatus.ARCHIVED: "archive",
+    PublicationStatus.DRAFT: "update",
+}
+
+
+def _require_catalog_permission(user: User, code: str) -> set[str]:
+    """
+    校验 Catalog 动态生命周期操作的服务端权限。
+
+    输入：
+        user: User，当前认证用户。
+        code: str，必须具备的权限代码。
+
+    输出：
+        set[str]，当前用户的完整权限集合。
+    """
+    _roles, permissions = collect_authorization(user)
+    if code not in permissions:
+        raise AppException(403, "permission_denied", "没有执行此操作的权限")
+    return set(permissions)
+
+
+def _catalog_lifecycle_config(resource: str) -> tuple[str, type]:
+    """
+    解析允许进入统一生命周期的 Catalog 资源。
+
+    输入：
+        resource: str，API 使用的资源复数名。
+
+    输出：
+        tuple[str, type]，owner_type 与对应 Master Entity 模型。
+    """
+    config = _CATALOG_LIFECYCLE_MODELS.get(resource)
+    if config is None:
+        raise AppException(404, "catalog_resource_not_found", "Catalog 资源不存在")
+    return config
+
+
+async def _catalog_lifecycle_records(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> tuple[ContentPublication, TranslationStatus, ContentRoute]:
+    """
+    读取同一 Catalog 内容语言的发布、翻译与 canonical Route。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_type: str，Catalog owner 类型。
+        owner_id: uuid.UUID，Master Entity ID。
+        locale_id: uuid.UUID，目标语言 ID。
+
+    输出：
+        tuple[ContentPublication, TranslationStatus, ContentRoute]，统一生命周期记录。
+    """
+    publication = await session.scalar(
+        select(ContentPublication).where(
+            ContentPublication.owner_type == owner_type,
+            ContentPublication.owner_id == owner_id,
+            ContentPublication.locale_id == locale_id,
+        )
+    )
+    translation = await session.scalar(
+        select(TranslationStatus).where(
+            TranslationStatus.owner_type == owner_type,
+            TranslationStatus.owner_id == owner_id,
+            TranslationStatus.locale_id == locale_id,
+        )
+    )
+    route = await session.scalar(
+        select(ContentRoute).where(
+            ContentRoute.owner_type == owner_type,
+            ContentRoute.owner_id == owner_id,
+            ContentRoute.locale_id == locale_id,
+            ContentRoute.is_canonical.is_(True),
+        )
+    )
+    if publication is None or translation is None or route is None:
+        raise AppException(
+            409,
+            "publication_records_required",
+            "发布、翻译与 canonical Route 必须完整",
+        )
+    return publication, translation, route
+
+
+async def _review_catalog_lifecycle(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+    user: User,
+) -> dict[str, str]:
+    """
+    审核 Catalog 翻译并将 draft Publication 原子提交至 review。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_type: str，Catalog owner 类型。
+        owner_id: uuid.UUID，Master Entity ID。
+        locale_id: uuid.UUID，目标语言 ID。
+        user: User，当前审核用户。
+
+    输出：
+        dict[str, str]，翻译状态与 Publication 状态。
+    """
+    permissions = _require_catalog_permission(user, "catalog.review")
+    _require_catalog_permission(user, "translation.review")
+    _require_catalog_permission(user, "content.review")
+    publication, translation, route = await _catalog_lifecycle_records(
+        session,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        locale_id=locale_id,
+    )
+    if publication.status == PublicationStatus.PUBLISHED.value:
+        raise AppException(409, "published_translation_locked", "已发布翻译无需重复审核")
+    if translation.status in {
+        TranslationState.MISSING.value,
+        TranslationState.PUBLISHED.value,
+    }:
+        raise AppException(409, "translation_not_reviewable", "只有已有草稿翻译可以人工审核")
+    if publication.status not in {
+        PublicationStatus.DRAFT.value,
+        PublicationStatus.REVIEW.value,
+    }:
+        raise AppException(409, "publication_not_reviewable", "当前发布状态不能执行翻译审核")
+
+    translation.status = TranslationState.HUMAN_REVIEWED.value
+    translation.reviewed_by = user.id
+    write_audit_log(
+        session,
+        action="translation.review",
+        target_type=owner_type,
+        target_id=str(owner_id),
+        user_id=user.id,
+        metadata={"locale_id": str(locale_id)},
+    )
+    if publication.status == PublicationStatus.DRAFT.value:
+        await transition_publication(
+            session,
+            publication=publication,
+            translation=translation,
+            route=route,
+            target_status=PublicationStatus.REVIEW,
+            actor_permissions=permissions,
+            actor_id=user.id,
+        )
+    await session.flush()
+    return {
+        "translation_status": translation.status,
+        "publication_status": publication.status,
+    }
+
+
+async def _transition_catalog_lifecycle(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+    target_status: PublicationStatus,
+    user: User,
+) -> str:
+    """
+    使用实体权限与全局内容权限转换 Catalog Publication。
+
+    输入：数据库会话、owner 标识、语言、目标状态与当前用户。
+    输出：str，转换后的 Publication 状态。
+    """
+    permission_action = _PUBLICATION_PERMISSION_ACTIONS[target_status]
+    permissions = _require_catalog_permission(user, f"catalog.{permission_action}")
+    if target_status is PublicationStatus.REVIEW:
+        _require_catalog_permission(user, "translation.review")
+    if target_status in {PublicationStatus.SCHEDULED, PublicationStatus.PUBLISHED}:
+        _require_catalog_permission(user, "translation.publish")
+    publication, translation, route = await _catalog_lifecycle_records(
+        session,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        locale_id=locale_id,
+    )
+    await transition_publication(
+        session,
+        publication=publication,
+        translation=translation,
+        route=route,
+        target_status=target_status,
+        actor_permissions=permissions,
+        actor_id=user.id,
+    )
+    return publication.status
 
 
 def _serialize(entity: Any) -> dict[str, Any]:
@@ -330,6 +541,76 @@ async def patch_product(product_id: uuid.UUID, payload: ProductUpdate, request: 
     """更新产品主字段和翻译。"""
     result = await _write_result(session, update_product(session, product_id, payload, user.id))
     return success_response(_serialize(result))
+
+
+@router.post(
+    "/{resource}/{entity_id}/translations/{locale_id}/review",
+    response_model=ApiResponse[dict[str, str]],
+)
+async def review_catalog_translation(
+    resource: str,
+    entity_id: uuid.UUID,
+    locale_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, str]]:
+    """
+    审核 Catalog Translation，并同步把 draft Publication 提交 review。
+
+    输入：资源名、实体/语言 ID、数据库会话与当前用户。
+    输出：ApiResponse，翻译与 Publication 的最新状态。
+    """
+    owner_type, model = _catalog_lifecycle_config(resource)
+    if await session.get(model, entity_id) is None:
+        raise AppException(404, f"{owner_type}_not_found", "Catalog 实体不存在")
+    result = await _write_result(
+        session,
+        _review_catalog_lifecycle(
+            session,
+            owner_type=owner_type,
+            owner_id=entity_id,
+            locale_id=locale_id,
+            user=user,
+        ),
+    )
+    return success_response(result)
+
+
+@router.post(
+    "/{resource}/{entity_id}/publications/{locale_id}/{target_status}",
+    response_model=ApiResponse[dict[str, str]],
+)
+async def transition_catalog_publication(
+    resource: str,
+    entity_id: uuid.UUID,
+    locale_id: uuid.UUID,
+    target_status: PublicationStatus,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, str]]:
+    """
+    通过统一事务服务转换 Catalog Publication。
+
+    输入：资源名、实体/语言 ID、目标状态、数据库会话与当前用户。
+    输出：ApiResponse，转换后的 Publication 状态。
+    """
+    owner_type, model = _catalog_lifecycle_config(resource)
+    if await session.get(model, entity_id) is None:
+        raise AppException(404, f"{owner_type}_not_found", "Catalog 实体不存在")
+    result = await _write_result(
+        session,
+        _transition_catalog_lifecycle(
+            session,
+            owner_type=owner_type,
+            owner_id=entity_id,
+            locale_id=locale_id,
+            target_status=target_status,
+            user=user,
+        ),
+    )
+    return success_response({"status": result})
 
 
 @router.post("/products/{product_id}/archive", response_model=ApiResponse[dict[str, Any]])

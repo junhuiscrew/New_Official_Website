@@ -41,6 +41,18 @@ describe('catalog admin routes', () => {
     expect(source).toContain('parseHighlights')
   })
 
+  it('provides real Product translation review and publication actions', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
+    expect(source).toContain('translation_statuses')
+    expect(source).toContain('publications')
+    expect(source).toContain('reviewTranslation')
+    expect(source).toContain('/translations/${localeId}/review')
+    expect(source).toContain('transitionPublication')
+    expect(source).toContain('/publications/${localeId}/${targetStatus}')
+    expect(source).toContain("'published'")
+    expect(source).toContain("'archived'")
+  })
+
   it('implements real Material CRUD and archive operations', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/materials.vue'), 'utf8')
     const sharedSource = readFileSync(

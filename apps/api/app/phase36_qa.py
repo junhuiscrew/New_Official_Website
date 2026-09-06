@@ -112,6 +112,8 @@ _RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,39}$")
 _QA_CONFIRMATION = "LOCAL_QA_ONLY"
 _QA_ISOLATION = "LOCAL_COMPOSE_ONLY"
 _LOCAL_SERVICE_HOSTS = {"localhost", "127.0.0.1", "postgres", "redis", "minio"}
+
+
 def _build_qa_png() -> bytes:
     """
     生成本地 QA 专用的正常尺寸 PNG 测试图。

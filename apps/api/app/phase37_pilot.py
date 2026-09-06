@@ -14,6 +14,12 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 _CATEGORY_KEY = "junhui:product-category:injection-molding-machine-barrels"
 _PRODUCT_KEY = "junhui:product:nitrided-barrel"
 _TARGET_ENVIRONMENT = "phase37-local-https"
+_APPROVED_SOURCE_NAMES = (
+    "01-骏辉螺杆 氮化机筒 (1).jpg",
+    "02-骏辉螺杆 氮化机筒 (3).jpg",
+    "03-骏辉螺杆 氮化机筒 (4).jpg",
+    "04-骏辉螺杆 氮化机筒 (5).jpg",
+)
 _REDACTED_KEYS = {
     "access_token",
     "cookie",
@@ -82,6 +88,14 @@ class PilotManifest(BaseModel):
             raise ValueError("source_order_mismatch")
         if len({source.external_key for source in self.sources}) != 4:
             raise ValueError("duplicate_source_external_key")
+        ordered_sources = sorted(self.sources, key=lambda source: source.order)
+        if tuple(source.filename for source in ordered_sources) != _APPROVED_SOURCE_NAMES:
+            raise ValueError("source_filename_scope_mismatch")
+        expected_keys = {
+            f"junhui:media:nitrided-barrel:{order:02d}" for order in range(1, 5)
+        }
+        if {source.external_key for source in self.sources} != expected_keys:
+            raise ValueError("source_external_key_scope_mismatch")
         if not self.draft_import_authorized or self.protected_preview_publish_authorized:
             raise ValueError("draft_only_authorization_required")
         return self

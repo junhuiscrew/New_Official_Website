@@ -22,8 +22,11 @@ COPY apps/api/tests ./tests
 COPY apps/admin/nuxt.config.ts /workspace/apps/admin/nuxt.config.ts
 COPY apps/admin/Dockerfile /workspace/apps/admin/Dockerfile
 COPY apps/website/Dockerfile /workspace/apps/website/Dockerfile
-COPY infra/nginx/nginx.conf infra/nginx/nginx.staging.conf /workspace/infra/nginx/
-COPY docker-compose.yml docker-compose.staging.yml /workspace/
+COPY infra/nginx/nginx.conf infra/nginx/nginx.staging.conf infra/nginx/nginx.phase37.conf /workspace/infra/nginx/
+COPY docker-compose.yml docker-compose.staging.yml docker-compose.phase37.yml /workspace/
+COPY scripts/phase37-local-https.ps1 /workspace/scripts/phase37-local-https.ps1
+COPY .gitignore .env.example /workspace/
+COPY infra/docker/README.md /workspace/infra/docker/README.md
 COPY docs/architecture/migration-runtime-strategy.md /workspace/docs/architecture/migration-runtime-strategy.md
 
 ENV PROJECT_ROOT=/workspace

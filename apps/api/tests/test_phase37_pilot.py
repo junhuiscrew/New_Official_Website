@@ -32,6 +32,13 @@ from app.phase37_pilot import (
 )
 from app.seed import seed_database
 
+_APPROVED_SOURCE_NAMES = [
+    "01-骏辉螺杆 氮化机筒 (1).jpg",
+    "02-骏辉螺杆 氮化机筒 (3).jpg",
+    "03-骏辉螺杆 氮化机筒 (4).jpg",
+    "04-骏辉螺杆 氮化机筒 (5).jpg",
+]
+
 
 @pytest.fixture
 async def phase37_session_factory(
@@ -247,25 +254,31 @@ def _manifest_payload(source_names: list[str], source_root: Path) -> dict[str, o
 
 def test_manifest_requires_exact_authorized_scope(tmp_path: Path) -> None:
     """验证 importer 只接受一个产品、四张图、Draft-only 的冻结范围。"""
-    for index in range(1, 6):
-        (tmp_path / f"source-{index}.jpg").write_bytes(f"source-{index}".encode())
-    valid = _manifest_payload(
-        [f"source-{index}.jpg" for index in range(1, 5)],
-        tmp_path,
-    )
+    source_names = [*_APPROVED_SOURCE_NAMES, "05-骏辉螺杆 氮化机筒日精.jpg"]
+    for name in source_names:
+        (tmp_path / name).write_bytes(name.encode())
+    valid = _manifest_payload(_APPROVED_SOURCE_NAMES, tmp_path)
     assert PilotManifest.model_validate(valid).product.slug == "nitrided-barrel"
 
-    invalid = _manifest_payload(
-        [f"source-{index}.jpg" for index in range(1, 6)],
-        tmp_path,
-    )
+    invalid = _manifest_payload(source_names, tmp_path)
     with pytest.raises(ValueError, match="exactly_four_sources"):
         PilotManifest.model_validate(invalid)
 
 
+def test_manifest_rejects_unapproved_source_filename(tmp_path: Path) -> None:
+    """验证同为四张图时也不能用日精或其他文件替换获批图片。"""
+    source_names = [*_APPROVED_SOURCE_NAMES]
+    source_names[-1] = "05-骏辉螺杆 氮化机筒日精.jpg"
+    for name in source_names:
+        (tmp_path / name).write_bytes(name.encode())
+
+    with pytest.raises(ValueError, match="source_filename_scope_mismatch"):
+        PilotManifest.model_validate(_manifest_payload(source_names, tmp_path))
+
+
 def test_source_hash_mismatch_is_rejected(tmp_path: Path) -> None:
     """验证源文件被替换后不能继续执行已批准批次。"""
-    names = [f"source-{index}.jpg" for index in range(1, 5)]
+    names = [*_APPROVED_SOURCE_NAMES]
     for name in names:
         (tmp_path / name).write_bytes(name.encode())
     manifest = PilotManifest.model_validate(_manifest_payload(names, tmp_path))
@@ -329,3 +342,27 @@ def test_evidence_redaction_removes_credentials_and_internal_ids() -> None:
     assert "secret" not in serialized
     assert "internal-id" not in serialized
     assert "public/internal.webp" not in serialized
+
+
+def test_phase37_https_stack_contract() -> None:
+    """验证隔离 HTTPS 编排、三域名、Basic Auth 与 noindex 门禁。"""
+    repository_root = Path("/workspace")
+    compose = (repository_root / "docker-compose.phase37.yml").read_text()
+    nginx = (repository_root / "infra/nginx/nginx.phase37.conf").read_text()
+    preparation = (repository_root / "scripts/phase37-local-https.ps1").read_text()
+    gitignore = (repository_root / ".gitignore").read_text()
+
+    assert "name: junhui-phase37-pilot" in compose
+    assert "'443:443'" in compose
+    assert "APP_ENV: staging" in compose
+    assert "PUBLIC_SITEMAP_ENABLED: 'false'" in compose
+    assert "AUTH_COOKIE_SECURE: 'true'" in compose
+    assert "junhui.test" in nginx
+    assert "admin.junhui.test" in nginx
+    assert "api.junhui.test" in nginx
+    assert 'auth_basic "Junhui Phase 3.7 Pilot"' in nginx
+    assert 'X-Robots-Tag "noindex, nofollow" always' in nginx
+    assert "InstallTrustAndHosts" in preparation
+    assert "subjectAltName" in preparation
+    assert "data/phase3-7/" in gitignore
+    assert ".env.phase37" in gitignore

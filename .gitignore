@@ -33,6 +33,8 @@ Thumbs.db
 
 # 本地数据与日志
 data/
+data/phase3-7/
+.env.phase37
 artifacts/phase3-6-remediation/
 artifacts/phase3-6-qa-closeout/
 artifacts/phase3-6-qa36-closeout/

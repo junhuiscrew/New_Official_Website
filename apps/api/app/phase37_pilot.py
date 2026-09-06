@@ -291,6 +291,10 @@ class PilotApiClient:
         """输入 API 相对路径和 httpx 参数，输出 PATCH data。"""
         return _response_data(self.client.patch(path.lstrip("/"), **kwargs))
 
+    def put(self, path: str, **kwargs: Any) -> Any:
+        """输入 API 相对路径和 httpx 参数，输出 PUT data。"""
+        return _response_data(self.client.put(path.lstrip("/"), **kwargs))
+
     def list_items(self, path: str) -> list[dict[str, Any]]:
         """输入列表端点，输出分页或数组响应中的条目。"""
         data = self.get(path)

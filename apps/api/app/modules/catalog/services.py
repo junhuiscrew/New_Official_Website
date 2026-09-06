@@ -50,7 +50,9 @@ from app.modules.catalog.schemas import (
     ProductUpdate,
     RelationUpdate,
     SpecificationDefinitionCreate,
+    SpecificationDefinitionUpdate,
     SpecificationGroupCreate,
+    SpecificationGroupUpdate,
     SpecificationValueCreate,
     SpecificationValueUpdate,
     TranslationInput,
@@ -732,6 +734,53 @@ async def create_specification_group(session: AsyncSession, payload: Specificati
     return group
 
 
+async def update_specification_group(
+    session: AsyncSession,
+    group_id: uuid.UUID,
+    payload: SpecificationGroupUpdate,
+    actor_id: uuid.UUID | None = None,
+) -> SpecificationGroup:
+    """
+    编辑规格分组的名称、状态和展示顺序。
+
+    输入：session、group_id、局部更新 payload、actor_id。
+    输出：SpecificationGroup，已更新并写入 Revision/Audit 的规格分组。
+    """
+    group = await session.scalar(
+        select(SpecificationGroup).where(SpecificationGroup.id == group_id).with_for_update()
+    )
+    if group is None:
+        raise AppException(404, "specification_group_not_found", "规格分组不存在")
+    changes = payload.model_dump(exclude_unset=True, exclude={"translations"})
+    for field_name, value in changes.items():
+        if value is not None:
+            setattr(group, field_name, value)
+    if payload.translations is not None:
+        await _upsert_translations(
+            session,
+            "specification_group",
+            group,
+            SpecificationGroupTranslation,
+            "group_id",
+            payload.translations,
+            actor_id=actor_id,
+        )
+    write_audit_log(
+        session,
+        action="specification.update",
+        target_type="specification_group",
+        user_id=actor_id,
+        target_id=str(group.id),
+        metadata={"fields": sorted(changes)},
+    )
+    await session.flush()
+    if changes:
+        await _record_entity_revision(session, "specification_group", group, actor_id)
+    # 刷新数据库生成的 updated_at，避免事务提交后序列化触发异步懒加载。
+    await session.refresh(group)
+    return group
+
+
 async def create_specification_definition(session: AsyncSession, payload: SpecificationDefinitionCreate, actor_id: uuid.UUID | None = None) -> SpecificationDefinition:
     """创建动态规格定义。"""
     if await session.get(SpecificationGroup, payload.group_id) is None:
@@ -741,6 +790,145 @@ async def create_specification_definition(session: AsyncSession, payload: Specif
     await session.flush()
     await _write_entity_content(session, owner_type="specification_definition", entity=definition, translation_model=SpecificationDefinitionTranslation, owner_field="definition_id", translations=payload.translations, actor_id=actor_id, action="specification.update")
     return definition
+
+
+async def update_specification_definition(
+    session: AsyncSession,
+    definition_id: uuid.UUID,
+    payload: SpecificationDefinitionUpdate,
+    actor_id: uuid.UUID | None = None,
+) -> SpecificationDefinition:
+    """
+    编辑规格定义，并在已有规格值时冻结值类型和默认单位。
+
+    输入：session、definition_id、局部更新 payload、actor_id。
+    输出：SpecificationDefinition，安全更新后的规格定义。
+    """
+    definition = await session.scalar(
+        select(SpecificationDefinition)
+        .where(SpecificationDefinition.id == definition_id)
+        .with_for_update()
+    )
+    if definition is None:
+        raise AppException(404, "specification_definition_not_found", "规格定义不存在")
+    changes = payload.model_dump(exclude_unset=True, exclude={"translations"})
+    if "group_id" in changes:
+        group_id = changes["group_id"]
+        if group_id is None or await session.get(SpecificationGroup, group_id) is None:
+            raise AppException(404, "specification_group_not_found", "规格分组不存在")
+    referenced = await session.scalar(
+        select(ProductSpecValue.id).where(ProductSpecValue.definition_id == definition.id).limit(1)
+    )
+    protected_change = any(
+        field_name in changes and changes[field_name] != getattr(definition, field_name)
+        for field_name in ("value_type", "default_unit")
+    )
+    if referenced is not None and protected_change:
+        raise AppException(
+            409,
+            "specification_definition_in_use",
+            "已有产品参数值引用该定义，不能修改值类型或单位",
+        )
+    for field_name, value in changes.items():
+        if field_name != "default_unit" and value is None:
+            continue
+        setattr(definition, field_name, value)
+    if payload.translations is not None:
+        await _upsert_translations(
+            session,
+            "specification_definition",
+            definition,
+            SpecificationDefinitionTranslation,
+            "definition_id",
+            payload.translations,
+            actor_id=actor_id,
+        )
+    write_audit_log(
+        session,
+        action="specification.update",
+        target_type="specification_definition",
+        user_id=actor_id,
+        target_id=str(definition.id),
+        metadata={"fields": sorted(changes)},
+    )
+    await session.flush()
+    if changes:
+        await _record_entity_revision(session, "specification_definition", definition, actor_id)
+    # 刷新数据库生成的 updated_at，避免事务提交后序列化触发异步懒加载。
+    await session.refresh(definition)
+    return definition
+
+
+async def delete_specification_definition(
+    session: AsyncSession,
+    definition_id: uuid.UUID,
+    actor_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    """
+    删除未被任何产品参数值引用的规格定义。
+
+    输入：session、definition_id、actor_id。
+    输出：uuid.UUID，被安全删除的规格定义 ID。
+    """
+    definition = await session.scalar(
+        select(SpecificationDefinition)
+        .where(SpecificationDefinition.id == definition_id)
+        .with_for_update()
+    )
+    if definition is None:
+        raise AppException(404, "specification_definition_not_found", "规格定义不存在")
+    referenced = await session.scalar(
+        select(ProductSpecValue.id).where(ProductSpecValue.definition_id == definition.id).limit(1)
+    )
+    if referenced is not None:
+        raise AppException(409, "specification_definition_in_use", "规格定义已有参数值引用，不能删除")
+    write_audit_log(
+        session,
+        action="specification.delete",
+        target_type="specification_definition",
+        user_id=actor_id,
+        target_id=str(definition.id),
+        metadata={"code": definition.code},
+    )
+    await session.delete(definition)
+    await session.flush()
+    return definition_id
+
+
+async def delete_specification_group(
+    session: AsyncSession,
+    group_id: uuid.UUID,
+    actor_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    """
+    删除不含任何规格定义的空分组，防止数据库级联误删字典。
+
+    输入：session、group_id、actor_id。
+    输出：uuid.UUID，被安全删除的分组 ID。
+    """
+    group = await session.scalar(
+        select(SpecificationGroup).where(SpecificationGroup.id == group_id).with_for_update()
+    )
+    if group is None:
+        raise AppException(404, "specification_group_not_found", "规格分组不存在")
+    definition_id = await session.scalar(
+        select(SpecificationDefinition.id)
+        .where(SpecificationDefinition.group_id == group.id)
+        .limit(1)
+    )
+    if definition_id is not None:
+        raise AppException(409, "specification_group_in_use", "规格分组仍包含定义，不能删除")
+    write_audit_log(
+        session,
+        action="specification.delete",
+        target_type="specification_group",
+        user_id=actor_id,
+        target_id=str(group.id),
+        metadata={"code": group.code},
+    )
+    await session.delete(group)
+    await session.flush()
+    return group_id
 
 
 async def create_specification_value(session: AsyncSession, payload: SpecificationValueCreate, actor_id: uuid.UUID | None = None) -> ProductSpecValue:
@@ -824,6 +1012,42 @@ async def update_specification_value(
     )
     await _record_entity_revision(session, "product_spec_value", value, actor_id)
     return value
+
+
+async def delete_specification_value(
+    session: AsyncSession,
+    value_id: uuid.UUID,
+    actor_id: uuid.UUID | None = None,
+) -> uuid.UUID:
+    """
+    清空单个产品或型号的规格赋值，同时保留 Revision 与 Audit 轨迹。
+
+    输入：session、value_id、actor_id。
+    输出：uuid.UUID，被删除的规格值 ID。
+    """
+    value = await session.scalar(
+        select(ProductSpecValue).where(ProductSpecValue.id == value_id).with_for_update()
+    )
+    if value is None:
+        raise AppException(404, "specification_value_not_found", "规格值不存在")
+    await _record_entity_revision(
+        session,
+        "product_spec_value",
+        value,
+        actor_id,
+        extra={"operation": "deleted"},
+    )
+    write_audit_log(
+        session,
+        action="specification.delete",
+        target_type="product_spec_value",
+        user_id=actor_id,
+        target_id=str(value.id),
+        metadata={"definition_id": str(value.definition_id)},
+    )
+    await session.delete(value)
+    await session.flush()
+    return value_id
 
 
 _RELATIONS: dict[str, tuple[type, str, type]] = {

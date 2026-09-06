@@ -19,7 +19,7 @@ export interface CatalogTranslationDraft {
   fields: Record<string, string>
 }
 
-type CatalogMethod = 'GET' | 'POST' | 'PATCH' | 'PUT'
+type CatalogMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 
 export function useCatalogApi() {
   const { apiBase } = useAuth()
@@ -67,5 +67,9 @@ export function useCatalogApi() {
     return request<T>(path, { method: 'POST' })
   }
 
-  return { request, list, detail, create, update, replace, archive }
+  function remove<T>(path: string): Promise<T> {
+    return request<T>(path, { method: 'DELETE' })
+  }
+
+  return { request, list, detail, create, update, replace, archive, remove }
 }

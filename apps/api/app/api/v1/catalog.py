@@ -36,7 +36,9 @@ from app.modules.catalog.models import (
     Solution,
     SolutionTranslation,
     SpecificationDefinition,
+    SpecificationDefinitionTranslation,
     SpecificationGroup,
+    SpecificationGroupTranslation,
     Technology,
     TechnologyTranslation,
 )
@@ -51,7 +53,9 @@ from app.modules.catalog.schemas import (
     ProductUpdate,
     RelationUpdate,
     SpecificationDefinitionCreate,
+    SpecificationDefinitionUpdate,
     SpecificationGroupCreate,
+    SpecificationGroupUpdate,
     SpecificationValueCreate,
     SpecificationValueUpdate,
 )
@@ -64,11 +68,16 @@ from app.modules.catalog.services import (
     create_specification_definition,
     create_specification_group,
     create_specification_value,
+    delete_specification_definition,
+    delete_specification_group,
+    delete_specification_value,
     replace_product_relations,
     update_category,
     update_core_entity,
     update_product,
     update_product_model,
+    update_specification_definition,
+    update_specification_group,
     update_specification_value,
 )
 from app.modules.content.enums import PublicationStatus, TranslationState
@@ -658,6 +667,54 @@ async def post_specification_group(payload: SpecificationGroupCreate, request: R
     return success_response(_serialize(result))
 
 
+@router.get("/specifications/groups/{group_id}", response_model=ApiResponse[dict[str, Any]])
+async def get_specification_group(
+    group_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("specification.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """返回规格分组及多语言编辑数据。"""
+    group = await session.get(SpecificationGroup, group_id)
+    if group is None:
+        raise AppException(404, "specification_group_not_found", "规格分组不存在")
+    return success_response(
+        await _entity_detail(
+            session,
+            owner_type="specification_group",
+            entity=group,
+            translation_model=SpecificationGroupTranslation,
+            owner_field="group_id",
+        )
+    )
+
+
+@router.patch("/specifications/groups/{group_id}", response_model=ApiResponse[dict[str, Any]])
+async def patch_specification_group(
+    group_id: uuid.UUID,
+    payload: SpecificationGroupUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """编辑规格分组名称、状态和排序。"""
+    result = await _write_result(session, update_specification_group(session, group_id, payload, user.id))
+    return success_response(_serialize(result))
+
+
+@router.delete("/specifications/groups/{group_id}", response_model=ApiResponse[dict[str, Any]])
+async def remove_specification_group(
+    group_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """安全删除不含定义的空规格分组。"""
+    deleted_id = await _write_result(session, delete_specification_group(session, group_id, user.id))
+    return success_response({"deleted": True, "id": str(deleted_id)})
+
+
 @router.get("/specifications/definitions", response_model=ApiResponse[dict[str, Any]])
 async def list_specification_definitions(
     pagination: PaginationParams = Depends(),
@@ -675,14 +732,96 @@ async def post_specification_definition(payload: SpecificationDefinitionCreate, 
     return success_response(_serialize(result))
 
 
+@router.get("/specifications/definitions/{definition_id}", response_model=ApiResponse[dict[str, Any]])
+async def get_specification_definition(
+    definition_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("specification.read")),
+) -> ApiResponse[dict[str, Any]]:
+    """返回规格定义及多语言编辑数据。"""
+    definition = await session.get(SpecificationDefinition, definition_id)
+    if definition is None:
+        raise AppException(404, "specification_definition_not_found", "规格定义不存在")
+    return success_response(
+        await _entity_detail(
+            session,
+            owner_type="specification_definition",
+            entity=definition,
+            translation_model=SpecificationDefinitionTranslation,
+            owner_field="definition_id",
+        )
+    )
+
+
+@router.patch("/specifications/definitions/{definition_id}", response_model=ApiResponse[dict[str, Any]])
+async def patch_specification_definition(
+    definition_id: uuid.UUID,
+    payload: SpecificationDefinitionUpdate,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """编辑规格定义，并保护已有值的类型与单位。"""
+    result = await _write_result(
+        session,
+        update_specification_definition(session, definition_id, payload, user.id),
+    )
+    return success_response(_serialize(result))
+
+
+@router.delete("/specifications/definitions/{definition_id}", response_model=ApiResponse[dict[str, Any]])
+async def remove_specification_definition(
+    definition_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """安全删除没有任何参数值引用的规格定义。"""
+    deleted_id = await _write_result(
+        session,
+        delete_specification_definition(session, definition_id, user.id),
+    )
+    return success_response({"deleted": True, "id": str(deleted_id)})
+
+
 @router.get("/specifications/values", response_model=ApiResponse[dict[str, Any]])
 async def list_specification_values(
     pagination: PaginationParams = Depends(),
+    product_id: uuid.UUID | None = None,
+    product_model_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     _user: User = Depends(require_permission("specification.read")),
 ) -> ApiResponse[dict[str, Any]]:
     """分页列出 Product 与 ProductModel 的规格值。"""
-    return success_response(await _list_entities(session, ProductSpecValue, pagination))
+    conditions = []
+    if product_id is not None:
+        conditions.append(ProductSpecValue.product_id == product_id)
+    if product_model_id is not None:
+        conditions.append(ProductSpecValue.product_model_id == product_model_id)
+    total = await session.scalar(
+        select(func.count()).select_from(ProductSpecValue).where(*conditions)
+    )
+    values = list(
+        (
+            await session.scalars(
+                select(ProductSpecValue)
+                .where(*conditions)
+                .order_by(ProductSpecValue.sort_order, ProductSpecValue.id)
+                .offset(pagination.offset)
+                .limit(pagination.page_size)
+            )
+        ).all()
+    )
+    return success_response(
+        {
+            "items": [_serialize(value) for value in values],
+            "page": pagination.page,
+            "page_size": pagination.page_size,
+            "total": total or 0,
+        }
+    )
 
 
 @router.post("/specifications/values", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
@@ -707,6 +846,19 @@ async def patch_specification_value(
         update_specification_value(session, value_id, payload, user.id),
     )
     return success_response(_serialize(result))
+
+
+@router.delete("/specifications/values/{value_id}", response_model=ApiResponse[dict[str, Any]])
+async def remove_specification_value(
+    value_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("specification.manage")),
+    _csrf: None = Depends(require_csrf),
+) -> ApiResponse[dict[str, Any]]:
+    """清空产品或型号的单个规格赋值。"""
+    deleted_id = await _write_result(session, delete_specification_value(session, value_id, user.id))
+    return success_response({"deleted": True, "id": str(deleted_id)})
 
 
 def _register_entity_routes(

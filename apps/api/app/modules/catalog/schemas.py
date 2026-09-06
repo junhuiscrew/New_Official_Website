@@ -132,6 +132,14 @@ class SpecificationGroupCreate(BaseModel):
     translations: list[TranslationInput] = Field(default_factory=list)
 
 
+class SpecificationGroupUpdate(BaseModel):
+    """规格分组局部更新输入。"""
+
+    status: str | None = None
+    sort_order: int | None = None
+    translations: list[TranslationInput] | None = None
+
+
 class SpecificationDefinitionCreate(BaseModel):
     """规格定义创建输入。"""
 
@@ -149,6 +157,26 @@ class SpecificationDefinitionCreate(BaseModel):
     def validate_value_type(cls, value: str) -> str:
         """限制规格类型为交接文件冻结的五种类型。"""
         if value not in {"text", "number", "range", "boolean", "enum"}:
+            raise ValueError("不支持的规格值类型")
+        return value
+
+
+class SpecificationDefinitionUpdate(BaseModel):
+    """规格定义局部更新输入。"""
+
+    group_id: uuid.UUID | None = None
+    value_type: str | None = None
+    default_unit: str | None = None
+    is_filterable: bool | None = None
+    sort_order: int | None = None
+    status: str | None = None
+    translations: list[TranslationInput] | None = None
+
+    @field_validator("value_type")
+    @classmethod
+    def validate_value_type(cls, value: str | None) -> str | None:
+        """限制可选规格类型为系统冻结的五种类型。"""
+        if value is not None and value not in {"text", "number", "range", "boolean", "enum"}:
             raise ValueError("不支持的规格值类型")
         return value
 

@@ -124,4 +124,26 @@ describe('catalog admin routes', () => {
     expect(source).toContain("selectedValueType === 'boolean'")
     expect(source).toContain("selectedValueType === 'enum'")
   })
+
+  it('supports specification dictionary maintenance and product value clearing', () => {
+    const pageSource = readFileSync(
+      resolve(process.cwd(), 'app/pages/catalog/specifications.vue'),
+      'utf8',
+    )
+    const apiSource = readFileSync(
+      resolve(process.cwd(), 'app/composables/useCatalogApi.ts'),
+      'utf8',
+    )
+
+    expect(apiSource).toContain("'DELETE'")
+    expect(apiSource).toContain('function remove')
+    expect(pageSource).toContain("api.list<ProductItem>('/catalog/products?page_size=100')")
+    expect(pageSource).toContain('editGroup')
+    expect(pageSource).toContain('editDefinition')
+    expect(pageSource).toContain('deleteDefinition')
+    expect(pageSource).toContain('loadProductValues')
+    expect(pageSource).toContain('updateValue')
+    expect(pageSource).toContain('clearValue')
+    expect(pageSource).not.toContain('placeholder="Product UUID"')
+  })
 })

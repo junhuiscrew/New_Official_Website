@@ -4,13 +4,13 @@
 
 - 子阶段：Phase 3.7.1 — 资料盘点与只读预检
 - 执行日期：2026-09-06（Asia/Shanghai）
-- 状态：`PREPARATION_COMPLETE`
-- 输入状态：`WAITING_FOR_INPUT`
+- 状态：`BATCH01_DRAFT_IMPORTED`
+- 输入状态：`INPUT_RECEIVED`；正式名称、英文和技术字段仍待用户后台审核
 - Phase 3.7 总状态：**未完成，不是 Phase 3.7 PASS**
-- 数据写入：未写真实内容数据库，未上传真实素材，未修改 Publication/Route，未发布，未部署
-- 下一停止点：等待用户确认具体首批内容、真实来源、公开许可和非生产目标后，才能进入 3.7.2
+- 数据写入：仅写入获批的隔离本地 HTTPS 环境；全部为 draft，Route inactive/noindex，未发布、未部署
+- 下一停止点：等待用户在后台审核本批名称、英文和字段；受保护预览发布仍需另行授权
 
-本轮完成了源码级 CMS 能力核对、指定资料盘点、旧站只读比对、候选产品链规划、重复/slug/Route/来源/许可预检，以及环境和后续验收准备。现有资料可证明“有可整理的图片和旧站参考”，但不足以证明产品参数、经营事实、媒体公开权利或双语内容已经获批。
+本报告前 1–20 节保留 3.7.1 首次盘点的历史记录；第 21 节为 Batch01 实际接收、最小 CMS 补齐和隔离 draft 导入的最新结果。用户已确认本批媒体使用及派生处理许可，但名称、英文、字段术语和后续技术值仍未审核，不能视为公开内容。
 
 ## 2. 实际基线与工作区
 
@@ -384,3 +384,54 @@ Product 可整体替换 Material/Technology/Application/Solution 关系，服务
 - 用户仅授权首个产品写入该隔离环境为 draft，不授权 Review、Publish、Sitemap、生产部署或其他产品导入。
 
 试点已按上述授权完成，实际结果记录于 `docs/content/phase3-7-pilot-report.md`。首个产品的最新版参数、型号适用范围和结构化关系仍缺权威证据，因此保持空缺；第 5 张“日精”图片仍在本批范围外；受保护预览发布仍需用户另行授权。此后续不改变第 1 节的结论：3.7.1 准备完成不等于 Phase 3.7 完成。
+
+## 21. Batch01 资料接收、字段预检与隔离 Draft 导入（2026-09-06）
+
+### 21.1 实际基线与输入状态
+
+- 继续分支：`phase-3.7`；开始及当前远端 SHA：`60aba2dba797cc6bb24758e12d731d6be4e57415`；
+- 工作区原有内容在开始时 clean，本轮未回退、未覆盖用户工作；
+- 包内 SHA256SUMS 18/18 匹配，工作簿 5 个 Sheet/5 个表可读；
+- `INPUT_RECEIVED`：公司原文、Logo、三张产品图、字段参考图已收到；
+- `VALUES_INTENTIONALLY_EMPTY`：3 款产品没有创建任何 ProductSpecValue，这是用户要求，不是导入失败；
+- `NAME_REVIEW_PENDING`：法定名、正式英文名、产品英文工作名待用户审核；
+- `FIELD_TERM_PENDING`：F05 按原中文名登记，英文保持空缺；
+- 原 `TARGET_CONFIRMATION_PENDING` 已关闭：用户已经批准独立本地 HTTPS、独立数据库/MinIO、Basic Auth、noindex 目标和 draft-only 导入。
+
+### 21.2 CMS 字段能力预检与最小补齐
+
+源码确认旧基线可新建规格分组/定义和维护规格值，但缺少定义/分组编辑、安全删除及产品化值筛选入口。本轮未创建新 CMS 或数据表，只在现有 Catalog 服务内补齐：
+
+- `SpecificationGroup` 与 `SpecificationDefinition` detail/PATCH/DELETE；
+- 双语名称/说明、单位、分组、顺序、状态编辑；
+- 已有 ProductSpecValue 时冻结 definition 的 `value_type` 和 `default_unit`；
+- 被引用定义、含定义分组返回 409；先清空单个产品值后，未使用定义/分组可安全删除；
+- Admin 使用产品下拉选择，支持 5 种值类型的新增、编辑和清空，不要求手填 UUID；
+- 继续要求 Auth + `specification.manage` + CSRF，并复用 Revision/Audit。
+
+相关测试只创建 `batch01-test-*` 隔离记录，未向 P01/P02/P03 写入测试值。
+
+### 21.3 Dry-run、写入与冲突
+
+写入前已生成隔离 PostgreSQL 备份（459,221 B，SHA-256 `8186E3B0639C7ADBD744635E939B03F6DD64F73BDECF251AE2F51E56A8364C93`，位于 ignored 私有目录）。Dry-run 结果为 Company、2 分类、3 产品、2 规格组、7 定义 create；ProductSpecValue 明确为空；relations blocked；IMG-05 blocked publication。
+
+已存在的旧试点占用 `nitrided-barrel`。本轮保留旧记录，P02 使用临时 draft slug `junhui-nitrided-barrel`，不将冲突解释为更新授权。IMG-03 派生 WebP 的 SHA-256 与旧试点媒体一致，因此复用，不重复上传。
+
+按授权先导入 P01 并核验，再扩展至 P01–P03。三产品和 Company 的 zh-CN/en TranslationStatus、Publication 均为 draft，Route 均 inactive/noindex；3 款产品有主图但没有参数值、型号或结构化关系。重复运行同批 apply 后新增 media/group/definition/value 均为 0，幂等通过。
+
+### 21.4 数据与公开门禁结果
+
+隔离库当前计数：Product 4（含旧试点）、CompanyProfile 1、ProductCategory 3、SpecificationGroup 2、SpecificationDefinition 7、ProductSpecValue 0、MediaAsset 7。Revision/Audit 汇总显示 Product、Company、Category、Group、Definition 与 Media 写入均通过既有服务留痕。
+
+Public Product API 返回 200 且 `total=0`；隔离 Sitemap 被配置关闭，返回 404；本批 slug 未进入 Sitemap。MinIO `public-media` 共 7 个真实对象，`private-rfq` 为 0；IMG-05 未上传。Company 的 `/zh-cn/about/` 与 `/en/about/` 仍是 inactive/noindex。
+
+### 21.5 验证结果与下一停止点
+
+- Ruff：PASS；
+- Backend Catalog/Phase37/Public DTO：47 passed；
+- PostgreSQL integration：8 passed；
+- Admin Vitest：26 passed；
+- Admin Typecheck、Prettier、production build：PASS；
+- 隔离 Compose、API live/ready、HTTPS health：PASS。
+
+详细来源哈希、create/no-op/conflict、字段清单和测试命令记录见 `docs/content/phase3-7-batch01-draft-report.md`。下一步等待用户在现有后台审核中英文内容与字段术语；不自动 Review/Publish，不进入生产部署。

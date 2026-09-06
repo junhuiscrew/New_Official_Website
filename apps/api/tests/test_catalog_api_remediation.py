@@ -310,3 +310,148 @@ async def test_editor_can_read_product_dependencies_and_edit_relations_without_c
     assert product_update.status_code == 200
     assert relation_update.status_code == 200
     assert [response.status_code for response in forbidden_creates] == [403, 403, 403, 403]
+
+
+async def test_specification_dictionary_supports_safe_edit_disable_clear_and_delete(
+    catalog_remediation_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证规格字典可维护，并保护已被产品值引用的单位、类型和删除操作。
+
+    输入：catalog_remediation_api_factory，带 content_admin 的隔离测试数据库。
+    输出：None；字段维护、引用保护或产品值清空任一失效时测试失败。
+    """
+    async with _role_client(catalog_remediation_api_factory, "content_admin") as client:
+        locales = (await client.get("/api/v1/locales")).json()["data"]
+        zh_id = next(item["id"] for item in locales if item["code"] == "zh-CN")
+        en_id = next(item["id"] for item in locales if item["code"] == "en")
+
+        group_response = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={
+                "code": "batch01-test-group",
+                "sort_order": 1,
+                "translations": [
+                    {"locale_id": zh_id, "name": "测试参数组"},
+                    {"locale_id": en_id, "name": "Test specification group"},
+                ],
+            },
+        )
+        group_id = group_response.json()["data"]["id"]
+        group_update = await client.patch(
+            f"/api/v1/catalog/specifications/groups/{group_id}",
+            json={
+                "sort_order": 2,
+                "translations": [
+                    {"locale_id": zh_id, "name": "测试参数组（已编辑）"},
+                    {"locale_id": en_id, "name": "Edited test specification group"},
+                ],
+            },
+        )
+        group_detail = await client.get(f"/api/v1/catalog/specifications/groups/{group_id}")
+
+        definition_response = await client.post(
+            "/api/v1/catalog/specifications/definitions",
+            json={
+                "group_id": group_id,
+                "code": "batch01-test-length",
+                "value_type": "number",
+                "default_unit": "mm",
+                "sort_order": 1,
+                "translations": [
+                    {
+                        "locale_id": zh_id,
+                        "name": "测试长度",
+                        "fields": {"help_text": "仅用于字段管理测试"},
+                    }
+                ],
+            },
+        )
+        definition_id = definition_response.json()["data"]["id"]
+
+        category_response = await client.post(
+            "/api/v1/catalog/categories",
+            json={
+                "slug": "batch01-test-category",
+                "translations": [{"locale_id": zh_id, "name": "测试分类"}],
+            },
+        )
+        product_response = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category_response.json()["data"]["id"],
+                "slug": "batch01-test-product",
+                "translations": [{"locale_id": zh_id, "name": "测试产品"}],
+            },
+        )
+        product_id = product_response.json()["data"]["id"]
+        value_response = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": product_id,
+                "definition_id": definition_id,
+                "value_number": 12.5,
+            },
+        )
+        value_id = value_response.json()["data"]["id"]
+
+        unit_change = await client.patch(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}",
+            json={"default_unit": "cm"},
+        )
+        type_change = await client.patch(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}",
+            json={"value_type": "range"},
+        )
+        allowed_definition_update = await client.patch(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}",
+            json={
+                "status": "disabled",
+                "sort_order": 7,
+                "translations": [
+                    {
+                        "locale_id": zh_id,
+                        "name": "测试长度（停用）",
+                        "fields": {"help_text": "保留历史值，不再供新录入选择"},
+                    }
+                ],
+            },
+        )
+        filtered_values = await client.get(
+            "/api/v1/catalog/specifications/values",
+            params={"product_id": product_id},
+        )
+        referenced_definition_delete = await client.delete(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}"
+        )
+        referenced_group_delete = await client.delete(
+            f"/api/v1/catalog/specifications/groups/{group_id}"
+        )
+        cleared_value = await client.delete(f"/api/v1/catalog/specifications/values/{value_id}")
+        definition_delete = await client.delete(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}"
+        )
+        group_delete = await client.delete(f"/api/v1/catalog/specifications/groups/{group_id}")
+
+    assert group_response.status_code == 201
+    assert group_update.status_code == 200
+    assert group_detail.status_code == 200
+    assert group_detail.json()["data"]["sort_order"] == 2
+    assert {item["name"] for item in group_detail.json()["data"]["translations"]} == {
+        "测试参数组（已编辑）",
+        "Edited test specification group",
+    }
+    assert unit_change.status_code == 409
+    assert unit_change.json()["error"]["code"] == "specification_definition_in_use"
+    assert type_change.status_code == 409
+    assert type_change.json()["error"]["code"] == "specification_definition_in_use"
+    assert allowed_definition_update.status_code == 200
+    assert allowed_definition_update.json()["data"]["status"] == "disabled"
+    assert filtered_values.status_code == 200
+    assert [item["id"] for item in filtered_values.json()["data"]["items"]] == [value_id]
+    assert referenced_definition_delete.status_code == 409
+    assert referenced_group_delete.status_code == 409
+    assert cleared_value.status_code == 200
+    assert cleared_value.json()["data"] == {"deleted": True, "id": value_id}
+    assert definition_delete.status_code == 200
+    assert group_delete.status_code == 200

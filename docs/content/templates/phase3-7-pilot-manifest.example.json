@@ -21,7 +21,7 @@
     "name_zh_cn": "注塑机氮化料筒",
     "name_en": "Nitrided Barrel for Injection Molding Machines"
   },
-  "sources": "private-manifest-only",
+  "source_hashes": "private-manifest-only",
   "mappings": {},
   "blocked_fields": [
     "straightness",

@@ -23,6 +23,7 @@ from app.modules.media.models import MediaAsset
 from app.modules.users import models as user_models  # noqa: F401
 from app.modules.users.bootstrap import create_super_admin
 from app.phase37_pilot import (
+    PilotApiClient,
     PilotImportError,
     PilotManifest,
     build_webp_derivative,
@@ -233,6 +234,10 @@ def _manifest_payload(source_names: list[str], source_root: Path) -> dict[str, o
         "target_environment": "phase37-local-https",
         "draft_import_authorized": True,
         "protected_preview_publish_authorized": False,
+        "reviewer_zh_cn": "user",
+        "reviewer_en": "user",
+        "content_source_policy": "unambiguous_source_facts_only",
+        "out_of_scope_sources": ["05-骏辉螺杆 氮化机筒日精.jpg"],
         "source_url": "https://www.junhuiscrew.com/product/example.html",
         "category": {
             "external_key": "junhui:product-category:injection-molding-machine-barrels",
@@ -258,7 +263,11 @@ def test_manifest_requires_exact_authorized_scope(tmp_path: Path) -> None:
     for name in source_names:
         (tmp_path / name).write_bytes(name.encode())
     valid = _manifest_payload(_APPROVED_SOURCE_NAMES, tmp_path)
-    assert PilotManifest.model_validate(valid).product.slug == "nitrided-barrel"
+    manifest = PilotManifest.model_validate(valid)
+    assert manifest.product.slug == "nitrided-barrel"
+    assert manifest.reviewer_zh_cn == "user"
+    assert manifest.reviewer_en == "user"
+    assert manifest.out_of_scope_sources == ["05-骏辉螺杆 氮化机筒日精.jpg"]
 
     invalid = _manifest_payload(source_names, tmp_path)
     with pytest.raises(ValueError, match="exactly_four_sources"):
@@ -344,6 +353,18 @@ def test_evidence_redaction_removes_credentials_and_internal_ids() -> None:
     assert "public/internal.webp" not in serialized
 
 
+def test_pilot_client_does_not_inherit_proxy_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """验证隔离导入请求不会因宿主代理变量离开本机 HTTPS 目标。"""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+    client = PilotApiClient("https://api.junhui.test/api/v1")
+    try:
+        assert client.client._trust_env is False
+    finally:
+        client.close()
+
+
 def test_phase37_https_stack_contract() -> None:
     """验证隔离 HTTPS 编排、三域名、Basic Auth 与 noindex 门禁。"""
     repository_root = Path("/workspace")
@@ -357,6 +378,7 @@ def test_phase37_https_stack_contract() -> None:
     assert "APP_ENV: staging" in compose
     assert "PUBLIC_SITEMAP_ENABLED: 'false'" in compose
     assert "AUTH_COOKIE_SECURE: 'true'" in compose
+    assert "aliases:" in compose
     assert "junhui.test" in nginx
     assert "admin.junhui.test" in nginx
     assert "api.junhui.test" in nginx
@@ -364,5 +386,7 @@ def test_phase37_https_stack_contract() -> None:
     assert 'X-Robots-Tag "noindex, nofollow" always' in nginx
     assert "InstallTrustAndHosts" in preparation
     assert "subjectAltName" in preparation
+    assert "New-Phase37AdminPassword" in preparation
+    assert "phase37-review@example.com" in preparation
     assert "data/phase3-7/" in gitignore
     assert ".env.phase37" in gitignore

@@ -76,6 +76,12 @@ services:
     ports: !reset []
 
   nginx:
+    networks:
+      default:
+        aliases:
+          - junhui.test
+          - admin.junhui.test
+          - api.junhui.test
     ports: !override
       - '443:443'
     volumes: !override
@@ -91,13 +97,4 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          'CMD',
-          'wget',
-          '--no-check-certificate',
-          '-q',
-          '--spider',
-          'https://127.0.0.1/healthz',
-        ]
-
+      test: ['CMD', 'wget', '--no-check-certificate', '-q', '--spider', 'https://127.0.0.1/healthz']

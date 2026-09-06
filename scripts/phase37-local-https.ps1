@@ -26,10 +26,20 @@ function New-Phase37Secret {
     return [Convert]::ToHexString($Bytes).ToLowerInvariant()
 }
 
+function New-Phase37AdminPassword {
+    <#
+    生成满足既有管理员密码强度门禁的随机密码。
+
+    输入：无。
+    输出：string，包含大小写字母、数字和特殊字符的随机值。
+    #>
+    return "Jh9!$(New-Phase37Secret)"
+}
+
 if (-not (Test-Path -LiteralPath $EnvironmentFile)) {
     $DatabasePassword = New-Phase37Secret
     $MinioSecret = New-Phase37Secret
-    $AdminPassword = New-Phase37Secret
+    $AdminPassword = New-Phase37AdminPassword
     $BasicPassword = New-Phase37Secret
     $EnvironmentLines = @(
         'POSTGRES_DB=junhui_phase37'
@@ -43,7 +53,7 @@ if (-not (Test-Path -LiteralPath $EnvironmentFile)) {
         'CORS_ALLOWED_ORIGINS=["https://junhui.test","https://admin.junhui.test","https://api.junhui.test"]'
         'PHASE37_BASIC_USER=phase37-review'
         "PHASE37_BASIC_PASSWORD=$BasicPassword"
-        'PHASE37_ADMIN_EMAIL=phase37-review@junhui.test'
+        'PHASE37_ADMIN_EMAIL=phase37-review@example.com'
         "PHASE37_ADMIN_PASSWORD=$AdminPassword"
         'PHASE37_ADMIN_DISPLAY_NAME=Phase 3.7 Local Reviewer'
         'PHASE37_CA_CERT=/workspace/data/phase3-7/tls/ca.crt'
@@ -87,6 +97,33 @@ if (-not (Test-Path -LiteralPath $ServerCertificate)) {
 }
 
 $PrivateEnvironment = Get-Content -LiteralPath $EnvironmentFile
+$PrivateEnvironment = $PrivateEnvironment | ForEach-Object {
+    if ($_ -eq 'PHASE37_ADMIN_EMAIL=phase37-review@junhui.test') {
+        'PHASE37_ADMIN_EMAIL=phase37-review@example.com'
+    } else {
+        $_
+    }
+}
+Set-Content -LiteralPath $EnvironmentFile -Value $PrivateEnvironment -Encoding utf8NoBOM
+$ExistingAdminPassword = ($PrivateEnvironment | Where-Object { $_ -like 'PHASE37_ADMIN_PASSWORD=*' }) -replace '^[^=]+=', ''
+if (
+    $ExistingAdminPassword.Length -lt 12 -or
+    $ExistingAdminPassword -cnotmatch '[A-Z]' -or
+    $ExistingAdminPassword -cnotmatch '[a-z]' -or
+    $ExistingAdminPassword -notmatch '[0-9]' -or
+    $ExistingAdminPassword -notmatch '[^A-Za-z0-9]'
+) {
+    # 尚未成功 Bootstrap 的弱随机值可安全轮换；只写私有 env，不打印新值。
+    $ReplacementPassword = New-Phase37AdminPassword
+    $PrivateEnvironment = $PrivateEnvironment | ForEach-Object {
+        if ($_ -like 'PHASE37_ADMIN_PASSWORD=*') {
+            "PHASE37_ADMIN_PASSWORD=$ReplacementPassword"
+        } else {
+            $_
+        }
+    }
+    Set-Content -LiteralPath $EnvironmentFile -Value $PrivateEnvironment -Encoding utf8NoBOM
+}
 $BasicUser = ($PrivateEnvironment | Where-Object { $_ -like 'PHASE37_BASIC_USER=*' }) -replace '^[^=]+=', ''
 $BasicPassword = ($PrivateEnvironment | Where-Object { $_ -like 'PHASE37_BASIC_PASSWORD=*' }) -replace '^[^=]+=', ''
 $PasswordHash = & $OpenSsl passwd -apr1 $BasicPassword
@@ -109,4 +146,3 @@ if ($InstallTrustAndHosts) {
     Write-Host 'No trust-store or hosts changes were made.'
     Write-Host 'Re-run with -InstallTrustAndHosts only when local machine installation is approved.'
 }
-

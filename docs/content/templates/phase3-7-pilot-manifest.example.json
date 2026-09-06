@@ -4,6 +4,10 @@
   "target_environment": "phase37-local-https",
   "draft_import_authorized": true,
   "protected_preview_publish_authorized": false,
+  "reviewer_zh_cn": "user",
+  "reviewer_en": "user",
+  "content_source_policy": "unambiguous_source_facts_only",
+  "out_of_scope_sources": ["05-骏辉螺杆 氮化机筒日精.jpg"],
   "source_url": "https://www.junhuiscrew.com/product/example.html",
   "category": {
     "external_key": "junhui:product-category:injection-molding-machine-barrels",

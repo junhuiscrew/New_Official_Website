@@ -63,6 +63,10 @@ class PilotManifest(BaseModel):
     target_environment: Literal["phase37-local-https"]
     draft_import_authorized: bool
     protected_preview_publish_authorized: bool
+    reviewer_zh_cn: Literal["user"]
+    reviewer_en: Literal["user"]
+    content_source_policy: Literal["unambiguous_source_facts_only"]
+    out_of_scope_sources: list[str]
     source_url: HttpUrl
     category: PilotContent
     product: PilotContent
@@ -96,6 +100,8 @@ class PilotManifest(BaseModel):
         }
         if {source.external_key for source in self.sources} != expected_keys:
             raise ValueError("source_external_key_scope_mismatch")
+        if self.out_of_scope_sources != ["05-骏辉螺杆 氮化机筒日精.jpg"]:
+            raise ValueError("out_of_scope_source_mismatch")
         if not self.draft_import_authorized or self.protected_preview_publish_authorized:
             raise ValueError("draft_only_authorization_required")
         return self
@@ -252,6 +258,7 @@ class PilotApiClient:
             verify=ca_cert or True,
             timeout=30,
             follow_redirects=False,
+            trust_env=False,
         )
 
     def close(self) -> None:

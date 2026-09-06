@@ -455,3 +455,149 @@ async def test_specification_dictionary_supports_safe_edit_disable_clear_and_del
     assert cleared_value.json()["data"] == {"deleted": True, "id": value_id}
     assert definition_delete.status_code == 200
     assert group_delete.status_code == 200
+
+
+async def test_new_specification_value_requires_enabled_definition_and_group(
+    catalog_remediation_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证新增规格值只允许启用的定义及所属分组。
+
+    输入：catalog_remediation_api_factory，带 content_admin 的隔离测试数据库。
+    输出：None；停用/退役定义或停用分组仍接受新值时测试失败。
+    """
+    async with _role_client(catalog_remediation_api_factory, "content_admin") as client:
+        locales = (await client.get("/api/v1/locales")).json()["data"]
+        zh_id = next(item["id"] for item in locales if item["code"] == "zh-CN")
+        enabled_group = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={
+                "code": "batch01-status-enabled-group",
+                "status": "enabled",
+                "translations": [{"locale_id": zh_id, "name": "启用测试组"}],
+            },
+        )
+        category = await client.post(
+            "/api/v1/catalog/categories",
+            json={
+                "slug": "batch01-status-category",
+                "translations": [{"locale_id": zh_id, "name": "状态测试分类"}],
+            },
+        )
+        product = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category.json()["data"]["id"],
+                "slug": "batch01-status-product",
+                "translations": [{"locale_id": zh_id, "name": "状态测试产品"}],
+            },
+        )
+        blocked_product = await client.post(
+            "/api/v1/catalog/products",
+            json={
+                "category_id": category.json()["data"]["id"],
+                "slug": "batch01-status-blocked-product",
+                "translations": [{"locale_id": zh_id, "name": "停用门禁测试产品"}],
+            },
+        )
+        definition = await client.post(
+            "/api/v1/catalog/specifications/definitions",
+            json={
+                "group_id": enabled_group.json()["data"]["id"],
+                "code": "batch01-status-definition",
+                "value_type": "text",
+                "translations": [{"locale_id": zh_id, "name": "状态测试字段"}],
+            },
+        )
+        product_id = product.json()["data"]["id"]
+        blocked_product_id = blocked_product.json()["data"]["id"]
+        definition_id = definition.json()["data"]["id"]
+        created_value = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": product_id,
+                "definition_id": definition_id,
+                "value_text": "历史值保留",
+            },
+        )
+
+        disabled_definition = await client.patch(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}",
+            json={"status": "disabled"},
+        )
+        disabled_definition_detail = await client.get(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}"
+        )
+        rejected_disabled = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": blocked_product_id,
+                "definition_id": definition_id,
+                "value_text": "不得新增",
+            },
+        )
+        retired_definition = await client.patch(
+            f"/api/v1/catalog/specifications/definitions/{definition_id}",
+            json={"status": "retired"},
+        )
+        rejected_retired = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": blocked_product_id,
+                "definition_id": definition_id,
+                "value_text": "不得新增",
+            },
+        )
+
+        disabled_group = await client.post(
+            "/api/v1/catalog/specifications/groups",
+            json={
+                "code": "batch01-status-disabled-group",
+                "status": "disabled",
+                "translations": [{"locale_id": zh_id, "name": "停用测试组"}],
+            },
+        )
+        disabled_group_definition = await client.post(
+            "/api/v1/catalog/specifications/definitions",
+            json={
+                "group_id": disabled_group.json()["data"]["id"],
+                "code": "batch01-status-group-definition",
+                "value_type": "number",
+                "translations": [{"locale_id": zh_id, "name": "停用组字段"}],
+            },
+        )
+        rejected_group = await client.post(
+            "/api/v1/catalog/specifications/values",
+            json={
+                "product_id": blocked_product_id,
+                "definition_id": disabled_group_definition.json()["data"]["id"],
+                "value_number": 1.0,
+            },
+        )
+        retained_values = await client.get(
+            "/api/v1/catalog/specifications/values",
+            params={"product_id": product_id},
+        )
+
+    assert enabled_group.status_code == 201
+    assert category.status_code == 201
+    assert product.status_code == 201
+    assert blocked_product.status_code == 201
+    assert definition.status_code == 201
+    assert created_value.status_code == 201
+    assert disabled_definition.status_code == 200
+    assert disabled_definition.json()["data"]["status"] == "disabled"
+    assert disabled_definition_detail.json()["data"]["status"] == "disabled"
+    assert rejected_disabled.status_code == 409
+    assert rejected_disabled.json()["error"]["code"] == "specification_definition_inactive"
+    assert retired_definition.status_code == 200
+    assert rejected_retired.status_code == 409
+    assert rejected_retired.json()["error"]["code"] == "specification_definition_inactive"
+    assert disabled_group.status_code == 201
+    assert disabled_group_definition.status_code == 201
+    assert rejected_group.status_code == 409
+    assert rejected_group.json()["error"]["code"] == "specification_group_inactive"
+    assert retained_values.status_code == 200
+    assert [item["id"] for item in retained_values.json()["data"]["items"]] == [
+        created_value.json()["data"]["id"]
+    ]

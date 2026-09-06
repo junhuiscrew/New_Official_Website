@@ -113,3 +113,37 @@ Typecheck 首次在受限沙箱中因 Nuxt 无法写忽略的 `.nuxt/schema/nuxt
 - 产品结构化关系。
 
 这些待审核项不阻塞当前 draft 保存，但会阻塞 Review/Publish。任何受保护预览发布、正式发布、生产部署、DNS、旧站下线、Search Console/Bing 或 Analytics 仍需单独授权。
+
+## 9. 本轮规格停用门禁与内容审核包（2026-09-06）
+
+本轮没有重新导入 Batch01，也没有写入任何实际参数、Review 或 Publish 状态。后端新增规格值前会同时读取 Definition 与所属 Group：两者必须均为 `enabled`；Definition disabled/retired 返回 HTTP 409 `specification_definition_inactive`，Group disabled/retired 返回 HTTP 409 `specification_group_inactive`。已有历史值不会因停用而被级联删除，仍可按权限查看和清空；被引用的定义继续拒绝删除。Admin 新增值选择器只展示 enabled Definition 且所属 Group enabled 的选项。
+
+从实际隔离 Admin/API 读取的公司、三款产品、主图、分类/slug 和七个字段已整理为可阅读审核包：
+
+`docs/content/phase3-7-batch01-content-review-package.md`
+
+审核包明确记录：
+
+- 公司中文全文为已保存用户原文；英文名称、摘要和全文为待审核工作稿；
+- P01/P02/P03 的中英文名称与摘要、分类、draft slug 和 primary media；
+- F01–F07 的中文名称、英文草稿/缺失状态、类型、单位和分组；
+- 旧试点 `nitrided-barrel` 与 P02 `junhui-nitrided-barrel` 的并列差异；
+- 三款真实产品当前 `ProductSpecValue=0`，状态 `VALUES_INTENTIONALLY_EMPTY`；F05 未使用、无数值和无关系不构成本批审核阻塞。
+
+本轮只读复核再次确认 P01/P02/P03 均为双语 Translation/Publication draft、canonical Route inactive/noindex，Company 也保持 draft/closed；未改变任何审核或发布状态。
+
+### 本轮实际验证
+
+| 检查 | 实际结果 |
+|---|---|
+| Backend catalog/regression（含 TEST ONLY 规格停用场景） | PASS，48 passed / 29.67s |
+| PostgreSQL integration + `alembic upgrade head` | PASS，8 passed / 3.15s |
+| Batch01 API verify（P01–P03） | PASS；三款 `values_intentionally_empty=true`、relations empty、routes closed |
+| Admin Vitest | PASS，27 passed |
+| Admin Typecheck | PASS |
+| Prettier（本轮前端与审核包相关文件） | PASS，All matched files use Prettier code style |
+| Admin production build | PASS，Nuxt 4.5.2 / Nitro node-server |
+| Ruff（隔离一次性容器，`ruff==0.12.11`） | PASS，`All checks passed!` |
+| Compose health | PASS；API/Admin/Website/PostgreSQL/Redis/MinIO/Worker/Nginx 及测试服务 healthy |
+
+本轮已重新构建并重启隔离 API/Worker 镜像，运行中的本地后台已包含上述规格停用门禁。没有修改 migration、权限、Publication/Route 架构或真实 Batch01 内容状态。未完成项仍只需用户审核，不代表可公开发布。

@@ -68,6 +68,16 @@ const valueDrafts = reactive<Record<string, SpecificationValueDraft>>({})
 const errorMessage = ref('')
 const successMessage = ref('')
 
+// 新增值只能选择同时启用的字段与分组，和后端新增门禁保持同一套生命周期判断。
+const availableDefinitions = computed(() => {
+  const enabledGroupIds = new Set(
+    groups.value.filter((group) => group.status === 'enabled').map((group) => group.id),
+  )
+  return definitions.value.filter(
+    (definition) => definition.status === 'enabled' && enabledGroupIds.has(definition.group_id),
+  )
+})
+
 const groupForm = reactive({
   code: '',
   status: 'enabled',
@@ -98,7 +108,9 @@ const valueForm = reactive<SpecificationValueDraft>({
 
 // 当前规格类型决定唯一显示和提交的值字段，避免多个类型字段同时进入请求体。
 const selectedValueType = computed(
-  () => definitions.value.find((item) => item.id === valueForm.definition_id)?.value_type ?? null,
+  () =>
+    availableDefinitions.value.find((item) => item.id === valueForm.definition_id)?.value_type ??
+    null,
 )
 
 function cleanTranslations(items: CatalogTranslationDraft[]) {
@@ -454,11 +466,7 @@ onMounted(load)
         <form class="inline-form" @submit.prevent="createValue">
           <select v-model="valueForm.definition_id" required>
             <option value="">Definition</option>
-            <option
-              v-for="item in definitions.filter((definition) => definition.status === 'enabled')"
-              :key="item.id"
-              :value="item.id"
-            >
+            <option v-for="item in availableDefinitions" :key="item.id" :value="item.id">
               {{ item.code }}
             </option>
           </select>

@@ -146,4 +146,14 @@ describe('catalog admin routes', () => {
     expect(pageSource).toContain('clearValue')
     expect(pageSource).not.toContain('placeholder="Product UUID"')
   })
+
+  it('only offers values for enabled definitions in enabled groups', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/pages/catalog/specifications.vue'),
+      'utf8',
+    )
+    expect(source).toContain('availableDefinitions')
+    expect(source).toContain("group.status === 'enabled'")
+    expect(source).toContain('v-for="item in availableDefinitions"')
+  })
 })

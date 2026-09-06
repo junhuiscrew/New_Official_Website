@@ -931,11 +931,39 @@ async def delete_specification_group(
     return group_id
 
 
+async def _ensure_specification_can_receive_value(
+    session: AsyncSession,
+    definition: SpecificationDefinition,
+) -> None:
+    """
+    校验规格定义及所属分组仍可接收新的产品参数值。
+
+    输入：session，数据库会话；definition，待写入的规格定义。
+    输出：None；定义或分组非 enabled 时抛出明确业务异常。
+    """
+    if definition.status != "enabled":
+        raise AppException(
+            409,
+            "specification_definition_inactive",
+            "规格定义已停用或退役，不能新增规格值",
+        )
+    group = await session.get(SpecificationGroup, definition.group_id)
+    if group is None:
+        raise AppException(404, "specification_group_not_found", "规格所属分组不存在")
+    if group.status != "enabled":
+        raise AppException(
+            409,
+            "specification_group_inactive",
+            "规格所属分组已停用或退役，不能新增规格值",
+        )
+
+
 async def create_specification_value(session: AsyncSession, payload: SpecificationValueCreate, actor_id: uuid.UUID | None = None) -> ProductSpecValue:
-    """根据 Definition.value_type 校验并保存动态规格值。"""
+    """根据启用状态与 value_type 校验并保存动态规格值。"""
     definition = await session.get(SpecificationDefinition, payload.definition_id)
     if definition is None:
         raise AppException(404, "specification_definition_not_found", "规格定义不存在")
+    await _ensure_specification_can_receive_value(session, definition)
     type_to_value = {
         SpecificationValueType.TEXT.value: payload.value_text,
         SpecificationValueType.NUMBER.value: payload.value_number,

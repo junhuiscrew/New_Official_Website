@@ -60,6 +60,7 @@ from app.modules.content.services.publication import invalidate_publication_afte
 from app.modules.content.services.revisions import store_revision
 from app.modules.content.services.routes import create_content_route
 from app.modules.localization.models import Locale
+from app.modules.media.models import MediaAsset
 
 _ENTITY_CONFIG: dict[str, tuple[type, type, str, str]] = {
     "product_category": (ProductCategory, ProductCategoryTranslation, "category_id", "products"),
@@ -97,6 +98,36 @@ async def _get_default_locale(session: AsyncSession) -> Locale:
     if locale is None:
         raise AppException(409, "default_locale_required", "必须配置一个默认语言")
     return locale
+
+
+async def _validate_primary_media(
+    session: AsyncSession,
+    media_id: uuid.UUID | None,
+) -> None:
+    """
+    验证产品主媒体可以通过公开媒体代理交付。
+
+    输入：
+        session: AsyncSession，当前数据库会话。
+        media_id: uuid.UUID | None，可空的媒体资产ID。
+
+    输出：
+        None，合法或未设置时返回；非法媒体抛出稳定业务异常。
+    """
+    if media_id is None:
+        return
+    asset = await session.get(MediaAsset, media_id)
+    if (
+        asset is None
+        or asset.visibility != "public"
+        or asset.storage_bucket != "public-media"
+        or asset.upload_status != "ready"
+    ):
+        raise AppException(
+            422,
+            "product_primary_media_invalid",
+            "产品主媒体必须是可用的公开媒体",
+        )
 
 
 def _entity_snapshot(entity: Any) -> dict[str, Any]:
@@ -534,7 +565,16 @@ async def create_product(session: AsyncSession, payload: ProductCreate, actor_id
     category = await session.get(ProductCategory, payload.category_id)
     if category is None or category.status != "enabled":
         raise AppException(404, "category_not_found", "产品分类不存在或未启用")
-    product = Product(category_id=payload.category_id, code=payload.code, slug=payload.slug, status=payload.status, featured=payload.featured, sort_order=payload.sort_order)
+    await _validate_primary_media(session, payload.primary_media_id)
+    product = Product(
+        category_id=payload.category_id,
+        code=payload.code,
+        slug=payload.slug,
+        status=payload.status,
+        featured=payload.featured,
+        sort_order=payload.sort_order,
+        primary_media_id=payload.primary_media_id,
+    )
     session.add(product)
     await session.flush()
     await _write_entity_content(session, owner_type="product", entity=product, translation_model=ProductTranslation, owner_field="product_id", translations=payload.translations, category_slug=category.slug, actor_id=actor_id, action="product.create")
@@ -547,6 +587,8 @@ async def update_product(session: AsyncSession, product_id: uuid.UUID, payload: 
     if product is None:
         raise AppException(404, "product_not_found", "产品不存在")
     changes = payload.model_dump(exclude_unset=True, exclude={"translations"})
+    if "primary_media_id" in changes:
+        await _validate_primary_media(session, changes["primary_media_id"])
     target_category_id = changes.get("category_id", product.category_id)
     target_category = await session.get(ProductCategory, target_category_id)
     if target_category is None or target_category.status != "enabled":

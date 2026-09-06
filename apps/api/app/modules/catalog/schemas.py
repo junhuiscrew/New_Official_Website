@@ -60,6 +60,7 @@ class ProductCreate(BaseModel):
     status: str = "enabled"
     featured: bool = False
     sort_order: int = 0
+    primary_media_id: uuid.UUID | None = None
     translations: list[TranslationInput] = Field(default_factory=list)
 
     _validate_slug = field_validator("slug")(_slug)
@@ -74,6 +75,7 @@ class ProductUpdate(BaseModel):
     status: str | None = None
     featured: bool | None = None
     sort_order: int | None = None
+    primary_media_id: uuid.UUID | None = None
     translations: list[TranslationInput] | None = None
 
     _validate_slug = field_validator("slug")(_slug)

@@ -9,7 +9,7 @@
 - 本轮实现 SHA：`87b44d4a5c6c0d7f3dce01a1514f84ca55afaf90`
 - 试点状态：`DRAFT_IMPORT_COMPLETE_AWAITING_USER_REVIEW`
 - 发布状态：未 Review、未 Publish、Route inactive/noindex、未进入 Sitemap
-- 远端状态：未 push、未 merge、未部署
+- 远端状态：`phase-3.7` 已推送至 `origin`；未 merge、未部署
 
 本轮在独立 PostgreSQL、Redis、MinIO 和 HTTPS Compose project 中完成“注塑机氮化料筒”双语 draft 试点。导入仅包含用户确认的中英文产品名称、保守的 draft 描述和 4 张获批图片派生件；旧站存在冲突或无法确定适用范围的参数、型号与结构化关系均保持缺失。下一步必须由用户在 Admin 中审核并修改内容，不能把本轮结果视为正式发布批准。
 
@@ -162,6 +162,35 @@
 | HTTPS / Basic Auth | Docker network + private CA | PASS；无认证 401，认证 Website/Admin/API 200 |
 
 Backend warning 为 Starlette TestClient deprecated alias，不是本轮失败。前端构建使用 Nuxt 4.5.2、Nitro 2.13.4、Vite 8.2.2、Vue 3.5.42。
+
+### 10.1 Catalog 审核/发布闭环后续接线
+
+- 代码提交：`592e7b74e589554fabc466e26606569d6ecedff0`（`feat(phase37): wire catalog review workflow`）。
+- 新增 Catalog Translation Review 与 Publication Transition API，覆盖 ProductCategory、Product、Material、Technology、Application、Solution，并继续复用统一 `transition_publication()` 事务。
+- Review 同时校验 `catalog.review`、`translation.review`、`content.review`；Publish 同时校验 `catalog.publish`、`translation.publish`、`content.publish`。Archive / Draft 回退继续要求对应 Catalog 与全局 Content 权限。
+- Permission seed 新增 `catalog.review`、`catalog.publish`；Reviewer 获得 read/review/publish，但不获得 Catalog create/update/archive；Editor 不能以 update 权限代替 review/publish。
+- Admin Product 编辑页新增逐语言 Translation、Publication、Route 状态，以及 Review、Publish、Archive 操作。前端按钮只提供操作入口，最终权限和生命周期约束仍由后端执行。
+- 本次只完成工程接线和隔离验证，没有对试点产品实际执行 Review、Publish 或 Archive。
+
+后续接线实测结果：
+
+| 检查 | 实际结果 |
+|---|---|
+| Ruff | PASS，`All checks passed!` |
+| Catalog focused backend | PASS，4 passed |
+| Full Backend pytest | PASS，259 passed，1 warning，114.32s |
+| Website Vitest | PASS，11 files / 118 tests |
+| Admin Vitest | PASS，6 files / 25 tests |
+| Website/Admin Typecheck | PASS |
+| Prettier | PASS |
+| Website/Admin Production Build | PASS |
+| Seed idempotency | PASS，隔离 API 连续执行两次 |
+| Reviewer Catalog 权限 | PASS，仅 `catalog.read`、`catalog.review`、`catalog.publish` |
+| Compose health | PASS，PostgreSQL、Redis、MinIO、API、worker、Website、Admin 均 healthy |
+| HTTPS Admin | PASS，Product Admin 200，`X-Robots-Tag: noindex, nofollow` |
+| 生命周期 API 注册 | PASS，Review 与 Publication 两条路由均存在 |
+| Pilot verify | PASS，双语 Translation/Publication 为 draft、Route closed |
+| Public gate | PASS，中英文 Product Public API 404，中文 Product SSR 404 |
 
 ## 11. 已知限制
 

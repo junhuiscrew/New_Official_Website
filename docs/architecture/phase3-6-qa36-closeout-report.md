@@ -5,6 +5,9 @@
 - Project: `junhuiscrew/New_Official_Website`
 - Branch: `phase-3.6-fix`
 - Base / tested commit: `d1a979fc66b7c350332f92bf6a44961ba158eb87`
+- QA36 closeout commit already on remote at the start of this seal: `e5d859bcc1bf5df82b938dc139b6a9040b0ff348`
+- Final engineering seal implementation commit: `ae162a02ec56d8a22b0e48abe935dd3d8680e5bc`
+- Verified remote state: `origin/phase-3.6-fix` remains at `e5d859bcc1bf5df82b938dc139b6a9040b0ff348`; the seal commit is local and awaits final confirmation before push.
 - Working tree: dirty during the run by the QA-only fixture/evidence changes listed below; no force reset, push, merge or deployment.
 - Run ID: `closeout-20260906-a`
 - Browser: Chromium `152.0.7977.82` on the local Windows host
@@ -65,8 +68,11 @@ The browser run preserved three expected out-of-range 404 console messages in `c
 - `scripts/phase36-http-evidence.ps1` — run-scoped output and `run_id`.
 - `scripts/phase36-upstream-5xx-evidence.ps1` — run-scoped output and `run_id`.
 - `scripts/phase36-qa36-manifest.js` — SHA-256 manifest generator.
+- `scripts/phase36-qa36-package.ps1` — expanded Run ID, required-file validation, SHA256SUMS generation and post-package verification.
+- `scripts/test-phase36-qa36-package.ps1` — real ZIP extraction, checksum, JSON, Run ID and sensitive-pattern regression checks.
 - `.gitignore` — ignored local closeout evidence directory.
 - `docs/architecture/phase3-6-remediation-report.md` — historical evidence correction appended without deleting prior history.
+- `apps/api/app/phase36_qa.py` — final seal adds the required two blank lines only; no business behavior changed.
 
 ## 7. Commands and actual results
 
@@ -84,7 +90,8 @@ The browser run preserved three expected out-of-range 404 console messages in `c
 | `pnpm format:check` | PASS |
 | `pnpm --filter @junhui/website build` | PASS, Nuxt production build complete |
 | `docker compose ps` + live/ready | PASS, services healthy; API ready 200 |
-| Ruff | **BLOCKED** — neither host nor API test image contains `ruff`; not reported as PASS |
+| `python -m ruff check --no-cache apps/api` via the project API dev environment | **PASS**, exit 0, `All checks passed!` |
+| `pwsh -File scripts/test-phase36-qa36-package.ps1 -RunId closeout-20260906-a` | **PASS**, 12 required files and 13 SHA-256 entries verified |
 | Lighthouse | **NOT RUN** |
 | Safari/WebKit | **BLOCKED** — unavailable on Windows host |
 
@@ -96,13 +103,16 @@ Ignored local evidence directory:
 
 `artifacts/phase3-6-qa-closeout/closeout-20260906-a/`
 
-It contains `browser-qa.json`, `http-ssr-evidence.json`, `upstream-5xx-evidence.json`, `manifest.json`, the seven required screenshots (desktop/mobile/product language/fallback/RFQ), and no credentials or private URLs. `manifest.json` records command exit codes, assertion status, browser, run ID, SHA-256 and sanitization rules.
+It contains `browser-qa.json`, `http-ssr-evidence.json`, `upstream-5xx-evidence.json`, `manifest.json`, the seven required screenshots (desktop/mobile/product language/fallback/RFQ), and no credentials or private URLs. `manifest.json` records the fresh Ruff PASS. The generated ZIP also contains expanded `README.md`, this closeout report snapshot and `SHA256SUMS.txt`; 13 payload checksums cover the manifest plus all 12 required files.
 
 The ZIP is generated after this report is committed:
 
 `artifacts/phase3-6-qa36-closeout/Junhui-Phase3.6-QA36-Evidence-closeout-20260906-a.zip`
 
-The final local ZIP size and SHA-256 are printed by `scripts/phase36-qa36-package.ps1`; the package manifest contains the hashes of every included evidence file.
+The final local ZIP size and SHA-256 are printed by `scripts/phase36-qa36-package.ps1`. Because embedding the outer ZIP hash inside a report contained by that same ZIP would change the archive hash, the repository copy of this report records the outer artifact metadata after packaging; the internal report snapshot remains covered by `SHA256SUMS.txt`.
+
+- Final ZIP size: `1,707,596` bytes
+- Final ZIP SHA-256: `FC63F6DC5D88433F71DB70C730FD2A624B469FFC18BF64213F36E01F852628D3`
 
 ## 9. SEO/GEO and security consistency
 
@@ -110,4 +120,4 @@ No second canonical, hreflang, publication, route or schema system was introduce
 
 ## 10. Conclusion / next step
 
-QA36-G, QA36-L and QA36-E are evidenced for this local run. This is not a Phase 3.6 FINAL PASS announcement. The branch remains unpushed and undeployed; wait for the user’s final revalidation. Lighthouse and real Safari/WebKit remain outstanding limitations.
+QA36-G, QA36-L and QA36-E are evidenced for this local run. The final engineering seal changes only Python spacing and QA evidence packaging/reporting; no business module was modified. This is not a Phase 3.6 FINAL PASS announcement. The seal commit remains local and undeployed; wait for the user’s final revalidation. Lighthouse and real Safari/WebKit remain outstanding limitations.

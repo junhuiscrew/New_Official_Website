@@ -43,6 +43,11 @@ try {
   foreach ($jsonFile in @('browser-qa.json', 'http-ssr-evidence.json', 'upstream-5xx-evidence.json')) {
     Get-Content -LiteralPath (Join-Path $contentRoot $jsonFile) -Raw | ConvertFrom-Json | Out-Null
   }
+  $manifest = Get-Content -LiteralPath (Join-Path $contentRoot 'manifest.json') -Raw | ConvertFrom-Json
+  $ruffResult = @($manifest.commands | Where-Object { $_.name -eq 'Ruff' })
+  if ($ruffResult.Count -ne 1 -or $ruffResult[0].status -ne 'PASS' -or $ruffResult[0].exit_code -ne 0) {
+    throw 'manifest.json does not record the current Ruff PASS result'
+  }
 
   $sumsPath = Join-Path $contentRoot 'SHA256SUMS.txt'
   if (-not (Test-Path -LiteralPath $sumsPath -PathType Leaf)) { throw 'Missing SHA256SUMS.txt' }

@@ -32,6 +32,15 @@ describe('catalog admin routes', () => {
     expect(source).toContain('/specifications/values')
   })
 
+  it('submits product primary media, summaries and structured highlights', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
+    expect(source).toContain("api.detail<MediaItem[]>('/media')")
+    expect(source).toContain('v-model="form.primary_media_id"')
+    expect(source).toContain('short_description')
+    expect(source).toContain('highlights_jsonb')
+    expect(source).toContain('parseHighlights')
+  })
+
   it('implements real Material CRUD and archive operations', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/materials.vue'), 'utf8')
     const sharedSource = readFileSync(

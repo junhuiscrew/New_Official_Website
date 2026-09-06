@@ -7,14 +7,20 @@ interface LocaleOption {
   code: string
   native_name: string
 }
+interface ExtraFieldOption {
+  key: string
+  label: string
+  rows?: number
+}
 
 const props = withDefaults(
   defineProps<{
     locales: LocaleOption[]
     modelValue: CatalogTranslationDraft[]
     bodyField?: string
+    extraFields?: ExtraFieldOption[]
   }>(),
-  { bodyField: 'description' },
+  { bodyField: 'description', extraFields: () => [] },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: CatalogTranslationDraft[]]
@@ -44,6 +50,16 @@ function updateTranslation(locale: LocaleOption, field: 'name' | 'description', 
       ? { ...current, name: value }
       : { ...current, fields: { ...current.fields, [props.bodyField]: value } }
   emit('update:modelValue', [...next, updated])
+}
+
+// 更新产品等实体附加的结构化翻译字段，同时保留当前语言的其他字段。
+function updateExtraField(locale: LocaleOption, field: string, value: string) {
+  const next = props.modelValue.filter((item) => item.locale_id !== locale.id)
+  const current = translationFor(locale)
+  emit('update:modelValue', [
+    ...next,
+    { ...current, fields: { ...current.fields, [field]: value } },
+  ])
 }
 </script>
 
@@ -76,6 +92,14 @@ function updateTranslation(locale: LocaleOption, field: 'name' | 'description', 
           @input="
             updateTranslation(locale, 'description', ($event.target as HTMLTextAreaElement).value)
           "
+        />
+      </label>
+      <label v-for="field in extraFields" :key="field.key">
+        {{ field.label }}
+        <textarea
+          :rows="field.rows || 3"
+          :value="translationFor(locale).fields[field.key] || ''"
+          @input="updateExtraField(locale, field.key, ($event.target as HTMLTextAreaElement).value)"
         />
       </label>
     </div>

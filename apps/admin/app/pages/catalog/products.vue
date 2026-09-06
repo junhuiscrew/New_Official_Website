@@ -24,12 +24,18 @@ interface SpecValue {
   value_number: number | null
   value_text: string | null
 }
+interface MediaItem {
+  id: string
+  type: string
+  url: string | null
+}
 interface ProductDetail extends NamedItem {
   category_id: string
   slug: string
   code: string | null
   featured: boolean
   sort_order: number
+  primary_media_id: string | null
   translations: Array<Record<string, unknown>>
   models: ProductModelItem[]
   specifications: SpecValue[]
@@ -51,6 +57,7 @@ const applications = ref<NamedItem[]>([])
 const solutions = ref<NamedItem[]>([])
 const definitions = ref<NamedItem[]>([])
 const locales = ref<LocaleItem[]>([])
+const media = ref<MediaItem[]>([])
 const selectedId = ref<string | null>(null)
 const errorMessage = ref('')
 const modelCode = ref('')
@@ -62,6 +69,7 @@ const form = reactive({
   status: 'enabled',
   featured: false,
   sort_order: 0,
+  primary_media_id: '',
   translations: [] as CatalogTranslationDraft[],
   material_ids: [] as string[],
   technology_ids: [] as string[],
@@ -82,6 +90,7 @@ async function load() {
       solutionResult,
       definitionResult,
       localeResult,
+      mediaResult,
     ] = await Promise.all([
       api.list<ProductDetail>('/catalog/products'),
       api.list<NamedItem>('/catalog/categories'),
@@ -91,6 +100,7 @@ async function load() {
       api.list<NamedItem>('/catalog/solutions'),
       api.list<NamedItem>('/catalog/specifications/definitions'),
       api.detail<LocaleItem[]>('/locales'),
+      api.detail<MediaItem[]>('/media'),
     ])
     products.value = productResult.items
     categories.value = categoryResult.items
@@ -100,6 +110,7 @@ async function load() {
     solutions.value = solutionResult.items
     definitions.value = definitionResult.items
     locales.value = localeResult
+    media.value = mediaResult
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load products.'
   }
@@ -114,6 +125,7 @@ function resetForm() {
     status: 'enabled',
     featured: false,
     sort_order: 0,
+    primary_media_id: '',
     translations: [],
     material_ids: [],
     technology_ids: [],
@@ -134,6 +146,7 @@ async function editProduct(item: ProductDetail) {
     form.status = detail.status
     form.featured = detail.featured
     form.sort_order = detail.sort_order
+    form.primary_media_id = detail.primary_media_id || ''
     form.models = detail.models
     form.specifications = detail.specifications
     Object.assign(form, detail.relations)
@@ -141,11 +154,25 @@ async function editProduct(item: ProductDetail) {
       locale_id: String(translation.locale_id),
       code: locales.value.find((locale) => locale.id === translation.locale_id)?.code || '',
       name: String(translation.name || ''),
-      fields: { description: String(translation.description || '') },
+      fields: {
+        short_description: String(translation.short_description || ''),
+        description: String(translation.description || ''),
+        highlights_jsonb: JSON.stringify(translation.highlights_jsonb || [], null, 2),
+      },
     }))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load product detail.'
   }
+}
+
+// 将 Admin 文本框中的 JSON 数组转换成后端结构化 highlights 字段。
+function parseHighlights(value: string | undefined): string[] {
+  if (!value?.trim()) return []
+  const parsed: unknown = JSON.parse(value)
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+    throw new Error('Highlights must be a JSON array of strings.')
+  }
+  return parsed.map((item) => item.trim()).filter(Boolean)
 }
 
 function productBody() {
@@ -156,9 +183,18 @@ function productBody() {
     status: form.status,
     featured: form.featured,
     sort_order: form.sort_order,
+    primary_media_id: form.primary_media_id || null,
     translations: form.translations
       .filter((item) => item.name.trim())
-      .map(({ locale_id, name, fields }) => ({ locale_id, name, fields })),
+      .map(({ locale_id, name, fields }) => ({
+        locale_id,
+        name,
+        fields: {
+          short_description: fields.short_description || null,
+          description: fields.description || null,
+          highlights_jsonb: parseHighlights(fields.highlights_jsonb),
+        },
+      })),
   }
 }
 
@@ -267,7 +303,23 @@ onMounted(load)
           >
           <label>Sort order <input v-model.number="form.sort_order" type="number" /></label
           ><label><input v-model="form.featured" type="checkbox" /> Featured</label>
-          <TranslationFields v-model="form.translations" :locales="locales" />
+          <label
+            >Primary media
+            <select v-model="form.primary_media_id">
+              <option value="">No primary media</option>
+              <option v-for="item in media" :key="item.id" :value="item.id">
+                {{ item.type }} · {{ item.id }}
+              </option>
+            </select></label
+          >
+          <TranslationFields
+            v-model="form.translations"
+            :locales="locales"
+            :extra-fields="[
+              { key: 'short_description', label: 'Short description', rows: 2 },
+              { key: 'highlights_jsonb', label: 'Highlights JSON', rows: 5 },
+            ]"
+          />
           <div class="form-actions">
             <button type="submit">{{ selectedId ? 'Save changes' : 'Create product' }}</button
             ><button v-if="selectedId" type="button" class="danger" @click="archiveProduct">

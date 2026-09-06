@@ -1,0 +1,43 @@
+{
+  "_template_only": true,
+  "schema_version": 1,
+  "batch_id": null,
+  "state": "PROPOSED",
+  "phase": "3.7",
+  "code_base_sha": null,
+  "environment": {
+    "kind": null,
+    "target_alias": null,
+    "database_alias": null,
+    "storage_instance_alias": null
+  },
+  "permissions": {
+    "draft_import_approved": false,
+    "public_media_upload_approved": false,
+    "protected_preview_publish_approved": false,
+    "production_deployment_approved": false
+  },
+  "approved_required_records": [],
+  "optional_records": [],
+  "source_manifest_ref": null,
+  "source_manifest_sha256": null,
+  "approval_ref": null,
+  "record_fields": [
+    "external_key",
+    "owner_type",
+    "slug",
+    "locales",
+    "source_refs",
+    "fact_refs",
+    "media_refs",
+    "draft_hash",
+    "technical_reviewer_ref",
+    "language_reviewer_ref",
+    "publish_approval_ref"
+  ],
+  "missing_inputs": [],
+  "explicitly_deferred": [],
+  "commands": [],
+  "verification_status": "NOT_RUN",
+  "notes": "external_key 是私有导入清单键，不是 CMS UUID；相同输入应产生 no-op。模板不包含凭据、审批签名或真实资料，默认不写入、不上传、不发布。"
+}

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import re
+import struct
 import uuid
+import zlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -111,10 +112,41 @@ _RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{2,39}$")
 _QA_CONFIRMATION = "LOCAL_QA_ONLY"
 _QA_ISOLATION = "LOCAL_COMPOSE_ONLY"
 _LOCAL_SERVICE_HOSTS = {"localhost", "127.0.0.1", "postgres", "redis", "minio"}
-# 公开样本图片只用于本地 E2E；字节经过正常签名/SHA256校验并真实写入 MinIO。
-_QA_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlI6wAAAABJRU5ErkJggg=="
-)
+def _build_qa_png() -> bytes:
+    """
+    生成本地 QA 专用的正常尺寸 PNG 测试图。
+
+    输入：无。
+    输出：bytes，1200×800 的非敏感 QA 图片，带蓝色边框和浅色背景。
+    """
+    width, height = 1200, 800
+    rows = bytearray()
+    for y in range(height):
+        rows.append(0)  # PNG 无滤波行标记
+        for x in range(width):
+            is_border = x < 12 or x >= width - 12 or y < 12 or y >= height - 12
+            rows.extend((22, 82, 140) if is_border else (235, 245, 255))
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        """构造带 CRC 的 PNG 数据块。"""
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(bytes(rows), level=9))
+        + chunk(b"IEND", b"")
+    )
+
+
+# 公开样本图片只用于本地 E2E；字节经过正常签名/SHA256 校验并真实写入 MinIO。
+_QA_PNG = _build_qa_png()
 _QA_PDF = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
 
 _CORE_MODELS = {
@@ -540,8 +572,8 @@ async def _create_public_media(
         checksum_verified=True,
         malware_scan_status="not_required",
         upload_status="ready",
-        width=1,
-        height=1,
+        width=1200,
+        height=800,
         **metadata,
     )
     session.add(asset)

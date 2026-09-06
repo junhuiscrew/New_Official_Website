@@ -274,3 +274,15 @@ JSON 中的 media/file 标识已替换为 `[REDACTED]`；没有保存凭据、RF
 R36-01、R36-02、R36-03、R36-04、R36-05 与 QA36 已按交接文档完成本地实现和验收。当前分支保持 `phase-3.6-fix`，Implementation SHA 为 `ff38bdde5345cb7d6c630748619d8e7d65f14b9a`；未 push、未 merge、未部署，也没有进入 Phase 3.7。
 
 本报告只提交可复验事实。Phase 3.6 是否 FINAL PASS 由用户后续验收决定。
+
+## 14. QA36 Closeout 更正（2026-09-06）
+
+本报告第 9～10 节中的早期浏览器证据仅作为历史记录保留，不再作为 Gallery/Language 验收依据：当时 Gallery 使用了不正确的选择器，且图片是 1×1；语言部分只读取链接并使用 `goto`，没有证明用户可见菜单点击。该证据不足问题已经明确记录。
+
+本轮 `phase-3.6-fix` QA36 closeout 使用 run `closeout-20260906-a` 的新证据替代上述两项结论：
+
+- `gallery-open-desktop.png` / `gallery-open-mobile.png` 通过 `data-testid="gallery-open"` 实际点击；按钮先断言存在、可见、可用；1200×800 图片真实解码；验证 dialog 焦点、Tab/Shift+Tab、Escape 返回原按钮、可见关闭按钮关闭。
+- `language-product-zh.png`、`language-fallback-home.png` 及 `browser-qa.json` 记录了 English→中文、中文→English、英文单语→中文首页和移动菜单的真实点击，以及最终 URL、`html lang`、canonical、hreflang。
+- 绝对正式域名请求只在 Playwright context 内按 exact-origin 转发到 `http://localhost:8080`，未访问生产服务；新的 `manifest.json`、HTTP/SSR 和 5xx 证据与截图哈希可复核。
+
+历史测试数量、SHA 和目录不被本更正覆盖；本轮实际命令和结果以 `docs/architecture/phase3-6-qa36-closeout-report.md` 为准。

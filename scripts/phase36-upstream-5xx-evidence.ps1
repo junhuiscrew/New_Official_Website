@@ -2,7 +2,9 @@
 [CmdletBinding()]
 param(
     [string]$BaseUrl = 'http://localhost:8080',
-    [string]$RateLimitNamespace = 'rfq:public:qa36:remediation-20260905'
+    [string]$RateLimitNamespace = 'rfq:public:qa36:remediation-20260905',
+    [string]$RunId = 'remediation-20260905',
+    [string]$OutputDir = "artifacts/phase3-6-qa-closeout/$RunId"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +40,7 @@ finally {
 
 $body = if ($null -ne $failureResponse) { $failureResponse.Content } else { '' }
 $evidence = [ordered]@{
+    run_id = $RunId
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
     upstream_unavailable_status = $failureResponse.StatusCode
     friendly_recovery_present = $body -match 'temporarily unavailable'
@@ -54,10 +57,10 @@ if (
     throw 'Phase 3.6 upstream 5xx evidence assertions failed.'
 }
 
-New-Item -ItemType Directory -Force artifacts/phase3-6-remediation | Out-Null
+New-Item -ItemType Directory -Force $OutputDir | Out-Null
 $json = $evidence | ConvertTo-Json -Depth 4
 Set-Content `
-    -LiteralPath artifacts/phase3-6-remediation/upstream-5xx-evidence.json `
+    -LiteralPath (Join-Path $OutputDir 'upstream-5xx-evidence.json') `
     -Value $json `
     -Encoding utf8
 $json

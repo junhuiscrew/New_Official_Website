@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [string]$BaseUrl = 'http://localhost:8080',
-    [string]$RunId = 'remediation-20260905'
+    [string]$RunId = 'remediation-20260905',
+    [string]$OutputDir = "artifacts/phase3-6-qa-closeout/$RunId"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,6 +36,7 @@ $zhIds = [regex]::Matches($htmlZh, ' id="([^"]+)"') | ForEach-Object { $_.Groups
 $zhDuplicates = @($zhIds | Group-Object | Where-Object Count -gt 1 | Select-Object -ExpandProperty Name)
 
 $evidence = [ordered]@{
+    run_id = $RunId
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
     home_api = [ordered]@{
         success = $homeResponse.success
@@ -159,7 +161,7 @@ if (
     throw 'Phase 3.6 HTTP/SSR evidence assertions failed.'
 }
 
-New-Item -ItemType Directory -Force artifacts/phase3-6-remediation | Out-Null
+New-Item -ItemType Directory -Force $OutputDir | Out-Null
 $json = $evidence | ConvertTo-Json -Depth 8
-Set-Content -LiteralPath artifacts/phase3-6-remediation/http-ssr-evidence.json -Value $json -Encoding utf8
+Set-Content -LiteralPath (Join-Path $OutputDir 'http-ssr-evidence.json') -Value $json -Encoding utf8
 $json

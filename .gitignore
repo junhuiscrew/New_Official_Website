@@ -34,5 +34,7 @@ Thumbs.db
 # 本地数据与日志
 data/
 artifacts/phase3-6-remediation/
+artifacts/phase3-6-qa-closeout/
+artifacts/phase3-6-qa36-closeout/
 *.log
 *.htpasswd

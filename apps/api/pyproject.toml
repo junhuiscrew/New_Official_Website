@@ -28,6 +28,7 @@ dependencies = [
 test = [
     "aiosqlite==0.21.0",
     "httpx==0.28.1",
+    "pillow==11.3.0",
     "pytest==8.4.2",
     "pytest-asyncio==1.1.0",
 ]

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "batch_id": "pilot-example",
+  "target_environment": "phase37-local-https",
+  "draft_import_authorized": true,
+  "protected_preview_publish_authorized": false,
+  "source_url": "https://www.junhuiscrew.com/product/example.html",
+  "category": {
+    "external_key": "junhui:product-category:injection-molding-machine-barrels",
+    "slug": "injection-molding-machine-barrels",
+    "name_zh_cn": "注塑机料筒",
+    "name_en": "Injection Molding Machine Barrels"
+  },
+  "product": {
+    "external_key": "junhui:product:nitrided-barrel",
+    "slug": "nitrided-barrel",
+    "name_zh_cn": "注塑机氮化料筒",
+    "name_en": "Nitrided Barrel for Injection Molding Machines"
+  },
+  "sources": "private-manifest-only",
+  "mappings": {},
+  "blocked_fields": [
+    "straightness",
+    "chrome_hardness",
+    "chrome_layer_thickness",
+    "bimetallic_hardness"
+  ]
+}

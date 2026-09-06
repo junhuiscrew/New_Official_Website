@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import json
 import os
 from collections.abc import Sequence
+from pathlib import Path
 
 from app.core.database import async_session_factory
 from app.modules.users.bootstrap import create_super_admin
@@ -31,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
             "phase36-qa-setup",
             "phase36-qa-cleanup",
             "phase36-qa-verify",
+            "phase37-pilot-dry-run",
+            "phase37-pilot-apply",
+            "phase37-pilot-verify",
         ),
         help="需要执行的管理命令",
     )
@@ -38,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--password", help="Bootstrap 管理员密码；推荐使用环境变量或交互输入")
     parser.add_argument("--display-name", help="Bootstrap 管理员显示名称")
     parser.add_argument("--run-id", help="Phase 3.6 隔离 QA 运行标识")
+    parser.add_argument("--manifest", help="Phase 3.7 私有批次 manifest JSON")
+    parser.add_argument("--source-root", help="Phase 3.7 获批源图片目录")
+    parser.add_argument("--output-dir", help="Phase 3.7 派生图片与证据目录")
+    parser.add_argument("--api-base", help="Phase 3.7 目标 API /api/v1 根地址")
     return parser
 
 
@@ -102,6 +111,27 @@ def main(arguments: Sequence[str] | None = None) -> int:
             )
         )
         print(result.model_dump_json(indent=2))
+    elif parsed.command.startswith("phase37-pilot-"):
+        # 首批导入依赖只在 dev/test 工具环境安装，API 服务启动不会加载图片工具。
+        from app.phase37_pilot import PilotImportError, run_pilot_command
+
+        required = {
+            "manifest": parsed.manifest,
+            "source_root": parsed.source_root,
+            "output_dir": parsed.output_dir,
+            "api_base": parsed.api_base,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise PilotImportError(f"pilot_arguments_required:{','.join(missing)}")
+        result = run_pilot_command(
+            parsed.command,
+            Path(parsed.manifest),
+            Path(parsed.source_root),
+            Path(parsed.output_dir),
+            parsed.api_base,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

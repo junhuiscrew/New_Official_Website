@@ -148,6 +148,22 @@ describe('Phase 3.6 product list filters and pagination', () => {
     }
   })
 
+  it('keeps Products SEO API-owned without approved copy embedded in the page', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/pages/[lang]/products/index.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('pageData.value.collection.seo')
+    expect(source).toContain('/public/products/')
+    expect(source).not.toContain('Junhui Screw and Barrel Products')
+    expect(source).not.toContain('骏辉螺杆与机筒产品')
+    expect(source).not.toContain(
+      'Explore Junhui Nitrided Screw, Junhui Nitrided Barrel and Junhui Electroplated Screw',
+    )
+    expect(source).not.toContain('查看骏辉氮化螺杆、骏辉氮化机筒和骏辉电镀螺杆')
+  })
+
   it('keeps category 404 status and renders category-visible semantics beside backend schema', () => {
     const categoryPage = readFileSync(
       resolve(process.cwd(), 'app/pages/[lang]/products/[category]/index.vue'),

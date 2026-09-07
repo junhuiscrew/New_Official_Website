@@ -24,16 +24,17 @@ def _config(api_root: Path, database_url: str) -> Config:
 
 def test_phase34_migrations_are_linear_new_heads() -> None:
     """
-    验证 Phase 3.4 使用 0006 与 0007 追加迁移且不改写历史。
+    验证历史 Phase 3.4 迁移仍存在，且当前新增迁移保持单一线性 head。
 
     输入：无。
     输出：None；迁移链不正确时失败。
     """
     api_root = Path(__file__).resolve().parents[1]
     script = ScriptDirectory(str(api_root / "alembic"))
-    assert script.get_current_head() == "20260905_0010"
+    assert script.get_current_head() == "20260907_0011"
     assert (api_root / "alembic/versions/20260904_0006_authority_content.py").is_file()
     assert (api_root / "alembic/versions/20260904_0007_discovery_delivery.py").is_file()
+    assert (api_root / "alembic/versions/20260907_0011_site_pages.py").is_file()
 
 
 def test_empty_database_upgrades_to_phase34_tables(

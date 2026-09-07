@@ -43,7 +43,13 @@ from app.modules.company.models import (
     ManufacturingCapabilityTranslation,
 )
 from app.modules.company.services import get_public_company_profile
-from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+from app.modules.content.models import (
+    ContentPublication,
+    ContentRoute,
+    SitePage,
+    SitePageTranslation,
+    TranslationStatus,
+)
 from app.modules.discovery.models import SeoDocument
 from app.modules.discovery.schema_generator import (
     build_breadcrumb_schema,
@@ -676,6 +682,75 @@ def _listing_query_suffix(
     return f"?{urlencode(parameters)}" if parameters else ""
 
 
+async def _published_products_site_page(
+    session: AsyncSession,
+    locale: Locale,
+) -> tuple[SitePage | None, tuple[SitePageTranslation, ContentRoute, SeoDocument | None] | None]:
+    """
+    读取 products 固定页，并执行当前语言的完整公开门禁。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale: Locale，目标启用语言。
+
+    输出：
+        tuple，首项为已登记页面（不存在时为 None），次项为合格翻译、路由和 SEO；
+        页面已登记但不合格时次项为 None，以阻止旧合成逻辑复活。
+    """
+    page = await session.scalar(select(SitePage).where(SitePage.system_key == "products"))
+    if page is None or page.status != "enabled":
+        return page, None
+
+    expected_path = f"/{locale.slug}/products/"
+    statement = (
+        select(SitePageTranslation, ContentRoute, SeoDocument)
+        .join(SitePage, SitePage.id == SitePageTranslation.site_page_id)
+        .join(
+            ContentRoute,
+            (ContentRoute.owner_type == "site_page")
+            & (ContentRoute.owner_id == SitePageTranslation.site_page_id)
+            & (ContentRoute.locale_id == SitePageTranslation.locale_id),
+        )
+        .join(
+            ContentPublication,
+            (ContentPublication.owner_type == ContentRoute.owner_type)
+            & (ContentPublication.owner_id == ContentRoute.owner_id)
+            & (ContentPublication.locale_id == ContentRoute.locale_id),
+        )
+        .join(
+            TranslationStatus,
+            (TranslationStatus.owner_type == ContentRoute.owner_type)
+            & (TranslationStatus.owner_id == ContentRoute.owner_id)
+            & (TranslationStatus.locale_id == ContentRoute.locale_id),
+        )
+        .outerjoin(
+            SeoDocument,
+            (SeoDocument.owner_type == ContentRoute.owner_type)
+            & (SeoDocument.owner_id == ContentRoute.owner_id)
+            & (SeoDocument.locale_id == ContentRoute.locale_id),
+        )
+        .where(
+            SitePage.system_key == "products",
+            SitePage.status == "enabled",
+            SitePageTranslation.site_page_id == page.id,
+            SitePageTranslation.locale_id == locale.id,
+            ContentRoute.path == expected_path,
+            ContentRoute.is_canonical.is_(True),
+            ContentRoute.active.is_(True),
+            ContentRoute.indexable.is_(True),
+            ContentPublication.status == "published",
+            TranslationStatus.status == "published",
+            or_(SeoDocument.id.is_(None), SeoDocument.robots_index.is_(True)),
+            or_(
+                SeoDocument.id.is_(None),
+                SeoDocument.canonical_override.is_(None),
+                SeoDocument.canonical_override == literal(OFFICIAL_ORIGIN) + ContentRoute.path,
+            ),
+        )
+    )
+    return page, (await session.execute(statement)).one_or_none()
+
+
 async def _product_listing_seo(
     session: AsyncSession,
     locale: Locale,
@@ -699,6 +774,18 @@ async def _product_listing_seo(
     alternates: dict[str, str] = {}
     category_entity: ProductCategory | None = None
     category_seo: SeoDocument | None = None
+    products_page: SitePage | None = None
+    products_page_row: tuple[SitePageTranslation, ContentRoute, SeoDocument | None] | None = None
+
+    # 根产品总列表一旦登记 SitePage，只有完整发布门禁通过后才读取其 SEO。
+    if category is None:
+        products_page, products_page_row = await _published_products_site_page(session, locale)
+        if products_page_row is not None:
+            _page_translation, page_route, page_seo = products_page_row
+            path = page_route.path
+            if page_seo is not None:
+                title = page_seo.seo_title or title
+                description = page_seo.meta_description
 
     # 已发布分类使用自身 canonical 路径；分类筛选不再重复进入 query。
     if category:
@@ -750,7 +837,8 @@ async def _product_listing_seo(
     )
     temporary_view = bool(material or application or page_size != 24)
     category_allows_index = category_seo is None or category_seo.robots_index
-    if not temporary_view and total > 0 and category_allows_index:
+    root_allows_index = products_page is None or products_page_row is not None
+    if not temporary_view and total > 0 and category_allows_index and root_allows_index:
         locale_rows = list(
             (
                 await session.scalars(
@@ -777,6 +865,12 @@ async def _product_listing_seo(
                     continue
                 other_statement = other_statement.where(Product.category_id == category_entity.id)
                 other_path = other_route.path
+            elif products_page is not None:
+                _other_page, other_page_row = await _published_products_site_page(session, item)
+                if other_page_row is None:
+                    continue
+                _other_translation, other_route, _other_seo = other_page_row
+                other_path = other_route.path
             other_total = int(
                 await session.scalar(select(func.count()).select_from(other_statement.subquery()))
                 or 0
@@ -797,7 +891,9 @@ async def _product_listing_seo(
 
     canonical = f"{OFFICIAL_ORIGIN}{path}{suffix}"
     follows = category_seo is None or category_seo.robots_follow
-    indexable = total > 0 and not temporary_view and category_allows_index
+    if category is None and products_page_row is not None and products_page_row[2] is not None:
+        follows = products_page_row[2].robots_follow
+    indexable = total > 0 and not temporary_view and category_allows_index and root_allows_index
     return {
         "title": title,
         "description": description,

@@ -23,6 +23,12 @@ class SeoDocumentUpsert(BaseModel):
     schema_override_jsonb: dict[str, Any] | None = None
 
 
+class SitePageSeoUpdate(SeoDocumentUpsert):
+    """固定 SitePage SEO 局部更新输入；拒绝后台误传其他业务字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class GeoDocumentUpsert(BaseModel):
     """统一 GEO 文档新增或更新输入；可见事实由服务端数据库构造。"""
 

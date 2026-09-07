@@ -43,6 +43,9 @@ async function handleLogout() {
       <NuxtLink v-if="currentUser.permissions.includes('expert.read')" to="/experts"
         >Experts</NuxtLink
       >
+      <NuxtLink v-if="currentUser.permissions.includes('seo.read')" to="/site-pages/products"
+        >Products SEO</NuxtLink
+      >
     </nav>
     <span>{{ currentUser.display_name || currentUser.email }}</span>
     <button type="button" @click="handleLogout">Logout</button>

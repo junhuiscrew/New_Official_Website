@@ -19,7 +19,13 @@ from app.modules.catalog.models import (
 )
 from app.modules.company.models import CompanyProfile, Exhibition, ManufacturingCapability
 from app.modules.content.enums import PublicationStatus
-from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+from app.modules.content.models import (
+    ContentPublication,
+    ContentRoute,
+    SitePage,
+    SitePageTranslation,
+    TranslationStatus,
+)
 from app.modules.discovery.models import SeoDocument
 from app.modules.localization.models import Locale
 
@@ -40,6 +46,7 @@ INDEXABLE_OWNER_TYPES = frozenset(
         "manufacturing_capability",
         "exhibition",
         "company_profile",
+        "site_page",
     }
 )
 
@@ -56,6 +63,7 @@ _BUSINESS_MODELS = {
     "manufacturing_capability": ManufacturingCapability,
     "exhibition": Exhibition,
     "company_profile": CompanyProfile,
+    "site_page": SitePage,
 }
 
 _HOME_AGGREGATE_OWNER_TYPES = frozenset(
@@ -146,10 +154,25 @@ async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
                 AuthorExpert.public_profile_enabled.is_(True),
             )
         enabled_ids[owner_type] = set((await session.scalars(enabled_statement)).all())
+    site_page_translation_pairs = set(
+        (
+            await session.execute(
+                select(SitePageTranslation.site_page_id, SitePageTranslation.locale_id)
+            )
+        ).all()
+    )
+    locale_slugs = dict((await session.execute(select(Locale.id, Locale.slug))).all())
     return [
         route
         for route in candidates
         if route.owner_id in enabled_ids.get(route.owner_type, set())
+        and (
+            route.owner_type != "site_page"
+            or (
+                (route.owner_id, route.locale_id) in site_page_translation_pairs
+                and route.path == f"/{locale_slugs.get(route.locale_id)}/products/"
+            )
+        )
     ]
 
 
@@ -164,6 +187,10 @@ async def list_sitemap_candidates(session: AsyncSession) -> list[SitemapCandidat
         list[SitemapCandidate]，包含严格公开 owner 路由，以及由同一批路由证明有实质内容的首页和产品总列表。
     """
     routes = await list_indexable_routes(session)
+    products_page_exists = (
+        await session.scalar(select(SitePage.id).where(SitePage.system_key == "products"))
+        is not None
+    )
     candidates = {
         route.path: SitemapCandidate(path=route.path, updated_at=route.updated_at)
         for route in routes
@@ -186,7 +213,7 @@ async def list_sitemap_candidates(session: AsyncSession) -> list[SitemapCandidat
                 path=f"/{locale.slug}/",
                 updated_at=max(route.updated_at for route in home_routes),
             )
-        if product_routes:
+        if product_routes and not products_page_exists:
             candidates[f"/{locale.slug}/products/"] = SitemapCandidate(
                 path=f"/{locale.slug}/products/",
                 updated_at=max(route.updated_at for route in product_routes),

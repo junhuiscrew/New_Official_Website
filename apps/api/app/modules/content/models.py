@@ -196,3 +196,52 @@ class ContentRevision(UuidPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, comment="修订创建时间"
     )
+
+
+class SitePage(UuidPrimaryKeyMixin, TimestampMixin, Base):
+    """保存由系统识别的固定站点页面身份。"""
+
+    __tablename__ = "site_pages"
+    __table_args__ = (
+        UniqueConstraint("system_key", name="uq_site_pages_system_key"),
+        CheckConstraint("system_key IN ('products')", name="site_page_system_key_value"),
+        CheckConstraint(
+            "status IN ('enabled','disabled','retired')", name="site_page_status_value"
+        ),
+        {"comment": "固定站点页面表"},
+    )
+
+    system_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="系统稳定页面键：仅允许products"
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="enabled",
+        server_default="enabled",
+        comment="页面状态：enabled启用，disabled禁用，retired退役",
+    )
+
+
+class SitePageTranslation(UuidPrimaryKeyMixin, TimestampMixin, Base):
+    """保存固定站点页面的真实语言名称。"""
+
+    __tablename__ = "site_page_translations"
+    __table_args__ = (
+        UniqueConstraint("site_page_id", "locale_id", name="uq_site_page_translation_locale"),
+        {"comment": "固定站点页面翻译表"},
+    )
+
+    site_page_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("site_pages.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="固定页面ID",
+    )
+    locale_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("locales.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="语言ID",
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False, comment="页面显示名称")

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions.handlers import AppException
@@ -34,7 +34,15 @@ from app.modules.company.models import (
     ManufacturingCapability,
     ManufacturingCapabilityTranslation,
 )
-from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
+from app.modules.content.enums import PublicationStatus, TranslationState
+from app.modules.content.models import (
+    ContentPublication,
+    ContentRoute,
+    SitePage,
+    SitePageTranslation,
+    TranslationStatus,
+)
+from app.modules.content.services.publication import transition_publication
 from app.modules.content.services.revisions import store_revision
 from app.modules.content.services.routes import validate_content_path
 from app.modules.discovery.geo import validate_geo_visibility
@@ -47,6 +55,19 @@ from app.modules.discovery.schemas import (
     SourceCitationCreate,
 )
 from app.modules.localization.models import Locale
+
+SITE_PAGE_OWNER_TYPE = "site_page"
+PRODUCTS_SITE_PAGE_KEY = "products"
+PRODUCTS_SITE_PAGE_LANGUAGES: dict[str, dict[str, str]] = {
+    "zh-CN": {
+        "display_name": "产品",
+        "path": "/zh-cn/products/",
+    },
+    "en": {
+        "display_name": "Products",
+        "path": "/en/products/",
+    },
+}
 
 
 def _visible_values(*values: object) -> list[str]:
@@ -374,6 +395,577 @@ async def _reject_case_private_identity(
         raise AppException(409, "case_privacy_violation", "未获公开许可的客户身份不能进入 SEO/GEO")
 
 
+def _serialize_site_page_entity(entity: object) -> dict[str, object]:
+    """
+    序列化固定页面相关 ORM 实体的业务列。
+
+    输入：
+        entity: object，带 SQLAlchemy 表定义的 ORM 实体。
+
+    输出：
+        dict[str, object]，可安全返回给 Admin 的字段字典。
+    """
+    table = entity.__table__
+    return jsonable_encoder({column.name: getattr(entity, column.name) for column in table.columns})
+
+
+def _require_products_site_page_key(system_key: str) -> None:
+    """
+    限制固定页面服务只接受 products 系统键。
+
+    输入：
+        system_key: str，调用方提供的稳定页面键。
+
+    输出：
+        None；非 products 键抛出 404。
+    """
+    if system_key != PRODUCTS_SITE_PAGE_KEY:
+        raise AppException(404, "site_page_not_found", "固定页面不存在")
+
+
+async def _lock_products_site_page_initialization(session: AsyncSession) -> None:
+    """
+    在 PostgreSQL 事务内串行化固定 Products 页面初始化。
+
+    输入：
+        session: AsyncSession，调用方控制的数据库事务。
+
+    输出：
+        None；SQLite 等测试数据库依赖唯一约束，不执行数据库专用锁。
+    """
+    bind = session.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        # 固定 advisory key 使并发初始化先后读取，避免两个请求同时创建半套关联记录。
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": "site_page:products:initialize"},
+        )
+
+
+async def _products_locales(session: AsyncSession) -> dict[str, Locale]:
+    """
+    读取 Products 页面要求的两个启用语言。
+
+    输入：
+        session: AsyncSession，数据库会话。
+
+    输出：
+        dict[str, Locale]，按 zh-CN/en 代码索引的语言；缺失或停用时抛出 409。
+    """
+    locales = {
+        locale.code: locale
+        for locale in (
+            await session.scalars(
+                select(Locale).where(Locale.code.in_(PRODUCTS_SITE_PAGE_LANGUAGES))
+            )
+        ).all()
+    }
+    if set(locales) != set(PRODUCTS_SITE_PAGE_LANGUAGES) or any(
+        not locale.is_enabled for locale in locales.values()
+    ):
+        raise AppException(
+            409,
+            "site_page_conflict",
+            "Products 固定页面要求启用的 zh-CN 与 en 语言",
+        )
+    return locales
+
+
+async def _site_page_language_records(
+    session: AsyncSession,
+    *,
+    page: SitePage,
+    locale: Locale,
+    lock: bool = False,
+) -> tuple[SitePageTranslation, TranslationStatus, ContentPublication, ContentRoute]:
+    """
+    读取同一固定页面语言的翻译与完整生命周期记录。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        page: SitePage，固定页面实体。
+        locale: Locale，目标语言。
+        lock: bool，写事务校验时是否锁定关联记录。
+
+    输出：
+        tuple，依次为页面翻译、翻译状态、发布状态和 canonical Route。
+    """
+    translation_query = select(SitePageTranslation).where(
+            SitePageTranslation.site_page_id == page.id,
+            SitePageTranslation.locale_id == locale.id,
+        )
+    translation_status_query = select(TranslationStatus).where(
+            TranslationStatus.owner_type == SITE_PAGE_OWNER_TYPE,
+            TranslationStatus.owner_id == page.id,
+            TranslationStatus.locale_id == locale.id,
+        )
+    publication_query = select(ContentPublication).where(
+            ContentPublication.owner_type == SITE_PAGE_OWNER_TYPE,
+            ContentPublication.owner_id == page.id,
+            ContentPublication.locale_id == locale.id,
+        )
+    route_query = select(ContentRoute).where(
+            ContentRoute.owner_type == SITE_PAGE_OWNER_TYPE,
+            ContentRoute.owner_id == page.id,
+            ContentRoute.locale_id == locale.id,
+            ContentRoute.is_canonical.is_(True),
+        )
+    if lock:
+        translation_query = translation_query.with_for_update()
+        translation_status_query = translation_status_query.with_for_update()
+        publication_query = publication_query.with_for_update()
+        route_query = route_query.with_for_update()
+    translation = await session.scalar(translation_query)
+    translation_status = await session.scalar(translation_status_query)
+    publication = await session.scalar(publication_query)
+    route = await session.scalar(route_query)
+    if any(
+        item is None for item in (translation, translation_status, publication, route)
+    ):
+        raise AppException(
+            409,
+            "site_page_conflict",
+            "Products 固定页面的双语生命周期记录不完整",
+        )
+    return translation, translation_status, publication, route
+
+
+async def _validate_products_site_page(
+    session: AsyncSession,
+    page: SitePage,
+    locales: dict[str, Locale],
+    *,
+    lock: bool = False,
+) -> dict[
+    str,
+    tuple[SitePageTranslation, TranslationStatus, ContentPublication, ContentRoute],
+]:
+    """
+    验证已有 Products 页面身份、翻译和路由未被人工改成不一致状态。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        page: SitePage，待核验页面。
+        locales: dict[str, Locale]，要求的双语语言映射。
+        lock: bool，写事务校验时是否锁定双语关联记录。
+
+    输出：
+        dict，按语言代码返回已验证记录；发现不一致时抛出 409，绝不覆盖。
+    """
+    if page.system_key != PRODUCTS_SITE_PAGE_KEY or page.status != "enabled":
+        raise AppException(409, "site_page_conflict", "Products 固定页面身份或状态不一致")
+    records: dict[
+        str,
+        tuple[SitePageTranslation, TranslationStatus, ContentPublication, ContentRoute],
+    ] = {}
+    for locale_code, config in PRODUCTS_SITE_PAGE_LANGUAGES.items():
+        language_records = await _site_page_language_records(
+            session,
+            page=page,
+            locale=locales[locale_code],
+            lock=lock,
+        )
+        translation, translation_status, publication, route = language_records
+        if translation.display_name != config["display_name"]:
+            raise AppException(409, "site_page_conflict", "Products 页面语言名称不一致")
+        if route.path != config["path"] or not route.is_canonical:
+            raise AppException(409, "site_page_conflict", "Products 页面 canonical Route 不一致")
+        expected_lifecycle = {
+            PublicationStatus.DRAFT.value: (TranslationState.DRAFT.value, False, False),
+            PublicationStatus.REVIEW.value: (
+                TranslationState.HUMAN_REVIEWED.value,
+                False,
+                False,
+            ),
+            PublicationStatus.PUBLISHED.value: (
+                TranslationState.PUBLISHED.value,
+                True,
+                True,
+            ),
+        }.get(publication.status)
+        actual_lifecycle = (translation_status.status, route.active, route.indexable)
+        if expected_lifecycle is None or actual_lifecycle != expected_lifecycle:
+            raise AppException(409, "site_page_conflict", "Products 页面生命周期状态不一致")
+        records[locale_code] = language_records
+    return records
+
+
+async def initialize_products_site_page(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    actor_id: uuid.UUID | None,
+) -> SitePage:
+    """
+    幂等初始化唯一 Products SitePage 及其双语生命周期记录。
+
+    输入：
+        session: AsyncSession，调用方控制提交的数据库事务。
+        system_key: str，必须为 products。
+        actor_id: uuid.UUID | None，执行初始化的认证用户 ID。
+
+    输出：
+        SitePage，新建或已存在且一致的固定页面；冲突时不覆盖并抛出 409。
+    """
+    _require_products_site_page_key(system_key)
+    await _lock_products_site_page_initialization(session)
+    locales = await _products_locales(session)
+    page = await session.scalar(
+        select(SitePage).where(SitePage.system_key == system_key).with_for_update()
+    )
+    occupied_routes = list(
+        (
+            await session.scalars(
+                select(ContentRoute)
+                .where(
+                    ContentRoute.path.in_(
+                        config["path"] for config in PRODUCTS_SITE_PAGE_LANGUAGES.values()
+                    )
+                )
+                .with_for_update()
+            )
+        ).all()
+    )
+    if page is None:
+        if occupied_routes:
+            raise AppException(
+                409,
+                "site_page_conflict",
+                "Products 固定页面路径已被其他内容占用",
+            )
+        page = SitePage(system_key=PRODUCTS_SITE_PAGE_KEY, status="enabled")
+        session.add(page)
+        await session.flush()
+        for locale_code, config in PRODUCTS_SITE_PAGE_LANGUAGES.items():
+            locale = locales[locale_code]
+            session.add_all(
+                [
+                    SitePageTranslation(
+                        site_page_id=page.id,
+                        locale_id=locale.id,
+                        display_name=config["display_name"],
+                    ),
+                    TranslationStatus(
+                        owner_type=SITE_PAGE_OWNER_TYPE,
+                        owner_id=page.id,
+                        locale_id=locale.id,
+                        status=TranslationState.DRAFT.value,
+                        translated_by=actor_id,
+                    ),
+                    ContentPublication(
+                        owner_type=SITE_PAGE_OWNER_TYPE,
+                        owner_id=page.id,
+                        locale_id=locale.id,
+                        status=PublicationStatus.DRAFT.value,
+                    ),
+                    ContentRoute(
+                        owner_type=SITE_PAGE_OWNER_TYPE,
+                        owner_id=page.id,
+                        locale_id=locale.id,
+                        path=config["path"],
+                        is_canonical=True,
+                        active=False,
+                        indexable=False,
+                    ),
+                ]
+            )
+        write_audit_log(
+            session,
+            action="site_page.initialize",
+            target_type=SITE_PAGE_OWNER_TYPE,
+            target_id=str(page.id),
+            user_id=actor_id,
+            metadata={"system_key": PRODUCTS_SITE_PAGE_KEY},
+        )
+        await session.flush()
+        return page
+
+    # 已存在时只接受完整且归属一致的记录；任何人工差异都报告冲突，不做修补。
+    if any(
+        route.owner_type != SITE_PAGE_OWNER_TYPE or route.owner_id != page.id
+        for route in occupied_routes
+    ):
+        raise AppException(409, "site_page_conflict", "Products 页面路径归属不一致")
+    await _validate_products_site_page(session, page, locales)
+    return page
+
+
+async def get_site_page_detail(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    include_seo: bool = True,
+) -> dict[str, object]:
+    """
+    按固定 key 返回 Admin 所需的页面、双语 SEO 与生命周期详情。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        system_key: str，必须为 products。
+        include_seo: bool，调用者具备 seo.read 时才返回 SEO 文档。
+
+    输出：
+        dict[str, object]，仅包含页面、语言、SEO 和生命周期业务字段。
+    """
+    _require_products_site_page_key(system_key)
+    # Admin 回读与写入共用事务锁，避免 READ COMMITTED 下拼接出跨事务的双语混合状态。
+    await _lock_products_site_page_initialization(session)
+    page = await session.scalar(
+        select(SitePage)
+        .where(SitePage.system_key == system_key)
+        .with_for_update()
+    )
+    if page is None:
+        raise AppException(404, "site_page_not_initialized", "Products 固定页面尚未初始化")
+    locales = await _products_locales(session)
+    records = await _validate_products_site_page(session, page, locales, lock=True)
+    languages: list[dict[str, object]] = []
+    for locale_code in PRODUCTS_SITE_PAGE_LANGUAGES:
+        locale = locales[locale_code]
+        translation, translation_status, publication, route = records[locale_code]
+        language_detail: dict[str, object] = {
+            "locale": _serialize_site_page_entity(locale),
+            "translation": _serialize_site_page_entity(translation),
+            "translation_status": _serialize_site_page_entity(translation_status),
+            "publication": _serialize_site_page_entity(publication),
+            "route": _serialize_site_page_entity(route),
+        }
+        if include_seo:
+            seo = await session.scalar(
+                select(SeoDocument).where(
+                    SeoDocument.owner_type == SITE_PAGE_OWNER_TYPE,
+                    SeoDocument.owner_id == page.id,
+                    SeoDocument.locale_id == locale.id,
+                )
+            )
+            language_detail["seo"] = (
+                _serialize_site_page_entity(seo) if seo is not None else None
+            )
+        languages.append(language_detail)
+    return {"page": _serialize_site_page_entity(page), "languages": languages}
+
+
+async def validate_site_page_seo_owner_locale(
+    session: AsyncSession,
+    *,
+    owner_id: uuid.UUID,
+    locale_id: uuid.UUID,
+) -> SitePage:
+    """
+    校验 site_page SEO owner 存在且语言真实属于该页面。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        owner_id: uuid.UUID，SitePage 主键。
+        locale_id: uuid.UUID，SEO 文档语言主键。
+
+    输出：
+        SitePage，已验证的页面；不匹配时抛出 409。
+    """
+    page = await session.get(SitePage, owner_id)
+    if page is None:
+        raise AppException(
+            409,
+            "site_page_owner_locale_mismatch",
+            "SEO owner 不是有效的固定页面",
+        )
+    translation_id = await session.scalar(
+        select(SitePageTranslation.id).where(
+            SitePageTranslation.site_page_id == owner_id,
+            SitePageTranslation.locale_id == locale_id,
+        )
+    )
+    if translation_id is None:
+        raise AppException(
+            409,
+            "site_page_owner_locale_mismatch",
+            "SEO 语言不属于该固定页面",
+        )
+    return page
+
+
+async def _products_site_page_lifecycle_records(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    locale_code: str,
+) -> tuple[SitePage, TranslationStatus, ContentPublication, ContentRoute]:
+    """
+    按固定 key 与语言代码读取 SitePage 生命周期三元组。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        system_key: str，必须为 products。
+        locale_code: str，必须为 zh-CN 或 en。
+
+    输出：
+        tuple，页面、翻译状态、发布状态及 canonical Route。
+    """
+    _require_products_site_page_key(system_key)
+    if locale_code not in PRODUCTS_SITE_PAGE_LANGUAGES:
+        raise AppException(404, "site_page_locale_not_found", "固定页面语言不存在")
+    # 与初始化共用事务锁；先锁定并完整校验双语记录，再允许任何 SEO/生命周期写入。
+    await _lock_products_site_page_initialization(session)
+    locales = await _products_locales(session)
+    page = await session.scalar(
+        select(SitePage)
+        .where(SitePage.system_key == system_key)
+        .with_for_update()
+    )
+    locale = locales.get(locale_code)
+    if page is None or locale is None:
+        raise AppException(404, "site_page_not_initialized", "Products 固定页面尚未初始化")
+    records = await _validate_products_site_page(session, page, locales, lock=True)
+    _translation, translation_status, publication, route = records[locale_code]
+    return page, translation_status, publication, route
+
+
+async def resolve_products_site_page_owner_locale(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    locale_code: str,
+) -> tuple[SitePage, Locale]:
+    """
+    将 Admin 使用的固定 key/语言代码解析为真实页面和 Locale。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        system_key: str，必须为 products。
+        locale_code: str，必须为 zh-CN 或 en。
+
+    输出：
+        tuple[SitePage, Locale]，供 SEO 保存使用的真实 UUID owner 与语言。
+    """
+    page, _translation, _publication, _route = await _products_site_page_lifecycle_records(
+        session,
+        system_key=system_key,
+        locale_code=locale_code,
+    )
+    locale = await session.scalar(select(Locale).where(Locale.code == locale_code))
+    if locale is None:
+        raise AppException(404, "site_page_locale_not_found", "固定页面语言不存在")
+    return page, locale
+
+
+def _require_site_page_permissions(
+    actor_permissions: set[str],
+    required_permissions: set[str],
+) -> None:
+    """
+    校验 SitePage 生命周期操作要求的全部原子权限。
+
+    输入：
+        actor_permissions: set[str]，当前用户完整权限。
+        required_permissions: set[str]，本次操作必须同时具备的权限。
+
+    输出：
+        None；缺少任一权限时抛出 403。
+    """
+    if not required_permissions.issubset(actor_permissions):
+        raise AppException(403, "permission_denied", "没有执行此操作的权限")
+
+
+async def review_products_site_page(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    locale_code: str,
+    actor_permissions: set[str],
+    actor_id: uuid.UUID | None,
+) -> None:
+    """
+    审核 Products 页面翻译并复用统一服务把 Publication 转为 review。
+
+    输入：session、固定页面 key、语言代码、完整权限集合与操作用户 ID。
+    输出：None；状态或双重审核权限不满足时抛出 AppException。
+    """
+    _require_site_page_permissions(
+        actor_permissions,
+        {"translation.review", "content.review"},
+    )
+    page, translation, publication, route = await _products_site_page_lifecycle_records(
+        session,
+        system_key=system_key,
+        locale_code=locale_code,
+    )
+    if (
+        publication.status == PublicationStatus.REVIEW.value
+        and translation.status == TranslationState.HUMAN_REVIEWED.value
+    ):
+        return
+    if publication.status != PublicationStatus.DRAFT.value or translation.status not in {
+        TranslationState.DRAFT.value,
+        TranslationState.MACHINE_TRANSLATED.value,
+    }:
+        raise AppException(409, "site_page_not_reviewable", "当前固定页面状态不能审核")
+    translation.status = TranslationState.HUMAN_REVIEWED.value
+    translation.reviewed_by = actor_id
+    write_audit_log(
+        session,
+        action="translation.review",
+        target_type=SITE_PAGE_OWNER_TYPE,
+        target_id=str(page.id),
+        user_id=actor_id,
+        metadata={"locale_code": locale_code},
+    )
+    await transition_publication(
+        session,
+        publication=publication,
+        translation=translation,
+        route=route,
+        target_status=PublicationStatus.REVIEW,
+        actor_permissions=actor_permissions,
+        actor_id=actor_id,
+    )
+
+
+async def publish_products_site_page(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    locale_code: str,
+    actor_permissions: set[str],
+    actor_id: uuid.UUID | None,
+) -> None:
+    """
+    复用统一生命周期服务发布已审核的 Products 固定页面语言。
+
+    输入：session、固定页面 key、语言代码、完整权限集合与操作用户 ID。
+    输出：None；状态或双重发布权限不满足时抛出 AppException。
+    """
+    _require_site_page_permissions(
+        actor_permissions,
+        {"translation.publish", "content.publish"},
+    )
+    _page, translation, publication, route = await _products_site_page_lifecycle_records(
+        session,
+        system_key=system_key,
+        locale_code=locale_code,
+    )
+    if (
+        publication.status == PublicationStatus.PUBLISHED.value
+        and translation.status == TranslationState.PUBLISHED.value
+        and route.active
+        and route.indexable
+    ):
+        return
+    if (
+        publication.status != PublicationStatus.REVIEW.value
+        or translation.status != TranslationState.HUMAN_REVIEWED.value
+    ):
+        raise AppException(409, "site_page_not_publishable", "固定页面须先完成人工审核")
+    await transition_publication(
+        session,
+        publication=publication,
+        translation=translation,
+        route=route,
+        target_status=PublicationStatus.PUBLISHED,
+        actor_permissions=actor_permissions,
+        actor_id=actor_id,
+    )
+
+
 async def upsert_seo_document(
     session: AsyncSession,
     owner_type: str,
@@ -381,17 +973,40 @@ async def upsert_seo_document(
     locale_id: uuid.UUID,
     payload: SeoDocumentUpsert,
     actor_id: uuid.UUID | None,
+    *,
+    partial: bool = False,
+    skip_noop: bool = False,
+    allow_site_page: bool = False,
 ) -> SeoDocument:
     """
     新增或更新统一 SEO 文档并写入审计。
 
-    输入：session、owner 标识、locale、payload 与 actor_id。
+    输入：session、owner 标识、locale、payload、actor_id、更新/no-op 模式及 SitePage 专用授权。
     输出：SeoDocument，当前事务中的文档。
     """
-    values = payload.model_dump()
-    values["canonical_override"] = validate_canonical_override(payload.canonical_override)
-    values["schema_override_jsonb"] = validate_schema_override(payload.schema_override_jsonb)
-    await _reject_case_private_identity(session, owner_type, owner_id, repr(values))
+    if owner_type == SITE_PAGE_OWNER_TYPE:
+        if not allow_site_page:
+            raise AppException(
+                409,
+                "site_page_fixed_key_required",
+                "固定页面 SEO 必须通过按 system key 的专用接口保存",
+            )
+        await validate_site_page_seo_owner_locale(
+            session,
+            owner_id=owner_id,
+            locale_id=locale_id,
+        )
+    # 通用 PUT 保持既有完整替换语义；只有固定页面入口显式启用局部更新。
+    update_values = payload.model_dump(exclude_unset=partial)
+    if "canonical_override" in update_values:
+        update_values["canonical_override"] = validate_canonical_override(
+            update_values["canonical_override"]
+        )
+    if "schema_override_jsonb" in update_values:
+        update_values["schema_override_jsonb"] = validate_schema_override(
+            update_values["schema_override_jsonb"]
+        )
+    await _reject_case_private_identity(session, owner_type, owner_id, repr(update_values))
     document = await session.scalar(
         select(SeoDocument).where(
             SeoDocument.owner_type == owner_type,
@@ -400,10 +1015,27 @@ async def upsert_seo_document(
         )
     )
     if document is None:
-        document = SeoDocument(owner_type=owner_type, owner_id=owner_id, locale_id=locale_id, **values)
+        create_values = payload.model_dump()
+        create_values.update(update_values)
+        create_values["canonical_override"] = validate_canonical_override(
+            create_values["canonical_override"]
+        )
+        create_values["schema_override_jsonb"] = validate_schema_override(
+            create_values["schema_override_jsonb"]
+        )
+        document = SeoDocument(
+            owner_type=owner_type,
+            owner_id=owner_id,
+            locale_id=locale_id,
+            **create_values,
+        )
         session.add(document)
     else:
-        for key, value in values.items():
+        if skip_noop and all(
+            getattr(document, key) == value for key, value in update_values.items()
+        ):
+            return document
+        for key, value in update_values.items():
             setattr(document, key, value)
     # 先取得真实 SEO 文档 ID，再把完整元数据写入独立修订流，避免混入正文 owner 的修订序号。
     await session.flush()
@@ -432,8 +1064,17 @@ async def upsert_seo_document(
         snapshot,
         actor_id,
     )
-    write_audit_log(session, action="seo.upsert", target_type=owner_type, target_id=str(owner_id), user_id=actor_id, metadata={"locale_id": str(locale_id), "robots_index": payload.robots_index})
+    write_audit_log(
+        session,
+        action="seo.upsert",
+        target_type=owner_type,
+        target_id=str(owner_id),
+        user_id=actor_id,
+        metadata={"locale_id": str(locale_id), "robots_index": document.robots_index},
+    )
     await session.flush()
+    # 部分方言会在同事务内的关联刷新后过期实例；显式刷新保证 API 序列化不触发隐式异步 IO。
+    await session.refresh(document)
     return document
 
 

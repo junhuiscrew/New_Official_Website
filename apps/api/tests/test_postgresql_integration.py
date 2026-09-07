@@ -33,11 +33,14 @@ from app.modules.content.models import (
     ContentPublication,
     ContentRevision,
     ContentRoute,
+    SitePage,
+    SitePageTranslation,
     TranslationStatus,
 )
 from app.modules.content.services.indexable import list_indexable_routes
 from app.modules.content.services.publication import transition_publication
 from app.modules.content.services.revisions import store_revision
+from app.modules.discovery.services import initialize_products_site_page
 from app.modules.localization.models import Locale
 from app.modules.localization.schemas import LocaleUpdate
 from app.modules.localization.service import set_default_locale, update_locale
@@ -696,6 +699,62 @@ async def test_postgresql_public_search_prefers_title_and_has_trigram_indexes() 
     assert expected_indexes == set(index_definitions)
     assert all("USING gin" in definition for definition in index_definitions.values())
     assert all("gin_trgm_ops" in definition for definition in index_definitions.values())
+    await engine.dispose()
+
+
+async def test_postgresql_products_site_page_initialization_is_concurrent_and_retryable() -> None:
+    """
+    验证两个真实 PostgreSQL 事务并发初始化时只产生一套 Products 页面记录。
+
+    输入：TEST_DATABASE_URL 环境变量，必须指向独立临时 PostgreSQL。
+    输出：None；断言 advisory lock、唯一约束、幂等回读及失败事务后的重试能力。
+    """
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    await seed_database(factory)
+    first_initialized = asyncio.Event()
+
+    async def initialize(hold_lock: bool) -> uuid.UUID:
+        """输入是否短暂持锁；输出当前唯一 Products SitePage ID。"""
+        async with factory() as session, session.begin():
+            page = await initialize_products_site_page(
+                session,
+                system_key="products",
+                actor_id=None,
+            )
+            if hold_lock:
+                first_initialized.set()
+                await asyncio.sleep(0.2)
+            return page.id
+
+    first_task = asyncio.create_task(initialize(True))
+    await first_initialized.wait()
+    second_task = asyncio.create_task(initialize(False))
+    first_id, second_id = await asyncio.wait_for(
+        asyncio.gather(first_task, second_task),
+        timeout=5,
+    )
+    assert first_id == second_id
+
+    async with factory() as session:
+        assert await session.scalar(select(func.count()).select_from(SitePage)) == 1
+        assert await session.scalar(select(func.count()).select_from(SitePageTranslation)) == 2
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(ContentRoute)
+                .where(ContentRoute.owner_type == "site_page")
+            )
+            == 2
+        )
+
+    # 唯一冲突回滚后，同一新会话仍能幂等回读既有页面。
+    async with factory() as session:
+        session.add(SitePage(system_key="products", status="enabled"))
+        with pytest.raises(IntegrityError):
+            await session.commit()
+        await session.rollback()
+    assert await initialize(False) == first_id
     await engine.dispose()
 
 

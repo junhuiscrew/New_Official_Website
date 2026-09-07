@@ -68,6 +68,8 @@ from app.modules.company.models import (
 from app.modules.content.models import (
     ContentPublication,
     ContentRoute,
+    SitePage,
+    SitePageTranslation,
     TranslationStatus,
 )
 from app.modules.discovery.models import SeoDocument
@@ -75,6 +77,9 @@ from app.modules.localization.models import Locale
 from app.modules.media.models import MediaAsset, MediaAssetTranslation
 from app.modules.rfq.schemas import RFQCreate
 from app.modules.rfq.services import validate_source
+
+PRODUCTS_SITE_PAGE_TITLE = "Products Site Page SEO"
+PRODUCTS_SITE_PAGE_DESCRIPTION = "SEO description owned by the published products site page."
 
 
 @pytest.fixture
@@ -2135,3 +2140,429 @@ async def test_rfq_multi_source_is_resolved_by_server_publication_gates(
         with pytest.raises(AppException) as failure:
             await validate_source(session, non_self_payload)
         assert failure.value.code == "invalid_rfq_source"
+
+
+async def _seed_bilingual_product_listing(
+    session: AsyncSession,
+) -> dict[str, Locale]:
+    """
+    创建双语公开产品，供产品总列表 SitePage 门禁测试复用。
+
+    输入：
+        session: AsyncSession，隔离测试数据库会话。
+
+    输出：
+        dict[str, Locale]，按语言代码索引的测试语言。
+    """
+    locales = {
+        "en": Locale(
+            code="en",
+            slug="en",
+            name="English",
+            native_name="English",
+            is_default=False,
+            is_enabled=True,
+            sort_order=20,
+        ),
+        "zh-CN": Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+            sort_order=10,
+        ),
+    }
+    category = ProductCategory(slug="site-page-products", status="enabled")
+    product = Product(category_id=category.id, slug="site-page-product", status="enabled")
+    session.add_all([*locales.values(), category])
+    await session.flush()
+    product.category_id = category.id
+    session.add(product)
+    await session.flush()
+
+    for locale in locales.values():
+        session.add_all(
+            [
+                ProductCategoryTranslation(
+                    category_id=category.id,
+                    locale_id=locale.id,
+                    name="Site page category",
+                ),
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="Site page product",
+                ),
+            ]
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=locale.id,
+            path=f"/{locale.slug}/products/site-page-products/",
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product",
+            owner_id=product.id,
+            locale_id=locale.id,
+            path=f"/{locale.slug}/products/site-page-products/site-page-product/",
+        )
+    return locales
+
+
+def _add_products_site_page_locale(
+    session: AsyncSession,
+    *,
+    page: SitePage,
+    locale: Locale,
+    lifecycle_status: str = "published",
+    include_translation: bool = True,
+    route_active: bool = True,
+    route_indexable: bool = True,
+    robots_index: bool = True,
+    canonical_override: str | None = None,
+) -> None:
+    """
+    添加一个 Products 固定页语言及其公开生命周期测试记录。
+
+    输入：
+        session: AsyncSession，隔离测试数据库会话。
+        page: SitePage，products 固定页。
+        locale: Locale，目标语言。
+        lifecycle_status: str，翻译及发布状态。
+        include_translation: bool，是否创建真实页面翻译。
+        route_active: bool，规范路由是否生效。
+        route_indexable: bool，规范路由是否允许索引。
+        robots_index: bool，SEO 文档是否允许索引。
+        canonical_override: str | None，SEO canonical 覆盖值。
+
+    输出：
+        None，将测试记录加入当前事务。
+    """
+    if include_translation:
+        session.add(
+            SitePageTranslation(
+                site_page_id=page.id,
+                locale_id=locale.id,
+                display_name="产品" if locale.code == "zh-CN" else "Products",
+            )
+        )
+    _add_lifecycle(
+        session,
+        owner_type="site_page",
+        owner_id=page.id,
+        locale_id=locale.id,
+        path=f"/{locale.slug}/products/",
+        status=lifecycle_status,
+        active=route_active,
+        indexable=route_indexable,
+    )
+    session.add(
+        SeoDocument(
+            owner_type="site_page",
+            owner_id=page.id,
+            locale_id=locale.id,
+            seo_title=PRODUCTS_SITE_PAGE_TITLE,
+            meta_description=PRODUCTS_SITE_PAGE_DESCRIPTION,
+            robots_index=robots_index,
+            robots_follow=True,
+            canonical_override=canonical_override,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_products_root_uses_only_fully_published_site_page_seo(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证合格 products SitePage 逐语言提供 SEO 和正式 reciprocal hreflang。
+
+    输入：public_collections_factory，隔离数据库会话工厂。
+    输出：None；公开 SEO 未来自 SitePage 或语言门禁不完整时失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        locales = await _seed_bilingual_product_listing(session)
+        page = SitePage(system_key="products", status="enabled")
+        session.add(page)
+        await session.flush()
+        for locale in locales.values():
+            _add_products_site_page_locale(session, page=page, locale=locale)
+
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get("/api/v1/public/products/en")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["items"]
+    assert payload["seo"] == {
+        "title": PRODUCTS_SITE_PAGE_TITLE,
+        "description": PRODUCTS_SITE_PAGE_DESCRIPTION,
+        "canonical": "https://junhuiscrewbarrel.com/en/products/",
+        "robots": "index, follow",
+        "hreflang": {
+            "en": "https://junhuiscrewbarrel.com/en/products/",
+            "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/products/",
+            "x-default": "https://junhuiscrewbarrel.com/zh-cn/products/",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_products_root_keeps_legacy_fallback_when_site_page_does_not_exist(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证数据库完全没有 products SitePage 时保留既有合成 SEO 行为。
+
+    输入：public_collections_factory，隔离数据库会话工厂。
+    输出：None；兼容标题、索引资格或双语 alternate 回归时失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        await _seed_bilingual_product_listing(session)
+
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get("/api/v1/public/products/en")
+
+    assert response.status_code == 200
+    seo = response.json()["data"]["seo"]
+    assert seo["title"] == "Products"
+    assert seo["description"] is None
+    assert seo["robots"] == "index, follow"
+    assert seo["hreflang"] == {
+        "en": "https://junhuiscrewbarrel.com/en/products/",
+        "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/products/",
+        "x-default": "https://junhuiscrewbarrel.com/zh-cn/products/",
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "gate_case",
+        "page_status",
+        "lifecycle_status",
+        "include_translation",
+        "active",
+        "indexable",
+        "robots_index",
+        "canonical_override",
+    ),
+    [
+        ("draft", "enabled", "draft", True, True, True, True, None),
+        ("disabled", "disabled", "published", True, True, True, True, None),
+        ("missing_translation", "enabled", "published", False, True, True, True, None),
+        ("inactive", "enabled", "published", True, False, True, True, None),
+        ("noindex_route", "enabled", "published", True, True, False, True, None),
+        ("noindex_seo", "enabled", "published", True, True, True, False, None),
+        ("blank_canonical", "enabled", "published", True, True, True, True, ""),
+        (
+            "non_self_canonical",
+            "enabled",
+            "published",
+            True,
+            True,
+            True,
+            True,
+            "https://junhuiscrewbarrel.com/en/products/other/",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_existing_ineligible_products_site_page_never_leaks_or_revives_seo(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+    gate_case: str,
+    page_status: str,
+    lifecycle_status: str,
+    include_translation: bool,
+    active: bool,
+    indexable: bool,
+    robots_index: bool,
+    canonical_override: str | None,
+) -> None:
+    """
+    验证已登记但不合格的 SitePage 使用安全默认 SEO，且产品列表仍可读取。
+
+    输入：隔离会话工厂及各生命周期门禁组合。
+    输出：None；草稿字段泄漏、旧合成分支复活或列表不可用时失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        locales = await _seed_bilingual_product_listing(session)
+        page = SitePage(system_key="products", status=page_status)
+        session.add(page)
+        await session.flush()
+        _add_products_site_page_locale(
+            session,
+            page=page,
+            locale=locales["en"],
+            lifecycle_status=lifecycle_status,
+            include_translation=include_translation,
+            route_active=active,
+            route_indexable=indexable,
+            robots_index=robots_index,
+            canonical_override=canonical_override,
+        )
+
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get("/api/v1/public/products/en")
+
+    assert response.status_code == 200, gate_case
+    payload = response.json()["data"]
+    assert payload["items"], gate_case
+    assert payload["seo"] == {
+        "title": "Products",
+        "description": None,
+        "canonical": "https://junhuiscrewbarrel.com/en/products/",
+        "robots": "noindex, follow",
+        "hreflang": {},
+    }, gate_case
+    assert PRODUCTS_SITE_PAGE_TITLE not in str(payload)
+    assert PRODUCTS_SITE_PAGE_DESCRIPTION not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_site_page_sitemap_uses_real_routes_and_never_synthetic_revival(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证 products SitePage 存在后只由合格真实路由生成产品总列表候选。
+
+    输入：public_collections_factory，隔离数据库会话工厂。
+    输出：None；不合格语言被产品详情合成复活或 URL 重复时失败。
+    """
+    from app.modules.content.services.indexable import list_sitemap_candidates
+
+    async with public_collections_factory() as session, session.begin():
+        locales = await _seed_bilingual_product_listing(session)
+        page = SitePage(system_key="products", status="enabled")
+        session.add(page)
+        await session.flush()
+        _add_products_site_page_locale(session, page=page, locale=locales["en"])
+        _add_products_site_page_locale(
+            session,
+            page=page,
+            locale=locales["zh-CN"],
+            lifecycle_status="draft",
+        )
+
+    async with public_collections_factory() as session:
+        candidates = await list_sitemap_candidates(session)
+
+    paths = [candidate.path for candidate in candidates]
+    assert paths.count("/en/products/") == 1
+    assert "/zh-cn/products/" not in paths
+    assert "/en/products/site-page-products/site-page-product/" in paths
+    assert "/zh-cn/products/site-page-products/site-page-product/" in paths
+
+
+@pytest.mark.parametrize(
+    (
+        "gate_case",
+        "page_status",
+        "lifecycle_status",
+        "include_translation",
+        "route_active",
+        "route_indexable",
+        "robots_index",
+        "canonical_override",
+        "wrong_path",
+    ),
+    [
+        ("draft", "enabled", "draft", True, True, True, True, None, False),
+        ("disabled", "disabled", "published", True, True, True, True, None, False),
+        ("missing_translation", "enabled", "published", False, True, True, True, None, False),
+        ("inactive", "enabled", "published", True, False, True, True, None, False),
+        ("route_noindex", "enabled", "published", True, True, False, True, None, False),
+        ("seo_noindex", "enabled", "published", True, True, True, False, None, False),
+        ("blank_canonical", "enabled", "published", True, True, True, True, "", False),
+        (
+            "non_self_canonical",
+            "enabled",
+            "published",
+            True,
+            True,
+            True,
+            True,
+            "https://junhuiscrewbarrel.com/en/products/other/",
+            False,
+        ),
+        ("wrong_path", "enabled", "published", True, True, True, True, None, True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_ineligible_site_page_never_enters_sitemap_via_synthetic_fallback(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+    gate_case: str,
+    page_status: str,
+    lifecycle_status: str,
+    include_translation: bool,
+    route_active: bool,
+    route_indexable: bool,
+    robots_index: bool,
+    canonical_override: str | None,
+    wrong_path: bool,
+) -> None:
+    """
+    验证每项真实 SitePage 资格门禁都能独立阻止 Sitemap 合成分支复活。
+
+    输入：隔离数据库会话工厂及各门禁组合。
+    输出：None；不合格 SitePage 的 Products 总列表进入候选时失败。
+    """
+    from app.modules.content.services.indexable import list_sitemap_candidates
+
+    async with public_collections_factory() as session, session.begin():
+        locales = await _seed_bilingual_product_listing(session)
+        page = SitePage(system_key="products", status=page_status)
+        session.add(page)
+        await session.flush()
+        _add_products_site_page_locale(
+            session,
+            page=page,
+            locale=locales["en"],
+            lifecycle_status=lifecycle_status,
+            include_translation=include_translation,
+            route_active=route_active,
+            route_indexable=route_indexable,
+            robots_index=robots_index,
+            canonical_override=canonical_override,
+        )
+        if wrong_path:
+            route = await session.scalar(
+                select(ContentRoute).where(
+                    ContentRoute.owner_type == "site_page",
+                    ContentRoute.owner_id == page.id,
+                )
+            )
+            assert route is not None
+            route.path = "/en/products/wrong/"
+
+    async with public_collections_factory() as session:
+        paths = [item.path for item in await list_sitemap_candidates(session)]
+
+    assert "/en/products/" not in paths, gate_case
+
+
+@pytest.mark.asyncio
+async def test_legacy_sitemap_aggregate_remains_when_products_site_page_is_absent(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证尚未迁入 SitePage 的数据库仍按已发布产品生成兼容总列表候选。
+
+    输入：public_collections_factory，隔离数据库会话工厂。
+    输出：None；旧部署升级前的 Products sitemap URL 消失时失败。
+    """
+    from app.modules.content.services.indexable import list_sitemap_candidates
+
+    async with public_collections_factory() as session, session.begin():
+        await _seed_bilingual_product_listing(session)
+
+    async with public_collections_factory() as session:
+        candidates = await list_sitemap_candidates(session)
+
+    paths = [candidate.path for candidate in candidates]
+    assert paths.count("/en/products/") == 1
+    assert paths.count("/zh-cn/products/") == 1

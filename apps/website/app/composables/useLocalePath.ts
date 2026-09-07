@@ -1,5 +1,6 @@
 // 模块用途：集中生成公开语言路径、alternate 回退和带来源上下文的 RFQ URL。
 import type { LocaleSlug } from '../types/public'
+import { SITE_URL } from '../site-config'
 
 const DEFAULT_LOCALE: LocaleSlug = 'zh-cn'
 
@@ -71,6 +72,42 @@ export function localeHome(locale: unknown): string {
 }
 
 /**
+ * 将受信正式站 alternate 转换为当前站点可安全跟随的相对地址。
+ *
+ * 输入：candidate，后端或 Head 提供的候选 URL；fallback，目标语言首页。
+ * 输出：同站相对路径；外站、非法 scheme 或格式错误时返回 fallback。
+ */
+export function sameSiteRelativeTarget(candidate: string, fallback: string): string {
+  const trimmed = candidate.trim()
+
+  try {
+    if (
+      !trimmed ||
+      trimmed.startsWith('//') ||
+      trimmed.includes('\\') ||
+      /[\u0000-\u001f\u007f]/.test(trimmed)
+    ) {
+      return fallback
+    }
+    // URL 构造器会保留部分异常百分号编码；先显式验证编码格式。
+    decodeURI(trimmed)
+    const trustedOrigin = new URL(SITE_URL).origin
+    const parsed = new URL(trimmed, `${trustedOrigin}/`)
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.origin !== trustedOrigin ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return fallback
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return fallback
+  }
+}
+
+/**
  * 选择后端提供的同内容 alternate；不存在时回退目标语言首页。
  *
  * 输入：
@@ -90,7 +127,8 @@ export function alternateTarget(
     .map((key) => alternates?.[key])
     .find((candidate): candidate is string => Boolean(candidate?.trim()))
 
-  return alternate?.trim() ?? localeHome(target)
+  const fallback = localeHome(target)
+  return alternate ? sameSiteRelativeTarget(alternate, fallback) : fallback
 }
 
 /**

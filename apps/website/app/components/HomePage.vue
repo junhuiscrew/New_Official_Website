@@ -16,16 +16,13 @@ import { serializeJsonLd } from '~/utils/jsonLd'
 const props = defineProps<{ locale: LocaleSlug; home: HomeDto }>()
 const labels = computed(() => ui[props.locale])
 const heroTitle = computed(
-  () =>
-    props.home.company?.short_intro?.trim() ||
-    props.home.company?.company_name?.trim() ||
-    labels.value.home.fallbackTitle,
+  () => props.home.company?.company_name?.trim() || labels.value.home.fallbackTitle,
 )
 const heroSummary = computed(
-  () => props.home.company?.mission?.trim() || labels.value.home.fallbackSummary,
-)
-const heroEyebrow = computed(() =>
-  props.home.company?.short_intro?.trim() ? props.home.company.company_name.trim() : null,
+  () =>
+    props.home.company?.short_intro?.trim() ||
+    props.home.company?.mission?.trim() ||
+    labels.value.home.fallbackSummary,
 )
 const advantages = computed(() =>
   (props.home.company?.advantages ?? []).filter((item) => Boolean(item.trim())),
@@ -154,7 +151,6 @@ function cardKey(item: PublicCardDto): string {
 <template>
   <div class="home-page">
     <PageHero
-      :eyebrow="heroEyebrow"
       :title="heroTitle"
       :summary="heroSummary"
       :primary-label="labels.cta.requestQuote"

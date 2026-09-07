@@ -15,7 +15,7 @@ from app.modules.audit.service import write_audit_log
 from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.localization.models import Locale
 from app.modules.media.models import MediaAsset, MediaAssetTranslation
-from app.modules.media.services import validate_upload_bytes
+from app.modules.media.services import refresh_public_image_dimensions, validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 from app.modules.users.models import User
 
@@ -86,6 +86,46 @@ async def update_media_translation(asset_id: uuid.UUID, locale_id: uuid.UUID, al
     write_audit_log(session, action="media.translation_update", target_type="media_asset", target_id=str(asset.id), user_id=user.id, metadata={"locale_id": str(locale.id)})
     await session.commit()
     return success_response({"media_asset_id": str(asset.id), "locale_id": str(locale.id), "alt_text": alt_text, "title": title, "caption": caption})
+
+
+@router.post(
+    "/{asset_id}/refresh-image-metadata",
+    response_model=ApiResponse[dict[str, object]],
+)
+async def refresh_image_metadata(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(require_permission("media.update")),
+    _csrf: None = Depends(require_csrf),
+    storage: MinioStorageAdapter = Depends(get_storage_adapter),
+) -> ApiResponse[dict[str, object]]:
+    """
+    从现有对象真实解码并补齐公开图片尺寸，同值请求保持幂等。
+
+    输入：媒体 ID、数据库会话、具备 media.update 的用户、CSRF 校验及对象存储。
+    输出：脱敏后的媒体尺寸和 changed 标记；不返回桶、对象键或哈希。
+    """
+    from app.core.exceptions.handlers import AppException
+
+    asset = await session.get(MediaAsset, asset_id)
+    if asset is None:
+        raise AppException(404, "media_not_found", "媒体不存在")
+
+    before = {"width": asset.width, "height": asset.height}
+    width, height, changed = await refresh_public_image_dimensions(asset, storage=storage)
+    if changed:
+        write_audit_log(
+            session,
+            action="media.metadata_refresh",
+            target_type="media_asset",
+            target_id=str(asset.id),
+            user_id=user.id,
+            metadata={"before": before, "after": {"width": width, "height": height}},
+        )
+        await session.commit()
+    return success_response(
+        {"media_asset_id": str(asset.id), "width": width, "height": height, "changed": changed}
+    )
 
 
 @public_router.get("/{asset_id}", include_in_schema=False)

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_session
-from app.modules.content.services.indexable import list_indexable_routes
+from app.modules.content.services.indexable import list_indexable_routes, list_sitemap_candidates
 from app.modules.discovery.sitemap import OFFICIAL_ORIGIN, SitemapEntry, render_sitemap
 
 router = APIRouter(tags=["discovery-files"])
@@ -25,8 +25,10 @@ async def sitemap_xml(session: AsyncSession = Depends(get_session)) -> Response:
     settings = get_settings()
     if not settings.public_sitemap_enabled:
         return Response(status_code=404)
-    routes = await list_indexable_routes(session)
-    xml = render_sitemap([SitemapEntry(route.path, route.updated_at) for route in routes])
+    candidates = await list_sitemap_candidates(session)
+    xml = render_sitemap(
+        [SitemapEntry(candidate.path, candidate.updated_at) for candidate in candidates]
+    )
     return Response(content=xml, media_type="application/xml")
 
 

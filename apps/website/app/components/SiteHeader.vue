@@ -75,6 +75,7 @@ const hasSolutions = computed(
     props.navigation.solutions.featured.length > 0 ||
     props.navigation.solutions.problems.length > 0,
 )
+const primary = computed(() => new Set(props.navigation.primary))
 
 /** 保存各桌面 disclosure 按钮，关闭菜单时用于焦点回收。 */
 function setMenuButton(key: MenuKey, element: unknown): void {
@@ -131,7 +132,7 @@ onBeforeUnmount(() => {
       </a>
 
       <nav class="desktop-nav" data-testid="desktop-nav" :aria-label="labels.navigation.menu">
-        <div class="desktop-nav__item">
+        <div v-if="primary.has('products')" class="desktop-nav__item">
           <button
             v-if="hasProducts"
             :ref="(element) => setMenuButton('products', element)"
@@ -157,7 +158,7 @@ onBeforeUnmount(() => {
             @close="closeMenu(true)"
           />
         </div>
-        <div class="desktop-nav__item">
+        <div v-if="primary.has('solutions')" class="desktop-nav__item">
           <button
             v-if="hasSolutions"
             :ref="(element) => setMenuButton('solutions', element)"
@@ -183,7 +184,7 @@ onBeforeUnmount(() => {
             @close="closeMenu(true)"
           />
         </div>
-        <div class="desktop-nav__item">
+        <div v-if="primary.has('materials')" class="desktop-nav__item">
           <button
             v-if="navigation.materials.length"
             :ref="(element) => setMenuButton('materials', element)"
@@ -208,7 +209,7 @@ onBeforeUnmount(() => {
             @close="closeMenu(true)"
           />
         </div>
-        <div class="desktop-nav__item">
+        <div v-if="primary.has('applications')" class="desktop-nav__item">
           <button
             v-if="navigation.applications.length"
             :ref="(element) => setMenuButton('applications', element)"
@@ -233,10 +234,16 @@ onBeforeUnmount(() => {
             @close="closeMenu(true)"
           />
         </div>
-        <a :href="`/${locale}/capabilities/`">{{ labels.navigation.capabilities }}</a>
-        <a :href="`/${locale}/case-studies/`">{{ labels.navigation.caseStudies }}</a>
-        <a :href="`/${locale}/knowledge/`">{{ labels.navigation.knowledge }}</a>
-        <a :href="`/${locale}/about/`">{{ labels.navigation.about }}</a>
+        <a v-if="primary.has('capabilities')" :href="`/${locale}/capabilities/`">{{
+          labels.navigation.capabilities
+        }}</a>
+        <a v-if="primary.has('case_studies')" :href="`/${locale}/case-studies/`">{{
+          labels.navigation.caseStudies
+        }}</a>
+        <a v-if="primary.has('knowledge')" :href="`/${locale}/knowledge/`">{{
+          labels.navigation.knowledge
+        }}</a>
+        <a v-if="primary.has('about')" :href="`/${locale}/about/`">{{ labels.navigation.about }}</a>
       </nav>
 
       <div class="site-header__actions" @click.capture="closeMenu(false)">

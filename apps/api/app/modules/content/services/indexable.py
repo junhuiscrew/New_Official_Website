@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
+
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,6 +57,28 @@ _BUSINESS_MODELS = {
     "exhibition": Exhibition,
     "company_profile": CompanyProfile,
 }
+
+_HOME_AGGREGATE_OWNER_TYPES = frozenset(
+    {
+        "company_profile",
+        "product_category",
+        "product",
+        "material",
+        "solution",
+        "manufacturing_capability",
+        "application",
+        "case_study",
+        "knowledge_article",
+    }
+)
+
+
+@dataclass(frozen=True)
+class SitemapCandidate:
+    """Sitemap 候选站内路径及可证实的最近公开路由更新时间。"""
+
+    path: str
+    updated_at: datetime
 
 
 async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
@@ -126,3 +151,44 @@ async def list_indexable_routes(session: AsyncSession) -> list[ContentRoute]:
         for route in candidates
         if route.owner_id in enabled_ids.get(route.owner_type, set())
     ]
+
+
+async def list_sitemap_candidates(session: AsyncSession) -> list[SitemapCandidate]:
+    """
+    生成 owner 路由与合格聚合页共用的 Sitemap 候选集合。
+
+    输入：
+        session: AsyncSession，数据库异步会话。
+
+    输出：
+        list[SitemapCandidate]，包含严格公开 owner 路由，以及由同一批路由证明有实质内容的首页和产品总列表。
+    """
+    routes = await list_indexable_routes(session)
+    candidates = {
+        route.path: SitemapCandidate(path=route.path, updated_at=route.updated_at)
+        for route in routes
+    }
+    locales = list(
+        (
+            await session.scalars(
+                select(Locale).where(Locale.is_enabled.is_(True)).order_by(Locale.sort_order)
+            )
+        ).all()
+    )
+    for locale in locales:
+        locale_routes = [route for route in routes if route.locale_id == locale.id]
+        home_routes = [
+            route for route in locale_routes if route.owner_type in _HOME_AGGREGATE_OWNER_TYPES
+        ]
+        product_routes = [route for route in locale_routes if route.owner_type == "product"]
+        if home_routes:
+            candidates[f"/{locale.slug}/"] = SitemapCandidate(
+                path=f"/{locale.slug}/",
+                updated_at=max(route.updated_at for route in home_routes),
+            )
+        if product_routes:
+            candidates[f"/{locale.slug}/products/"] = SitemapCandidate(
+                path=f"/{locale.slug}/products/",
+                updated_at=max(route.updated_at for route in product_routes),
+            )
+    return [candidates[path] for path in sorted(candidates)]

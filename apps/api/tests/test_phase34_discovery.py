@@ -1,5 +1,6 @@
 """Phase 3.4 隐私、Redirect、GEO、Sitemap 与 Schema 回归测试。"""
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -7,6 +8,87 @@ from sqlalchemy import select
 
 from app.core.database import Base, create_database_engine, create_session_factory
 from app.core.exceptions.handlers import AppException
+
+
+@pytest.mark.asyncio
+async def test_seo_upsert_records_immutable_revision_snapshots(
+    sqlite_database_url: str,
+) -> None:
+    """
+    验证 SEO 新增和更新会按真实 SEO 文档 ID 保存独立不可变修订。
+
+    输入：sqlite_database_url，pytest 提供的隔离数据库。
+    输出：None；缺少修订、快照内容错误或混入正文 owner 修订流时失败。
+    """
+    from app.modules.audit import models as _audit_models  # noqa: F401
+    from app.modules.auth import models as _auth_models  # noqa: F401
+    from app.modules.content.models import ContentRevision
+    from app.modules.discovery.schemas import SeoDocumentUpsert
+    from app.modules.discovery.services import upsert_seo_document
+    from app.modules.localization.models import Locale
+    from app.modules.users import models as _user_models  # noqa: F401
+
+    engine = create_database_engine(sqlite_database_url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = create_session_factory(engine)
+    async with factory() as session, session.begin():
+        locale = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+        )
+        session.add(locale)
+        await session.flush()
+        owner_id = uuid.uuid4()
+
+        document = await upsert_seo_document(
+            session,
+            "company_profile",
+            owner_id,
+            locale.id,
+            SeoDocumentUpsert(
+                seo_title="初始标题",
+                meta_description="初始描述",
+            ),
+            None,
+        )
+        await upsert_seo_document(
+            session,
+            "company_profile",
+            owner_id,
+            locale.id,
+            SeoDocumentUpsert(
+                seo_title="更新标题",
+                meta_description="更新描述",
+            ),
+            None,
+        )
+
+        revisions = list(
+            (
+                await session.scalars(
+                    select(ContentRevision)
+                    .where(
+                        ContentRevision.owner_type == "seo_document",
+                        ContentRevision.owner_id == document.id,
+                        ContentRevision.locale_id == locale.id,
+                    )
+                    .order_by(ContentRevision.revision_no)
+                )
+            ).all()
+        )
+        assert [item.revision_no for item in revisions] == [1, 2]
+        assert revisions[0].snapshot_jsonb["seo_title"] == "初始标题"
+        assert revisions[0].snapshot_jsonb["meta_description"] == "初始描述"
+        assert revisions[1].snapshot_jsonb["seo_title"] == "更新标题"
+        assert revisions[1].snapshot_jsonb["meta_description"] == "更新描述"
+        assert revisions[0].snapshot_jsonb["owner_type"] == "company_profile"
+        assert revisions[1].snapshot_jsonb["document_id"] == str(document.id)
+    await engine.dispose()
 
 
 def test_case_public_serializer_uses_explicit_privacy_allowlist() -> None:

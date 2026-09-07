@@ -376,7 +376,10 @@ def _upload_media(
     created = 0
     for source_id in sorted(source_ids):
         mapping_key = f"media:{source_id}"
-        if state.mappings.get(mapping_key):
+        mapped_media_id = state.mappings.get(mapping_key)
+        if mapped_media_id:
+            # 幂等复用也通过受权限和 CSRF 保护的 API 核验真实对象尺寸，端点同值时 no-op。
+            client.post(f"media/{mapped_media_id}/refresh-image-metadata")
             continue
         derivative = derivatives[source_id]
         asset = package["assets"][source_id]

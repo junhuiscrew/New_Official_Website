@@ -1401,9 +1401,13 @@ async def get_public_product(
     relations["knowledge"] = knowledge
     relations["capabilities"] = await _published_capability_links(session, locale)
     url = OFFICIAL_ORIGIN + route.path
+    localized = locale.slug == "zh-cn"
     breadcrumb = [
-        {"name": "Home", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
-        {"name": "Products", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/products/"},
+        {"name": "首页" if localized else "Home", "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/"},
+        {
+            "name": "产品" if localized else "Products",
+            "url": f"{OFFICIAL_ORIGIN}/{locale.slug}/products/",
+        },
         {"name": translation.name, "url": url},
     ]
     product_schema = build_product_schema(

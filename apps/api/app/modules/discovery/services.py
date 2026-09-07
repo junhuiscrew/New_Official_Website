@@ -405,6 +405,33 @@ async def upsert_seo_document(
     else:
         for key, value in values.items():
             setattr(document, key, value)
+    # 先取得真实 SEO 文档 ID，再把完整元数据写入独立修订流，避免混入正文 owner 的修订序号。
+    await session.flush()
+    snapshot = jsonable_encoder(
+        {
+            "document_id": document.id,
+            "owner_type": document.owner_type,
+            "owner_id": document.owner_id,
+            "locale_id": document.locale_id,
+            "seo_title": document.seo_title,
+            "meta_description": document.meta_description,
+            "canonical_override": document.canonical_override,
+            "robots_index": document.robots_index,
+            "robots_follow": document.robots_follow,
+            "og_title": document.og_title,
+            "og_description": document.og_description,
+            "og_media_id": document.og_media_id,
+            "schema_override_jsonb": document.schema_override_jsonb,
+        }
+    )
+    await store_revision(
+        session,
+        "seo_document",
+        document.id,
+        locale_id,
+        snapshot,
+        actor_id,
+    )
     write_audit_log(session, action="seo.upsert", target_type=owner_type, target_id=str(owner_id), user_id=actor_id, metadata={"locale_id": str(locale_id), "robots_index": payload.robots_index})
     await session.flush()
     return document

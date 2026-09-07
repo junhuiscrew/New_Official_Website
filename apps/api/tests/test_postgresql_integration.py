@@ -697,3 +697,90 @@ async def test_postgresql_public_search_prefers_title_and_has_trigram_indexes() 
     assert all("USING gin" in definition for definition in index_definitions.values())
     assert all("gin_trgm_ops" in definition for definition in index_definitions.values())
     await engine.dispose()
+
+
+async def test_postgresql_public_search_matches_cjk_substrings_without_relaxing_gates() -> None:
+    """
+    验证真实 PostgreSQL 对中文标题和正文做字面子串补充匹配，并继续执行公开门禁。
+
+    输入：TEST_DATABASE_URL 环境变量。
+
+    输出：None；中文检索失效、特殊字符被当通配符或隐藏内容泄漏时测试失败。
+    """
+    from app.modules.discovery.public_collections import search_public_content
+
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    unique = uuid.uuid4().hex
+    async with factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        assert locale is not None
+        category = ProductCategory(slug=f"pg-cjk-category-{unique}", status="enabled")
+        session.add(category)
+        await session.flush()
+
+        product_specs = (
+            ("title", "精密氮化螺杆", "公开摘要", "published", True, True),
+            ("body", "精密挤出部件", "采用氮化处理的公开说明", "published", True, True),
+            ("draft", "旧试点氮化螺杆", "不得公开", "draft", False, False),
+            ("closed", "关闭路由氮化螺杆", "不得公开", "published", False, False),
+            ("noindex", "不可索引氮化螺杆", "不得公开", "published", True, False),
+        )
+        products: dict[str, Product] = {}
+        for position, (marker, name, summary, status, active, indexable) in enumerate(
+            product_specs, start=1
+        ):
+            product = Product(
+                category_id=category.id,
+                slug=f"pg-cjk-{marker}-{unique}",
+                status="enabled",
+                sort_order=position,
+            )
+            products[marker] = product
+            session.add(product)
+            await session.flush()
+            session.add_all(
+                [
+                    ProductTranslation(
+                        product_id=product.id,
+                        locale_id=locale.id,
+                        name=name,
+                        short_description=summary,
+                    ),
+                    TranslationStatus(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        status=status,
+                    ),
+                    ContentPublication(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        status=status,
+                    ),
+                    ContentRoute(
+                        owner_type="product",
+                        owner_id=product.id,
+                        locale_id=locale.id,
+                        path=f"/zh-cn/products/{category.slug}/{product.slug}/",
+                        is_canonical=True,
+                        active=active,
+                        indexable=indexable,
+                    ),
+                ]
+            )
+
+    async with factory() as session:
+        payload = await search_public_content(session, "zh-cn", "氮化", ("product",), 100)
+        literal_percent = await search_public_content(session, "zh-cn", "%", ("product",), 100)
+
+    slugs = [item["slug"] for item in payload["groups"]["product"]]
+    assert products["title"].slug in slugs
+    assert products["body"].slug in slugs
+    assert slugs.index(products["title"].slug) < slugs.index(products["body"].slug)
+    assert products["draft"].slug not in slugs
+    assert products["closed"].slug not in slugs
+    assert products["noindex"].slug not in slugs
+    assert literal_percent["groups"]["product"] == []
+    await engine.dispose()

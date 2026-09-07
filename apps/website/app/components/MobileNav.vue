@@ -21,6 +21,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ close: [] }>()
 const labels = computed(() => ui[props.locale])
+const primary = computed(() => new Set(props.navigation.primary))
 const expanded = ref<AccordionKey | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const closeButton = ref<HTMLButtonElement | null>(null)
@@ -28,12 +29,20 @@ let savedBodyOverflow = ''
 let bodyLocked = false
 let desktopMedia: MediaQueryList | null = null
 
-const staticRoutes = computed(() => [
-  { key: 'capabilities', label: labels.value.navigation.capabilities },
-  { key: 'case-studies', label: labels.value.navigation.caseStudies },
-  { key: 'knowledge', label: labels.value.navigation.knowledge },
-  { key: 'about', label: labels.value.navigation.about },
-])
+const staticRoutes = computed(() =>
+  [
+    {
+      key: 'capabilities',
+      primaryKey: 'capabilities',
+      label: labels.value.navigation.capabilities,
+    },
+    { key: 'case-studies', primaryKey: 'case_studies', label: labels.value.navigation.caseStudies },
+    { key: 'knowledge', primaryKey: 'knowledge', label: labels.value.navigation.knowledge },
+    { key: 'about', primaryKey: 'about', label: labels.value.navigation.about },
+  ].filter((item) =>
+    primary.value.has(item.primaryKey as (typeof props.navigation.primary)[number]),
+  ),
+)
 
 const productItems = computed(() => [
   ...props.navigation.products.categories,
@@ -147,7 +156,7 @@ onBeforeUnmount(() => {
 
       <nav :aria-label="labels.navigation.menu">
         <ul class="mobile-nav__list">
-          <li>
+          <li v-if="primary.has('products')">
             <button
               v-if="productItems.length"
               type="button"
@@ -178,7 +187,7 @@ onBeforeUnmount(() => {
             </ul>
           </li>
 
-          <li>
+          <li v-if="primary.has('solutions')">
             <button
               v-if="solutionItems.length"
               type="button"
@@ -209,7 +218,7 @@ onBeforeUnmount(() => {
             </ul>
           </li>
 
-          <li>
+          <li v-if="primary.has('materials')">
             <button
               v-if="navigation.materials.length"
               type="button"
@@ -240,7 +249,7 @@ onBeforeUnmount(() => {
             </ul>
           </li>
 
-          <li>
+          <li v-if="primary.has('applications')">
             <button
               v-if="navigation.applications.length"
               type="button"

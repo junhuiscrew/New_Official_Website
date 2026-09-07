@@ -8,6 +8,7 @@ import { nextTick } from 'vue'
 
 import LanguageSwitcher from '../app/components/LanguageSwitcher.vue'
 import MobileNav from '../app/components/MobileNav.vue'
+import PublicBreadcrumb from '../app/components/PublicBreadcrumb.vue'
 import SiteFooter from '../app/components/SiteFooter.vue'
 import SiteHeader from '../app/components/SiteHeader.vue'
 import { resolveRouteLocale } from '../app/composables/useLocalePath'
@@ -183,10 +184,10 @@ describe('Phase 3.6 desktop navigation', () => {
     expect(document.activeElement).toBe(outsideButton)
   })
 
-  it('keeps static routes when optional groups are empty and omits empty dynamic panels', () => {
+  it('keeps launch routes returned by the API and omits deferred empty sections', () => {
     const navigation: NavigationDto = {
       ...navigationFixture(),
-      primary: [],
+      primary: ['products', 'about'],
       products: { categories: [], featured: [] },
       solutions: { featured: [], problems: [] },
       materials: [],
@@ -195,7 +196,17 @@ describe('Phase 3.6 desktop navigation', () => {
     const wrapper = mount(SiteHeader, { props: { navigation, locale: 'en' } })
 
     expect(wrapper.get('[data-testid="desktop-nav"]').text()).toContain('Products')
-    expect(wrapper.get('[data-testid="desktop-nav"]').text()).toContain('Applications')
+    expect(wrapper.get('[data-testid="desktop-nav"]').text()).toContain('About')
+    for (const deferred of [
+      'Solutions',
+      'Materials',
+      'Applications',
+      'Capabilities',
+      'Case Studies',
+      'Knowledge',
+    ]) {
+      expect(wrapper.get('[data-testid="desktop-nav"]').text()).not.toContain(deferred)
+    }
     expect(wrapper.find('[data-testid="desktop-products-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="products-mega-menu"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Solve a Problem')
@@ -232,9 +243,7 @@ describe('Phase 3.6 language and mobile navigation', () => {
     })
 
     await wrapper.get('button').trigger('click')
-    expect(wrapper.get('a').attributes('href')).toBe(
-      'https://junhuiscrewbarrel.com/zh-cn/products/published/',
-    )
+    expect(wrapper.get('a').attributes('href')).toBe('/zh-cn/products/published/')
     alternate.remove()
   })
 
@@ -315,6 +324,48 @@ describe('Phase 3.6 footer and SSR layout', () => {
 
     expect(wrapper.text()).not.toContain('API Company Name')
     expect(wrapper.find('a[href="/en/terms/"]').text()).toBe('Terms')
+  })
+
+  it('omits deferred empty footer sections while preserving products, RFQ, privacy and language', () => {
+    const wrapper = mount(SiteFooter, {
+      props: {
+        navigation: { ...navigationFixture(), primary: ['products', 'about'] },
+        locale: 'en',
+      },
+    })
+
+    expect(wrapper.find('a[href="/en/products/"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/en/request-a-quote/"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/en/privacy/"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/zh-cn/"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/en/solutions/"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/en/knowledge/"]').exists()).toBe(false)
+  })
+
+  it('turns trusted formal breadcrumb URLs into local relative links and rejects external origins', () => {
+    const wrapper = mount(PublicBreadcrumb, {
+      props: {
+        items: [
+          { name: '首页', url: 'https://junhuiscrewbarrel.com/zh-cn/' },
+          { name: '产品', url: 'https://junhuiscrewbarrel.com/zh-cn/products/?from=crumb#top' },
+          { name: '当前', url: 'https://junhuiscrewbarrel.com/zh-cn/products/current/' },
+        ],
+      },
+    })
+    expect(wrapper.findAll('a').map((item) => item.attributes('href'))).toEqual([
+      '/zh-cn/',
+      '/zh-cn/products/?from=crumb#top',
+    ])
+
+    const unsafe = mount(PublicBreadcrumb, {
+      props: {
+        items: [
+          { name: '外站', url: 'https://example.com/foreign/' },
+          { name: '当前', url: 'https://junhuiscrewbarrel.com/en/current/' },
+        ],
+      },
+    })
+    expect(unsafe.get('a').attributes('href')).toBe('/')
   })
 
   it('uses the Nuxt default layout and a stable SSR navigation request', () => {

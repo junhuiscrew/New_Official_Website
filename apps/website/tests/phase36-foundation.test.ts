@@ -10,6 +10,7 @@ import {
   localeHome,
   normalizeLocale,
   rfqUrl,
+  sameSiteRelativeTarget,
 } from '../app/composables/useLocalePath'
 import { useTelemetry } from '../app/composables/useTelemetry'
 import type {
@@ -181,8 +182,24 @@ describe('Phase 3.6 public foundation', () => {
       alternateTarget('zh-cn', {
         'zh-CN': 'https://junhuiscrewbarrel.com/zh-cn/products/precision-screw/',
       }),
-    ).toBe('https://junhuiscrewbarrel.com/zh-cn/products/precision-screw/')
+    ).toBe('/zh-cn/products/precision-screw/')
     expect(alternateTarget('en', { 'zh-CN': '/zh-cn/products/precision-screw/' })).toBe('/en/')
+    expect(
+      alternateTarget('en', {
+        en: 'https://junhuiscrewbarrel.com/en/products/precision-screw/?from=language#details',
+      }),
+    ).toBe('/en/products/precision-screw/?from=language#details')
+    expect(alternateTarget('en', { en: 'https://example.com/en/products/foreign/' })).toBe('/en/')
+    expect(alternateTarget('en', { en: 'javascript:alert(1)' })).toBe('/en/')
+    expect(alternateTarget('en', { en: '//example.com/en/products/foreign/' })).toBe('/en/')
+    expect(alternateTarget('en', { en: '/\\example.com/en/products/foreign/' })).toBe('/en/')
+    expect(
+      sameSiteRelativeTarget('//junhuiscrewbarrel.com/en/products/protocol-relative/', '/'),
+    ).toBe('/')
+    expect(
+      sameSiteRelativeTarget('https://user@junhuiscrewbarrel.com/en/products/userinfo/', '/'),
+    ).toBe('/')
+    expect(sameSiteRelativeTarget('/en/products/%ZZ/', '/')).toBe('/')
   })
 
   it('builds an RFQ URL from public source context only', () => {

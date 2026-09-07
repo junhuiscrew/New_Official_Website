@@ -4,7 +4,23 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.phase37_batch01 import BatchState, _build_plan, _mapped_action
+from app.phase37_batch01 import BatchState, _build_plan, _mapped_action, _upload_media
+
+
+class _RecordingPilotClient:
+    """记录 Batch01 幂等媒体路径发出的 API 请求。"""
+
+    def __init__(self) -> None:
+        self.posts: list[str] = []
+
+    def post(self, path: str, **_kwargs):
+        """输入 API 路径；输出最小媒体响应并记录调用。"""
+        self.posts.append(path)
+        return {"id": "created-id"}
+
+    def patch(self, _path: str, **_kwargs):
+        """输入 API 路径；输出空响应，供新建分支兼容。"""
+        return {}
 
 
 def test_mapped_action_requires_private_mapping_for_existing_resource() -> None:
@@ -74,3 +90,22 @@ def test_batch_plan_preserves_existing_pilot_and_keeps_values_empty() -> None:
     }
     assert plan["product_spec_values"] == "VALUES_INTENTIONALLY_EMPTY"
     assert plan["internal_reference_img05"] == "blocked_publication"
+
+
+def test_mapped_media_reuse_refreshes_dimensions_without_reupload(tmp_path) -> None:
+    """已映射媒体必须刷新真实尺寸元数据，但不能重新上传或重复计数。"""
+    client = _RecordingPilotClient()
+    state = BatchState(mappings={"media:IMG-02": "existing-id"})
+
+    created = _upload_media(
+        client,
+        {"assets": {"IMG-02": {"alt_zh_draft": "中文", "alt_en_draft": "English"}}},
+        state,
+        {},
+        {},
+        {"IMG-02"},
+        tmp_path / "state.json",
+    )
+
+    assert created == 0
+    assert client.posts == ["media/existing-id/refresh-image-metadata"]

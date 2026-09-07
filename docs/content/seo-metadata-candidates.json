@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0",
+  "candidate_version": "SEO-CANDIDATE-R1-V1",
+  "status": "PENDING_APPROVAL",
+  "applied": false,
+  "source_policy": "approved_visible_content_only",
+  "copy_v1_body_fields_changed": 0,
+  "items": [
+    {
+      "page": "about",
+      "locale": "zh-CN",
+      "title": "关于骏辉｜舟山骏辉塑料机械有限公司",
+      "description": "舟山骏辉塑料机械有限公司位于中国浙江舟山，专注于塑料机械用机筒、螺杆、哥林柱及拉杆等核心部件，将设计、研发、上门测绘、生产、热处理、销售与售后服务相结合，为客户提供定制解决方案。",
+      "source": "Company zh-CN short_intro"
+    },
+    {
+      "page": "about",
+      "locale": "en",
+      "title": "About Junhui | Zhoushan Junhui Plastic Machinery Co., Ltd.",
+      "description": "Based in Zhoushan, Zhejiang, China, Junhui specializes in barrels, screws, tie bars and tie rods for plastics machinery. We bring together design, R&D, on-site measurement, production, heat treatment, sales and after-sales service to provide tailored solutions.",
+      "source": "Company en short_intro"
+    },
+    {
+      "page": "products",
+      "locale": "zh-CN",
+      "title": "骏辉螺杆与机筒产品",
+      "description": "查看骏辉氮化螺杆、骏辉氮化机筒和骏辉电镀螺杆，并通过询价入口提交设备信息、图纸或需求说明。",
+      "source": "P01/P02/P03 approved visible content"
+    },
+    {
+      "page": "products",
+      "locale": "en",
+      "title": "Junhui Screw and Barrel Products",
+      "description": "Explore Junhui Nitrided Screw, Junhui Nitrided Barrel and Junhui Electroplated Screw, then use the RFQ entry point to share machine information, drawings or requirements.",
+      "source": "P01/P02/P03 approved visible content"
+    },
+    {
+      "page": "screws",
+      "locale": "zh-CN",
+      "title": "骏辉螺杆｜氮化螺杆与电镀螺杆",
+      "description": "查看骏辉氮化螺杆和骏辉电镀螺杆的产品图片与介绍；尺寸、镀层、技术要求和设备适配事项可在询价沟通中分别确认。",
+      "source": "P01/P03 approved visible content"
+    },
+    {
+      "page": "screws",
+      "locale": "en",
+      "title": "Junhui Screws | Nitrided and Electroplated Screws",
+      "description": "View the images and descriptions for Junhui Nitrided Screw and Junhui Electroplated Screw. Dimensions, plating, technical requirements and machine compatibility can be confirmed through an RFQ.",
+      "source": "P01/P03 approved visible content"
+    },
+    {
+      "page": "barrels",
+      "locale": "zh-CN",
+      "title": "骏辉机筒｜氮化机筒",
+      "description": "查看骏辉氮化机筒的产品图片与介绍；欢迎提供设备名称或型号、机筒需求、采购数量和已有图纸，具体尺寸及配套要求需分别确认。",
+      "source": "P02 approved visible content"
+    },
+    {
+      "page": "barrels",
+      "locale": "en",
+      "title": "Junhui Barrels | Nitrided Barrel",
+      "description": "View the image and description for Junhui Nitrided Barrel. Share the machine name or model, barrel requirements, quantity and available drawing to confirm dimensions and matching requirements.",
+      "source": "P02 approved visible content"
+    }
+  ]
+}

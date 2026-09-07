@@ -1202,17 +1202,35 @@ async def get_public_navigation(
     locale = await _locale(session, locale_slug)
     product_categories = await _published_rows(session, "product_category", locale, 12, False)
     featured_products = await _published_rows(session, "product", locale, 8, True)
+    published_products = await _published_rows(session, "product", locale, 1, False)
     featured_solutions = await _published_rows(session, "solution", locale, 8, True)
     solution_problems = await _published_rows(session, "solution", locale, 12, False)
     materials = await _published_rows(session, "material", locale, 8, True)
+    published_materials = await _published_rows(session, "material", locale, 1, False)
     applications = await _published_rows(session, "application", locale, 8, True)
+    published_applications = await _published_rows(session, "application", locale, 1, False)
+    capabilities = await _published_rows(session, "manufacturing_capability", locale, 1, False)
+    cases = await _published_rows(session, "case_study", locale, 1, False)
+    knowledge = await _published_rows(session, "knowledge_article", locale, 1, False)
     company_result = await _published_company(session, locale)
     company = company_result[0] if company_result else None
 
+    # 主导航资格与各内容族共用完整公开门禁；后续有内容发布时会自动恢复对应入口。
+    available_sections = {
+        "products": bool(product_categories or published_products),
+        "solutions": bool(featured_solutions or solution_problems),
+        "materials": bool(published_materials),
+        "applications": bool(published_applications),
+        "capabilities": bool(capabilities),
+        "case_studies": bool(cases),
+        "knowledge": bool(knowledge),
+        "about": company is not None,
+    }
+
     return {
         "locale": locale.slug,
-        # 这里只返回稳定键；可见标签和 index 路径由 Nuxt i18n/路由负责。
-        "primary": list(_PRIMARY_NAVIGATION),
+        # 只返回当前语言有严格公开内容的稳定键；标签和路径仍由 Nuxt i18n/路由负责。
+        "primary": [key for key in _PRIMARY_NAVIGATION if available_sections[key]],
         "products": {
             "categories": product_categories,
             "featured": featured_products,
@@ -1570,18 +1588,31 @@ def _search_select(
     card_summary = func.coalesce(getattr(translation_model, config.summary_fields[0]), "")
 
     if dialect_name == "postgresql":
-        # 标题使用 A 权重、正文使用 B 权重；trigram 仅作为标题拼写容错后备。
+        # 标题使用 A 权重、正文使用 B 权重；字面子串补足 CJK 分词，并将 trigram 保留为拼写容错。
         weighted_vector = func.setweight(
             func.to_tsvector("simple", func.coalesce(title, "")),
             literal_column("'A'"),
         ).op("||")(func.setweight(func.to_tsvector("simple", body_text), literal_column("'B'")))
         ts_query = func.websearch_to_tsquery("simple", query)
+        normalized_query = query.casefold()
+        lowered_title = func.lower(title)
+        lowered_body = func.lower(body_text)
+        title_contains = func.strpos(lowered_title, normalized_query) > 0
+        body_contains = func.strpos(lowered_body, normalized_query) > 0
         match_condition = or_(
             weighted_vector.op("@@")(ts_query),
             title.op("%")(query),
+            title_contains,
+            body_contains,
         )
         score = (
             func.ts_rank_cd(weighted_vector, ts_query) * 100 + func.similarity(title, query) * 10
+            + case(
+                (lowered_title == normalized_query, 400.0),
+                (title_contains, 200.0),
+                (body_contains, 100.0),
+                else_=0.0,
+            )
         )
     else:
         # SQLite 单测按精确、前缀、标题包含、正文包含给固定分值，结果可重复。

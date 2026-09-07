@@ -381,12 +381,18 @@ async def test_navigation_and_home_only_return_fully_indexable_content(
         navigation_response = await client.get("/api/v1/public/navigation/en")
         home_response = await client.get("/api/v1/public/home/en")
 
+    from app.modules.content.services.indexable import list_sitemap_candidates
+
+    async with public_collections_factory() as session:
+        sitemap_candidates = await list_sitemap_candidates(session)
+
     assert navigation_response.status_code == 200
     assert home_response.status_code == 200
     navigation = navigation_response.json()["data"]
     home = home_response.json()["data"]
 
     assert navigation["locale"] == "en"
+    assert navigation["primary"] == ["products", "case_studies", "about"]
     assert [item["slug"] for item in navigation["products"]["featured"]] == ["published-screw"]
     assert [item["slug"] for item in home["featured_products"]] == ["published-screw"]
     assert [item["slug"] for item in home["cases"]] == ["wear-case"]
@@ -411,6 +417,11 @@ async def test_navigation_and_home_only_return_fully_indexable_content(
     assert home["featured_products"][0]["media"] is None
     assert home["featured_products"][0]["category"]["slug"] == "screws"
     assert home["featured_products"][0]["specifications"] == []
+    sitemap_paths = [candidate.path for candidate in sitemap_candidates]
+    assert "/en/" in sitemap_paths
+    assert "/en/products/" in sitemap_paths
+    assert "/en/products/screws/" in sitemap_paths
+    assert "/en/products/screws/published-screw/" in sitemap_paths
 
     serialized_payloads = f"{navigation!r}{home!r}"
     for forbidden in (
@@ -458,6 +469,7 @@ async def test_empty_collections_return_empty_arrays_without_fabricated_facts(
     home = home_response.json()["data"]
 
     assert navigation["products"] == {"categories": [], "featured": []}
+    assert navigation["primary"] == []
     assert navigation["solutions"] == {"featured": [], "problems": []}
     assert navigation["materials"] == []
     assert navigation["applications"] == []
@@ -472,6 +484,87 @@ async def test_empty_collections_return_empty_arrays_without_fabricated_facts(
     serialized_payloads = f"{navigation!r}{home!r}".lower()
     for fabricated_fact in ("iso", "certificate", "employees", "products available"):
         assert fabricated_fact not in serialized_payloads
+
+
+@pytest.mark.asyncio
+async def test_sitemap_xml_includes_eligible_aggregate_pages_only(
+    public_collections_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    验证独立测试配置下 Sitemap XML 包含合格聚合页，并排除草稿旧试点。
+
+    输入：隔离数据库会话工厂及 pytest 环境变量夹具。
+
+    输出：None；聚合页缺失、草稿泄漏或正式 URL 序列化错误时测试失败。
+    """
+    async with public_collections_factory() as session, session.begin():
+        locale = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+        )
+        category = ProductCategory(slug="screws", status="enabled")
+        session.add_all([locale, category])
+        await session.flush()
+        session.add(
+            ProductCategoryTranslation(
+                category_id=category.id,
+                locale_id=locale.id,
+                name="螺杆",
+            )
+        )
+        _add_lifecycle(
+            session,
+            owner_type="product_category",
+            owner_id=category.id,
+            locale_id=locale.id,
+            path="/zh-cn/products/screws/",
+        )
+
+        for slug, status in (("published-screw", "published"), ("old-pilot", "draft")):
+            product = Product(category_id=category.id, slug=slug, status="enabled")
+            session.add(product)
+            await session.flush()
+            session.add(
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=locale.id,
+                    name="公开螺杆" if status == "published" else "旧试点",
+                )
+            )
+            _add_lifecycle(
+                session,
+                owner_type="product",
+                owner_id=product.id,
+                locale_id=locale.id,
+                path=f"/zh-cn/products/screws/{slug}/",
+                status=status,
+                active=status == "published",
+                indexable=status == "published",
+            )
+
+    monkeypatch.setenv("PUBLIC_SITEMAP_ENABLED", "true")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    async with _public_client(public_collections_factory) as client:
+        response = await client.get("/sitemap.xml")
+
+    assert response.status_code == 200
+    xml = response.text
+    expected_urls = {
+        "https://junhuiscrewbarrel.com/zh-cn/",
+        "https://junhuiscrewbarrel.com/zh-cn/products/",
+        "https://junhuiscrewbarrel.com/zh-cn/products/screws/",
+        "https://junhuiscrewbarrel.com/zh-cn/products/screws/published-screw/",
+    }
+    assert all(f"<loc>{url}</loc>" in xml for url in expected_urls)
+    assert xml.count("<url>") == len(expected_urls)
+    assert "old-pilot" not in xml
 
 
 @pytest.mark.asyncio

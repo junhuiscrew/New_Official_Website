@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import Request
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -173,6 +174,98 @@ async def test_storage_adapter_put_get_exists_delete_and_presign() -> None:
     assert "X-Amz-Expires=600" in url and "minio:9000" not in url
     await adapter.delete_object("public-media", "public/a.pdf")
     assert await adapter.object_exists("public-media", "public/a.pdf") is False
+
+
+async def test_refresh_public_image_metadata_decodes_object_and_preserves_asset(
+    remediation_factory,
+) -> None:
+    """尺寸刷新只补真实宽高，并保持对象哈希、路径、ID及其他媒体字段不变。"""
+    from app.api.v1.media import refresh_image_metadata
+    from app.modules.audit.models import AuditLog
+    from app.modules.media.storage import MinioStorageAdapter
+
+    output = io.BytesIO()
+    Image.new("RGB", (91, 57), (30, 100, 170)).save(output, "WEBP")
+    content = output.getvalue()
+    digest = __import__("hashlib").sha256(content).hexdigest()
+    fake = _FakeMinioClient()
+    fake.objects[("public-media", "public/existing/product.webp")] = content
+    storage = MinioStorageAdapter(client=fake, public_client=fake)
+    actor_id = uuid.uuid4()
+
+    async with remediation_factory() as session:
+        asset = MediaAsset(
+            visibility="public",
+            media_type="image",
+            storage_bucket="public-media",
+            storage_key="public/existing/product.webp",
+            original_filename="product.webp",
+            sanitized_filename="product.webp",
+            mime_type="image/webp",
+            file_extension=".webp",
+            file_size_bytes=len(content),
+            sha256=digest,
+            width=None,
+            height=None,
+            checksum_verified=True,
+            malware_scan_status="not_required",
+            upload_status="ready",
+        )
+        session.add(asset)
+        await session.commit()
+        original = {
+            "id": asset.id,
+            "sha256": asset.sha256,
+            "storage_bucket": asset.storage_bucket,
+            "storage_key": asset.storage_key,
+            "original_filename": asset.original_filename,
+        }
+
+        response = await refresh_image_metadata(
+            asset.id,
+            session=session,
+            user=SimpleNamespace(id=actor_id),
+            _csrf=None,
+            storage=storage,
+        )
+        await session.refresh(asset)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "media.metadata_refresh",
+                AuditLog.target_id == str(asset.id),
+            )
+        )
+
+        assert response.data["changed"] is True
+        assert (asset.width, asset.height) == (91, 57)
+        assert {
+            "id": asset.id,
+            "sha256": asset.sha256,
+            "storage_bucket": asset.storage_bucket,
+            "storage_key": asset.storage_key,
+            "original_filename": asset.original_filename,
+        } == original
+        assert audit is not None
+
+        second = await refresh_image_metadata(
+            asset.id,
+            session=session,
+            user=SimpleNamespace(id=actor_id),
+            _csrf=None,
+            storage=storage,
+        )
+        audits = list(
+            (
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.action == "media.metadata_refresh",
+                        AuditLog.target_id == str(asset.id),
+                    )
+                )
+            ).all()
+        )
+        assert second.data["changed"] is False
+        assert len(audits) == 1
 
 
 @pytest.mark.minio

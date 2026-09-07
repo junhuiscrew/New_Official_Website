@@ -210,7 +210,8 @@ describe('Phase 3.6 final homepage composition', () => {
   it('uses DTO company and trust facts without replacing them with invented claims', () => {
     const wrapper = mount(HomePage, { props: { locale: 'en', home: populatedHome() } })
 
-    expect(wrapper.get('h1').text()).toBe('API supplied introduction.')
+    expect(wrapper.get('h1').text()).toBe('API Company Name')
+    expect(wrapper.get('.page-hero__content > p').text()).toBe('API supplied introduction.')
     expect(wrapper.text()).toContain('API Company Name')
     expect(wrapper.text()).toContain('API supplied introduction.')
     expect(wrapper.text()).toContain('API supplied quality fact')

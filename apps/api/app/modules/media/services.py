@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import re
+from io import BytesIO
 from pathlib import PurePath
+
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
@@ -133,6 +136,67 @@ def sanitize_filename(filename: str) -> str:
     return name[:180]
 
 
+def decode_image_dimensions(content: bytes) -> tuple[int, int]:
+    """
+    完整解码图片字节并返回符合视觉方向的真实像素尺寸。
+
+    输入：
+        content: bytes，待验证的图片对象完整内容。
+
+    输出：
+        tuple[int, int]，按 EXIF 方向归一后的宽度和高度。
+    """
+    try:
+        with Image.open(BytesIO(content)) as image:
+            # load() 强制解码像素，避免只凭文件头读取尺寸后接受损坏对象。
+            image.load()
+            normalized = ImageOps.exif_transpose(image)
+            width, height = normalized.size
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, ValueError) as exc:
+        raise AppException(422, "image_decode_failed", "图片内容无法完整解码") from exc
+    if width <= 0 or height <= 0:
+        raise AppException(422, "image_dimensions_invalid", "图片像素尺寸无效")
+    return width, height
+
+
+async def refresh_public_image_dimensions(
+    asset: MediaAsset,
+    *,
+    storage: MinioStorageAdapter,
+) -> tuple[int, int, bool]:
+    """
+    从现有公开图片对象重新解码尺寸，并只更新资产的宽高字段。
+
+    输入：
+        asset: MediaAsset，待刷新的现有公开图片记录。
+        storage: MinioStorageAdapter，读取原对象的存储适配器。
+
+    输出：
+        tuple[int, int, bool]，真实宽度、真实高度以及字段是否发生变化。
+    """
+    if (
+        asset.visibility != "public"
+        or asset.media_type != "image"
+        or asset.storage_bucket != "public-media"
+        or asset.upload_status != "ready"
+    ):
+        raise AppException(422, "media_not_refreshable_image", "媒体不是可刷新的公开图片")
+    if not await storage.object_exists(asset.storage_bucket, asset.storage_key):
+        raise AppException(404, "media_object_missing", "公开媒体对象不存在")
+
+    content = await storage.get_object(asset.storage_bucket, asset.storage_key)
+    # 刷新只允许补元数据；对象字节、长度或哈希变化时必须停止，不能顺带接管对象变更。
+    if len(content) != asset.file_size_bytes or hashlib.sha256(content).hexdigest() != asset.sha256:
+        raise AppException(409, "media_object_integrity_mismatch", "媒体对象与已记录校验值不一致")
+
+    width, height = decode_image_dimensions(content)
+    changed = asset.width != width or asset.height != height
+    if changed:
+        asset.width = width
+        asset.height = height
+    return width, height, changed
+
+
 def validate_upload_bytes(filename: str, mime_type: str, content: bytes, *, private: bool = False, max_size: int | None = None) -> dict[str, object]:
     """
     联合校验扩展名、MIME、文件头、大小与 SHA256。
@@ -169,12 +233,17 @@ def validate_upload_bytes(filename: str, mime_type: str, content: bytes, *, priv
         raise AppException(422, "file_signature_invalid", "CAD 文件头签名校验失败")
     if not content:
         raise AppException(422, "file_empty", "文件不能为空")
-    return {
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    media_type = "cad" if extension in {".dwg", ".dxf", ".step", ".stp", ".iges", ".igs"} else "image" if extension in image_extensions else "video" if extension in {".mp4", ".webm"} else "document"
+    metadata: dict[str, object] = {
         "original_filename": filename,
         "sanitized_filename": sanitize_filename(filename),
         "file_extension": extension,
         "mime_type": normalized_mime,
-        "media_type": "cad" if extension in {".dwg", ".dxf", ".step", ".stp", ".iges", ".igs"} else "image" if extension in {".jpg", ".jpeg", ".png", ".webp"} else "video" if extension in {".mp4", ".webm"} else "document",
+        "media_type": media_type,
         "file_size_bytes": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
     }
+    if media_type == "image":
+        metadata["width"], metadata["height"] = decode_image_dimensions(content)
+    return metadata

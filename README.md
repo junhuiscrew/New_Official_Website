@@ -1,15 +1,33 @@
 # Junhui Global Website
 
-Junhui Global Website 是面向全球塑料机械行业的螺杆、机筒及相关塑化部件 B2B 官网基础工程，正式主域名为 `https://junhuiscrewbarrel.com`。
+Junhui Global Website 是面向全球塑料机械行业的螺杆、机筒及相关塑化部件 B2B 官网，正式主域名为 `https://junhuiscrewbarrel.com`。
 
-仓库当前完成 Phase 3.5 Remediation：在既有 Structured Core、Authority Content、SEO/GEO 与统一发布生命周期上，补齐真实 MinIO/S3 对象存储、RFQ 私有附件、Celery 恶意软件扫描流程、Company Trust 生命周期和对应 Admin/Public 闭环。最终首页视觉、完整 Page Builder、生产部署和批量内容仍不在本阶段范围内。
+Phase 3.6 前台与 QA36 已完成封板。当前分支进入 **Phase 3.7 — 真实资料盘点、隔离 Draft 导入与内容审核**：Batch01 已在独立本地 HTTPS 环境保存 Company 和三款产品草稿，尚未 Review/Publish，也未写入实际参数或进入公开索引。完整接手说明见 [`交接文档-新对话.md`](./交接文档-新对话.md)。
+
+## 当前状态
+
+| 项目                     | 状态                                                          |
+| ------------------------ | ------------------------------------------------------------- |
+| 当前开发分支             | `phase-3.7`                                                   |
+| Phase 3.6 验收基线       | `c16385cc57ec4ce1aa66164928be2a2cc30d4473`                    |
+| Phase 3.7 当前已推送实现 | `afe99c351f9288b1b8e038dfdc053d68e1a83d20`                    |
+| Batch01                  | Company + 3 Product 双语 draft                                |
+| 参数                     | 7 个字段定义；三款产品 ProductSpecValue 均为 0                |
+| 发布                     | 未 Review、未 Publish、Route inactive/noindex、未进入 Sitemap |
+| 生产环境                 | 未部署                                                        |
+
+当前内容审核入口：
+
+- [`docs/content/phase3-7-batch01-content-review-package.md`](./docs/content/phase3-7-batch01-content-review-package.md)
+- [`docs/content/phase3-7-batch01-draft-report.md`](./docs/content/phase3-7-batch01-draft-report.md)
+- [`docs/architecture/phase3-7-1-readiness-report.md`](./docs/architecture/phase3-7-1-readiness-report.md)
 
 ## 目录
 
 ```text
 apps/
-  website/        Public Website，Nuxt SSR placeholder
-  admin/          Admin、Trust/Media/Downloads/RFQ 管理页面
+  website/        Public Website，Nuxt SSR 最终前台与多语言公开页面
+  admin/          Admin、Catalog/Authority/Trust/Media/Downloads/RFQ 管理页面
   api/            FastAPI 模块化单体、Celery Worker、Alembic 与测试
 packages/
   config/         Website/Admin 共享 API Base 解析
@@ -20,6 +38,7 @@ infra/
   nginx/          开发与 Staging 反向代理配置
   scripts/        本地验证脚本
 docs/architecture/ ADR、迁移策略与完成报告
+docs/content/      Phase 3.7 内容审核包、来源与 Draft 导入报告
 ```
 
 ## 本地启动
@@ -125,6 +144,50 @@ docker compose down
 ```
 
 `docker compose down` 保留 named volumes；只有明确需要清空本地数据时才使用 `docker compose down -v`。
+
+## Phase 3.7 隔离审核环境
+
+Phase 3.7 使用独立 Compose project `junhui-phase37-pilot`，配置位于被 Git 忽略的 `.env.phase37`，数据与证书位于被忽略的 `data/phase3-7/`。禁止提交其中的凭据、私钥、备份或真实资料原件。
+
+首次配置本地证书与 hosts（管理员 PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\phase37-local-https.ps1 -InstallTrustAndHosts
+```
+
+启动隔离环境：
+
+```powershell
+docker compose --env-file .env.phase37 `
+  -f docker-compose.yml `
+  -f docker-compose.phase37.yml `
+  -p junhui-phase37-pilot up -d --build
+```
+
+| 服务      | 地址                                          |
+| --------- | --------------------------------------------- |
+| Website   | `https://junhui.test/`                        |
+| Admin     | `https://admin.junhui.test/catalog/products`  |
+| API ready | `https://api.junhui.test/api/v1/health/ready` |
+
+浏览器先通过 Basic Auth，再使用 `.env.phase37` 中的隔离 Admin 账号登录。代理用户需要让 `.junhui.test` 直连本机；Clash 类客户端可添加 `DOMAIN-SUFFIX,junhui.test,DIRECT`，Fake-IP Filter 添加 `+.junhui.test`。不要通过修改正式 canonical 或放宽生产安全配置来解决本地代理问题。
+
+停止环境时不要删除 volume：
+
+```powershell
+docker compose --env-file .env.phase37 `
+  -f docker-compose.yml `
+  -f docker-compose.phase37.yml `
+  -p junhui-phase37-pilot down
+```
+
+当前 Batch01 只能继续在 Admin 中修改 draft。未经用户明确授权，不得重导、不填实际参数、不 Review/Publish、不激活 Route。
+
+## Phase 3.6 最终前台
+
+- Website 已具备 Desktop/Mobile Navigation、Homepage、Product、Material、Technology、Application、Solution、Knowledge、Case、About、Capability、Trust、Downloads、Search、RFQ、多语言切换、Breadcrumb、Empty State 与 404。
+- 前台 SSR 复用后端 Public DTO、Publication/Route、canonical、hreflang、Schema 和 GEO visible-source，不在 Vue 中维护第二套索引体系。
+- QA36 完成真实浏览器旅程、Gallery 与语言点击收尾；报告见 `docs/architecture/phase3-6-qa36-closeout-report.md`。
 
 ## Phase 3.4 Authority 与 Discovery
 

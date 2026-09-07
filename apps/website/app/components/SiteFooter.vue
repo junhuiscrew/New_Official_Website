@@ -17,6 +17,7 @@ const props = withDefaults(
 
 const labels = computed(() => ui[props.locale])
 const company = computed(() => props.navigation.company)
+const primary = computed(() => new Set(props.navigation.primary))
 </script>
 
 <template>
@@ -41,7 +42,7 @@ const company = computed(() => props.navigation.company)
         </ul>
       </section>
 
-      <section>
+      <section v-if="primary.has('solutions')">
         <h2>{{ labels.navigation.solutions }}</h2>
         <ul>
           <li>
@@ -50,7 +51,7 @@ const company = computed(() => props.navigation.company)
         </ul>
       </section>
 
-      <section>
+      <section v-if="primary.has('knowledge')">
         <h2>{{ labels.navigation.knowledge }}</h2>
         <ul>
           <li>

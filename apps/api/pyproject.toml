@@ -17,6 +17,7 @@ dependencies = [
     "email-validator==2.3.0",
     "PyJWT==2.10.1",
     "minio==7.2.15",
+    "pillow==11.3.0",
     "pydantic-settings==2.10.1",
     "python-multipart==0.0.20",
     "redis==5.2.1",
@@ -28,7 +29,6 @@ dependencies = [
 test = [
     "aiosqlite==0.21.0",
     "httpx==0.28.1",
-    "pillow==11.3.0",
     "pytest==8.4.2",
     "pytest-asyncio==1.1.0",
 ]

@@ -501,10 +501,18 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
             is_default=True,
             is_enabled=True,
         )
+        zh_locale = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Chinese",
+            native_name="简体中文",
+            is_default=False,
+            is_enabled=True,
+        )
         category = ProductCategory(slug="screws", status="enabled")
         published_material = Material(slug="nitrided-steel", status="enabled")
         draft_material = Material(slug="draft-alloy", status="enabled")
-        session.add_all([locale, category, published_material, draft_material])
+        session.add_all([locale, zh_locale, category, published_material, draft_material])
         await session.flush()
         product = Product(category_id=category.id, slug="extrusion-screw", status="enabled")
         session.add(product)
@@ -516,6 +524,12 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
                     locale_id=locale.id,
                     name="Extrusion screw",
                     short_description="Visible product",
+                ),
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=zh_locale.id,
+                    name="挤出螺杆",
+                    short_description="公开产品",
                 ),
                 MaterialTranslation(
                     material_id=published_material.id,
@@ -556,6 +570,31 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
                     ),
                 ]
             )
+        session.add_all(
+            [
+                TranslationStatus(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=zh_locale.id,
+                    status="published",
+                ),
+                ContentPublication(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=zh_locale.id,
+                    status="published",
+                ),
+                ContentRoute(
+                    owner_type="product",
+                    owner_id=product.id,
+                    locale_id=zh_locale.id,
+                    path="/zh-cn/products/screws/extrusion-screw/",
+                    is_canonical=True,
+                    active=True,
+                    indexable=True,
+                ),
+            ]
+        )
         await session.flush()
 
         payload = await get_public_product(session, "en", "screws", "extrusion-screw")
@@ -568,3 +607,12 @@ async def test_product_relations_are_canonical_link_dtos(remediation_factory) ->
                 "summary": "Wear-resistant material",
             }
         ]
+        zh_payload = await get_public_product(
+            session, "zh-cn", "screws", "extrusion-screw"
+        )
+        assert [item["name"] for item in zh_payload["breadcrumb"][:2]] == ["首页", "产品"]
+        assert [item["name"] for item in zh_payload["schema"][1]["itemListElement"][:2]] == [
+            "首页",
+            "产品",
+        ]
+        assert zh_payload["breadcrumb"][0]["url"] == "https://junhuiscrewbarrel.com/zh-cn/"

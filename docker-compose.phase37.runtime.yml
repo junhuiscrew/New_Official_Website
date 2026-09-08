@@ -1,0 +1,10 @@
+# Phase 3.7 现有数据实例的安全运行覆盖：启动 API 时不自动迁移或 Seed。
+services:
+  api:
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8000'

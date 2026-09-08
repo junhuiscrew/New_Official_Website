@@ -1,0 +1,174 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260907T103809+0800",
+  "target": {
+    "environment": "phase37-local-https",
+    "entrypoint": "https://junhui.test/",
+    "production_deployment": false
+  },
+  "code": {
+    "branch": "phase-3.7",
+    "head_sha": "0fd6edabfc6d4efa8666cf49c54765b099b24300",
+    "working_tree_changes_present": true,
+    "push_performed": false,
+    "merge_performed": false
+  },
+  "media_metadata": {
+    "update_count": 3,
+    "noop_count": 0,
+    "items": [
+      {
+        "alias": "IMG-02",
+        "before": { "width": null, "height": null },
+        "after": { "width": 700, "height": 700 },
+        "decoded_from_existing_object": true,
+        "audit_count": 1
+      },
+      {
+        "alias": "IMG-03",
+        "before": { "width": null, "height": null },
+        "after": { "width": 700, "height": 700 },
+        "decoded_from_existing_object": true,
+        "audit_count": 1
+      },
+      {
+        "alias": "IMG-04",
+        "before": { "width": null, "height": null },
+        "after": { "width": 700, "height": 700 },
+        "decoded_from_existing_object": true,
+        "audit_count": 1
+      }
+    ],
+    "invariants": {
+      "media_ids_preserved": true,
+      "object_bytes_preserved": true,
+      "object_hashes_preserved": true,
+      "file_fields_preserved": true,
+      "primary_image_associations_preserved": true,
+      "watermarks_preserved": true,
+      "translations_and_alt_preserved": true,
+      "content_revision_changes": 0
+    }
+  },
+  "copy_and_lifecycle": {
+    "copy_v1_fields_matched": 16,
+    "frozen_state_unchanged": true,
+    "frozen_state_sha256": "eb3604a43247931034745a6d3494f31c954ab9ba1b304a9d7cc7de075ec2d93b",
+    "allowlisted_translation_publication_route_pairs_published": 12,
+    "old_pilot_closed_draft": true,
+    "f05_english_missing": true,
+    "specification_value_counts": { "P01": 0, "P02": 0, "P03": 0 },
+    "models_and_relations_empty": true
+  },
+  "browser": {
+    "engine": "installed Microsoft Edge via Playwright",
+    "screenshots": 12,
+    "home": {
+      "zh-cn": {
+        "status": 200,
+        "noindex": true,
+        "h1_matches_company_name": true,
+        "summary_matches_short_intro": true,
+        "horizontal_overflow": false
+      },
+      "en": {
+        "status": 200,
+        "noindex": true,
+        "h1_matches_company_name": true,
+        "summary_matches_short_intro": true,
+        "horizontal_overflow": false
+      },
+      "formal_canonical_and_hreflang_preserved": true
+    },
+    "products_list": {
+      "status": 200,
+      "real_image_count": 3,
+      "all_images_loaded": true,
+      "all_rendered_dimensions": "700x700",
+      "fallback_count": 0
+    },
+    "product_details": {
+      "checked_aliases": ["P01", "P02", "P03"],
+      "all_status_200": true,
+      "all_images_loaded": true,
+      "all_rendered_dimensions": "700x700",
+      "fallback_count": 0,
+      "empty_specification_sections_hidden": true
+    },
+    "gallery": {
+      "opened": true,
+      "dialog_image_loaded": true,
+      "close_button_received_focus": true,
+      "closed_with_escape": true,
+      "focus_returned_to_opener": true
+    },
+    "language_navigation": {
+      "desktop": {
+        "source": "/zh-cn/",
+        "relative_href": "/en/",
+        "final_url": "https://junhui.test/en/",
+        "stayed_local": true
+      },
+      "mobile": {
+        "source": "/en/",
+        "relative_href": "/zh-cn/",
+        "final_url": "https://junhui.test/zh-cn/",
+        "stayed_local": true
+      },
+      "external_origin_requests": 0,
+      "production_navigation_attempted": false
+    },
+    "responsive": {
+      "viewports": ["375x812", "320x720"],
+      "horizontal_overflow": false
+    },
+    "browser_error_count": 0
+  },
+  "protection": {
+    "https": true,
+    "basic_auth": true,
+    "anonymous_business_status": 401,
+    "authenticated_business_status": 200,
+    "x_robots_tag_noindex": true,
+    "sitemap_status": 404,
+    "sitemap_enabled": false,
+    "only_port_443_published": true,
+    "direct_origin_bypass": false,
+    "analytics_enabled": false,
+    "marketing_email_enabled": false,
+    "public_tunnel_created": false
+  },
+  "verification": {
+    "api_targeted_pytest": { "passed": 37, "skipped": 2, "failed": 0 },
+    "api_ruff": "passed",
+    "website_vitest": { "files_passed": 11, "tests_passed": 118, "failed": 0 },
+    "website_typecheck": "passed",
+    "website_build": "passed",
+    "prettier_touched_files": "passed"
+  },
+  "excluded_actions": {
+    "copy_v1_text_changed": false,
+    "product_reimported": false,
+    "rfq_submitted": false,
+    "attachment_uploaded": false,
+    "email_sent": false,
+    "dns_changed": false,
+    "production_deployed": false,
+    "review_or_publish_called": false,
+    "git_push_or_merge": false
+  },
+  "screenshot_files": [
+    { "name": "01-home-zh-desktop-fixed.png", "sha256": "217aa3735b6518ef17a7217a237d13b78678454e9c77e5e6820747d6613967d5" },
+    { "name": "02-home-en-desktop-fixed.png", "sha256": "31a8a75ff8bf741326db0d3775e209d8fad96360dd8168aed4cffb10bfdc6f08" },
+    { "name": "03-products-zh-desktop-images.png", "sha256": "ffd60178008d820c9cac393ed8635adbfbdb85bd05b9a8cd43bf4b4a008de83e" },
+    { "name": "04-p01-zh-detail-image.png", "sha256": "29ba34f6801a0b94612afdb1d780b9e30b5042a9641ebe5a85c854a22a738c8e" },
+    { "name": "05-p02-zh-detail-image.png", "sha256": "2fe6442278c0b62b0f203d5706490e44cad41e4c30b68a89424a646544f2638c" },
+    { "name": "06-p03-en-detail-image.png", "sha256": "8c07a9c37e8c0f8a1f9b9de4d9e4b0a5fdc0e74ad45c605d60402608b3ce0395" },
+    { "name": "07-p03-gallery-open.png", "sha256": "3dc41a14086251f95fa95b216e1fb31c4c52b3297b969c272ef20580206ab2c1" },
+    { "name": "08-home-zh-language-open.png", "sha256": "d3cbd52a4011c373c40ba04bd0d574f38a6f3f8fbded294798a9a8b03b46c183" },
+    { "name": "09-home-en-after-language-click.png", "sha256": "31a8a75ff8bf741326db0d3775e209d8fad96360dd8168aed4cffb10bfdc6f08" },
+    { "name": "10-home-en-mobile-375.png", "sha256": "76478beea0b22a087001c47a789cc61aa851979b0e3114b9f592ff45377b2034" },
+    { "name": "11-home-zh-after-mobile-language-click-375.png", "sha256": "4c516689c80cb6ca22f6b3f4f4f1cf917f721d83147b90d090cd0562ed570388" },
+    { "name": "12-p02-mobile-320.png", "sha256": "8bc9c0ab314f164495765dc531f816983bc16b19d51a86a3ddc14a84f83aaa5b" }
+  ]
+}

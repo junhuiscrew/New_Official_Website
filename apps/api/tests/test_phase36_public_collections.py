@@ -486,8 +486,11 @@ async def test_empty_collections_return_empty_arrays_without_fabricated_facts(
     assert home["seo"]["description"]
     assert home["seo"]["hreflang"] == {}
     assert home["schema"] == []
-    serialized_payloads = f"{navigation!r}{home!r}".lower()
-    for fabricated_fact in ("iso", "certificate", "employees", "products available"):
+    assert home["certificates"] == []
+    assert home["patents"] == []
+    # 首页呈现 R1 会暴露固定模块键；这里仅检查值中没有虚构的认证或规模事实。
+    serialized_payloads = f"{navigation!r}{home['company']!r}{home['trust_summary']!r}".lower()
+    for fabricated_fact in ("iso", "employees", "products available"):
         assert fabricated_fact not in serialized_payloads
 
 

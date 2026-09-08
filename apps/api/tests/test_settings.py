@@ -6,6 +6,18 @@ from pydantic import ValidationError
 from app.core.config.settings import Settings
 
 
+@pytest.mark.parametrize("ttl_minutes", [0, 61])
+def test_privacy_context_ttl_must_remain_short(ttl_minutes: int) -> None:
+    """
+    验证 Privacy context 配置只能位于 1 到 60 分钟的短时范围。
+
+    输入：ttl_minutes，边界外的分钟数。
+    输出：None；错误配置未被 Settings 拒绝时失败。
+    """
+    with pytest.raises(ValidationError):
+        Settings(privacy_context_token_ttl_minutes=ttl_minutes, _env_file=None)
+
+
 def test_production_rejects_default_secrets() -> None:
     """
     验证生产环境不能使用仓库内的开发示例 Secret。

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Integer,
     String,
@@ -25,6 +27,15 @@ class RFQ(UuidPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("status IN ('new','qualified','in_progress','waiting_customer','quoted','won','lost','spam','closed')", name="rfq_status_value"),
         CheckConstraint("priority IN ('low','normal','high','urgent')", name="rfq_priority_value"),
+        CheckConstraint(
+            "((privacy_notice_version_id IS NULL AND privacy_version_label IS NULL "
+            "AND privacy_policy_locale IS NULL AND privacy_content_hash IS NULL "
+            "AND privacy_canonical_url IS NULL AND privacy_confirmed_at IS NULL) OR "
+            "(privacy_notice_version_id IS NOT NULL AND privacy_version_label IS NOT NULL "
+            "AND privacy_policy_locale IS NOT NULL AND privacy_content_hash IS NOT NULL "
+            "AND privacy_canonical_url IS NOT NULL AND privacy_confirmed_at IS NOT NULL))",
+            name="rfq_privacy_metadata_all_or_none",
+        ),
         {"comment": "客户询盘表"},
     )
 
@@ -48,6 +59,27 @@ class RFQ(UuidPrimaryKeyMixin, TimestampMixin, Base):
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="提交User-Agent")
     consent_privacy: Mapped[bool] = mapped_column(Boolean, nullable=False, comment="隐私同意")
     consent_marketing: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False, comment="营销同意")
+    privacy_notice_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("privacy_notice_versions.id", ondelete="RESTRICT"),
+        nullable=True,
+        comment="确认时不可变隐私政策版本ID；历史询盘为空",
+    )
+    privacy_version_label: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, comment="确认时公开隐私政策版本标签；历史询盘为空"
+    )
+    privacy_policy_locale: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, comment="确认时隐私政策语言；历史询盘为空"
+    )
+    privacy_content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="确认时隐私政策内容哈希；历史询盘为空"
+    )
+    privacy_canonical_url: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True, comment="确认时隐私政策规范URL；历史询盘为空"
+    )
+    privacy_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="服务端确认隐私政策上下文时间；历史询盘为空"
+    )
     spam_score: Mapped[float | None] = mapped_column(nullable=True, comment="垃圾评分")
 
 

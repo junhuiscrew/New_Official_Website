@@ -42,7 +42,7 @@ from app.modules.company.models import (
     ManufacturingCapability,
     ManufacturingCapabilityTranslation,
 )
-from app.modules.company.services import get_public_company_profile
+from app.modules.company.services import get_public_company_profile, list_public_trust
 from app.modules.content.models import (
     ContentPublication,
     ContentRoute,
@@ -59,6 +59,10 @@ from app.modules.discovery.schema_generator import (
 )
 from app.modules.localization.models import Locale
 from app.modules.media.models import MediaAsset, MediaAssetTranslation
+from app.modules.presentation.services import (
+    attach_homepage_presentation,
+    get_homepage_configuration,
+)
 
 from .public_delivery import (
     OFFICIAL_ORIGIN,
@@ -1353,6 +1357,9 @@ async def get_public_navigation(
 async def get_public_home(
     session: AsyncSession,
     locale_slug: str,
+    *,
+    use_draft_layout: bool = False,
+    preview: bool = False,
 ) -> dict[str, Any]:
     """
     聚合首页一次 SSR 请求所需的真实公开内容。
@@ -1365,6 +1372,11 @@ async def get_public_home(
         dict[str, Any]，缺失内容族使用空数组或 None，不构造任何业务事实。
     """
     locale = await _locale(session, locale_slug)
+    layout_config, layout_revision = await get_homepage_configuration(
+        session,
+        locale_id=locale.id,
+        use_draft=use_draft_layout,
+    )
     company_result = await _published_company(session, locale)
     company = company_result[0] if company_result else None
     profile = company_result[1] if company_result else None
@@ -1382,6 +1394,9 @@ async def get_public_home(
 
     category_rows = await _published_row_tuples(session, "product_category", locale, 12, False)
     product_rows = await _published_row_tuples(session, "product", locale, 12, True)
+    all_product_rows = await _published_row_tuples(
+        session, "product", locale, 48, False
+    )
     capability_rows = await _published_row_tuples(
         session, "manufacturing_capability", locale, 8, False
     )
@@ -1403,39 +1418,95 @@ async def get_public_home(
     await _attach_card_media(session, locale, capabilities, capability_rows, "primary_media_id")
     await _attach_card_media(session, locale, cases, case_rows, "primary_media_id")
     featured_products = await _product_card_payloads(session, locale, product_rows)
+    requested_product_slugs = [
+        slug
+        for module in layout_config["modules"]
+        for slug in module.get("product_slugs", [])
+        if slug
+    ]
+    requested_order = {
+        slug: index
+        for index, slug in enumerate(dict.fromkeys(requested_product_slugs))
+    }
+    homepage_product_rows = sorted(
+        (
+            row
+            for row in all_product_rows
+            if row[0].slug in requested_order
+        ),
+        key=lambda row: requested_order[row[0].slug],
+    )
+    homepage_products = await _product_card_payloads(
+        session,
+        locale,
+        homepage_product_rows,
+    )
+    if hero_media is None:
+        first_product_media = next(
+            (
+                product.get("media")
+                for product in homepage_products
+                if (product.get("media") or {}).get("type") == "image"
+            ),
+            None,
+        )
+        if first_product_media is not None:
+            hero_media = PublicMediaDto(
+                **{**first_product_media, "loading": "eager"}
+            )
     knowledge = await _authority_card_payloads(session, "knowledge_article", locale, knowledge_rows)
     materials = await _published_rows(session, "material", locale, 8, False)
+    technologies = await _published_rows(session, "technology", locale, 8, False)
     solutions = await _published_rows(session, "solution", locale, 8, False)
     applications = await _published_rows(session, "application", locale, 8, False)
+    equipment = await list_public_trust(session, "equipment", locale.slug)
+    certificates = await list_public_trust(session, "certificates", locale.slug)
+    patents = await list_public_trust(session, "patents", locale.slug)
     has_content = bool(
         company
         or product_categories
         or featured_products
+        or homepage_products
         or materials
+        or technologies
         or solutions
         or capabilities
         or applications
         or cases
         or knowledge
+        or equipment
+        or certificates
+        or patents
     )
     seo, schema = await _home_metadata(session, locale, company, has_content)
 
-    return {
+    home = {
         "locale": locale.slug,
         "company": company,
         "hero_media": hero_media.model_dump() if hero_media else None,
         "product_categories": product_categories,
         "featured_products": featured_products,
+        "homepage_products": homepage_products,
         "materials": materials,
+        "technologies": technologies,
         "solutions": solutions,
         "capabilities": capabilities,
+        "equipment": equipment,
         "applications": applications,
         "cases": cases,
         "knowledge": knowledge,
+        "certificates": certificates,
+        "patents": patents,
         "trust_summary": _trust_summary(company),
         "seo": seo,
         "schema": schema,
     }
+    return attach_homepage_presentation(
+        home,
+        config=layout_config,
+        revision=layout_revision,
+        preview=preview,
+    )
 
 
 async def get_public_listing(

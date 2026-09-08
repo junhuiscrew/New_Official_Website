@@ -25,6 +25,7 @@ from app.modules.media.models import MediaAsset
 from app.modules.media.scanner import apply_scan_result
 from app.modules.media.services import validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter, private_url_expiry
+from app.modules.privacy.services import validate_privacy_context
 from app.modules.rfq.models import RFQ, RFQFile, RFQItem
 from app.modules.rfq.schemas import RFQCreate
 
@@ -170,8 +171,32 @@ async def validate_source(
 async def create_rfq(
     session: AsyncSession, payload: RFQCreate, *, ip: str | None, user_agent: str | None
 ) -> RFQ:
-    """创建询盘及多项目记录，公开返回只使用 public_reference。"""
+    """
+    校验当前隐私政策上下文后原子创建询盘及多项目记录。
+
+    输入：session、RFQCreate、可信客户端 IP 与 User-Agent。
+    输出：RFQ，持久化不可变政策版本证据；公开层只返回 public_reference。
+    """
     source_page_url, source_owner_type, source_owner_id = await validate_source(session, payload)
+    # 在获取 Privacy 锁和写 RFQ 前完成产品归属校验，任何错误都不会留下半条询盘。
+    validated_items: list[dict[str, object]] = []
+    for item in payload.items:
+        if item.product_id and (await session.get(Product, item.product_id)) is None:
+            raise AppException(422, "invalid_product", "询盘项目产品不存在")
+        if item.product_model_id:
+            product_model = await session.get(ProductModel, item.product_model_id)
+            if product_model is None:
+                raise AppException(422, "invalid_product_model", "询盘项目型号不存在")
+            if item.product_id is None or product_model.product_id != item.product_id:
+                raise AppException(422, "product_model_mismatch", "询盘型号不属于当前产品")
+        validated_items.append(item.model_dump())
+
+    # 发布切换与询盘创建复用 stable page -> state -> version/lifecycle 的锁顺序。
+    privacy_context = await validate_privacy_context(
+        session,
+        payload.privacy_context_token,
+        expected_locale=payload.preferred_language,
+    )
     # 唯一索引是最终防线；先用有限重试避免极低概率的公开编号碰撞。
     public_reference = ""
     for _attempt in range(5):
@@ -200,19 +225,17 @@ async def create_rfq(
         user_agent=user_agent,
         consent_privacy=payload.consent_privacy,
         consent_marketing=payload.consent_marketing,
+        privacy_notice_version_id=privacy_context.version_id,
+        privacy_version_label=privacy_context.version_label,
+        privacy_policy_locale=privacy_context.locale,
+        privacy_content_hash=privacy_context.content_hash,
+        privacy_canonical_url=privacy_context.canonical_url,
+        privacy_confirmed_at=privacy_context.confirmed_at,
     )
     session.add(rfq)
     await session.flush()
-    for item in payload.items:
-        if item.product_id and (await session.get(Product, item.product_id)) is None:
-            raise AppException(422, "invalid_product", "询盘项目产品不存在")
-        if item.product_model_id:
-            product_model = await session.get(ProductModel, item.product_model_id)
-            if product_model is None:
-                raise AppException(422, "invalid_product_model", "询盘项目型号不存在")
-            if item.product_id is None or product_model.product_id != item.product_id:
-                raise AppException(422, "product_model_mismatch", "询盘型号不属于当前产品")
-        session.add(RFQItem(rfq_id=rfq.id, **item.model_dump()))
+    for item_data in validated_items:
+        session.add(RFQItem(rfq_id=rfq.id, **item_data))
     write_audit_log(
         session,
         action="rfq.submit",

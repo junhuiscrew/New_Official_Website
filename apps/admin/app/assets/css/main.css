@@ -9,6 +9,63 @@ body {
   margin: 0;
 }
 
+.admin-nav {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  min-height: 3.75rem;
+  padding: 0.65rem clamp(1rem, 3vw, 2rem);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 1rem;
+  color: #eaf5ff;
+  background: #07182b;
+  box-shadow: 0 0.35rem 1rem rgb(7 24 43 / 18%);
+}
+
+.admin-nav > strong {
+  white-space: nowrap;
+}
+
+.admin-nav nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.admin-nav nav a {
+  padding: 0.45rem 0.6rem;
+  flex: 0 0 auto;
+  color: #cfe6fb;
+  font-size: 0.82rem;
+  text-decoration: none;
+  border-radius: 0.35rem;
+}
+
+.admin-nav nav a:hover,
+.admin-nav nav a.router-link-active {
+  color: #fff;
+  background: #124b7d;
+}
+
+.admin-nav > span {
+  max-width: 13rem;
+  overflow: hidden;
+  color: #b8cee2;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-nav > button {
+  color: #fff;
+  background: transparent;
+  border: 1px solid #587795;
+  border-radius: 0.35rem;
+}
+
 .admin-shell {
   display: grid;
   min-height: 100vh;
@@ -112,6 +169,19 @@ textarea {
 }
 
 @media (max-width: 760px) {
+  .admin-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .admin-nav nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .admin-nav > span {
+    display: none;
+  }
+
   .catalog-grid {
     grid-template-columns: 1fr;
   }

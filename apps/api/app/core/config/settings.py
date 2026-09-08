@@ -78,6 +78,7 @@ class Settings(BaseSettings):
     malware_scanner_port: int = 3310
     malware_scanner_timeout_seconds: int = 30
     rfq_submission_token_ttl_minutes: int = 30
+    privacy_context_token_ttl_minutes: int = Field(default=10, ge=1, le=60)
 
     @field_validator("app_env", mode="before")
     @classmethod

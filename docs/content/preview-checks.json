@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "run_id": "20260907T092737+0800",
+  "target_environment": "phase37-local-https",
+  "repository": "junhuiscrew/New_Official_Website",
+  "branch": "phase-3.7",
+  "commit_sha": "0fd6edabfc6d4efa8666cf49c54765b099b24300",
+  "overall_status": "PREVIEW_AVAILABLE_WITH_VISUAL_FINDINGS",
+  "acceptance_status": "NOT_ALL_CHECKS_PASSED",
+  "lifecycle": {
+    "allowlisted_owner_locale_pairs": 12,
+    "effective_review_publish_pairs": 12,
+    "preexisting_target_state_no_ops": 0,
+    "resume_no_ops": 2,
+    "translation_status_published": 12,
+    "publication_status_published": 12,
+    "route_active": 12,
+    "route_indexable": 12,
+    "reviewer_alias": "REVIEWER-01"
+  },
+  "copy_v1": {
+    "expected_field_count": 16,
+    "matched_field_count": 16,
+    "mismatched_field_count": 0,
+    "frozen_state_sha256_before": "eb3604a43247931034745a6d3494f31c954ab9ba1b304a9d7cc7de075ec2d93b",
+    "frozen_state_sha256_after": "eb3604a43247931034745a6d3494f31c954ab9ba1b304a9d7cc7de075ec2d93b",
+    "field_hashes": [
+      {"owner":"COMPANY","locale":"zh-CN","field":"short_intro","sha256":"16b22465ec9d7decfb5fcb8f449eda39cdfd20d5bf1517a4b34067189176c274","matched":true},
+      {"owner":"COMPANY","locale":"zh-CN","field":"full_intro","sha256":"e46b45ef1530e0a666bde71de7daa3355130de1d0fb447794114324213df2300","matched":true},
+      {"owner":"COMPANY","locale":"en","field":"short_intro","sha256":"e3a02439326f09083ff303d3c8d78a901b3b3cea463d07e4487c5e4ea163a757","matched":true},
+      {"owner":"COMPANY","locale":"en","field":"full_intro","sha256":"7ce24e5515f53a11a6f50a2492f6622e3ab065f54c1e96f0f12161302dc09159","matched":true},
+      {"owner":"P01","locale":"zh-CN","field":"short_description","sha256":"e8fd58a8f5b734401501fb5db80e93fc21cfa05777b005a580e4e8f13f6f1123","matched":true},
+      {"owner":"P01","locale":"zh-CN","field":"description","sha256":"2519f679cc1b2d018c428eb3ac3c816a9d23cc1d64ae3fe62d7ab34df597d229","matched":true},
+      {"owner":"P01","locale":"en","field":"short_description","sha256":"f6392f8fcacf5ca5cffc56820f03a76f328d74fb0375fe2484f496c75c405fdf","matched":true},
+      {"owner":"P01","locale":"en","field":"description","sha256":"783ae3747e37ecda8f6aefd5e0562bfde7d9e84e081f8a22529148703a8d6901","matched":true},
+      {"owner":"P02","locale":"zh-CN","field":"short_description","sha256":"ac2aa6b6153aa9a7e50b555df1b848b030735aab76a6cb32f14657b0c8a25b7b","matched":true},
+      {"owner":"P02","locale":"zh-CN","field":"description","sha256":"ca982a85fcb37b740bfa87dff1717e84bd60ee1bae73fccff6a09d091060ae69","matched":true},
+      {"owner":"P02","locale":"en","field":"short_description","sha256":"c343126b5d0941344b2e8ef75a1ceb28119131a6222b8933070d00fcc3f425a3","matched":true},
+      {"owner":"P02","locale":"en","field":"description","sha256":"d9487326eca602b020b059cf677c14c09195e98aa006fb737fef1175ef2d60b4","matched":true},
+      {"owner":"P03","locale":"zh-CN","field":"short_description","sha256":"5d244d56f0e3b1251c3586b0a7ded8809d7fdff67996537be03622b3a1a8349a","matched":true},
+      {"owner":"P03","locale":"zh-CN","field":"description","sha256":"b44b8a2ac1a87f264f86632f5c5a8237222a15b0d29b21aa9272f4e8c934f03b","matched":true},
+      {"owner":"P03","locale":"en","field":"short_description","sha256":"312e7b3c3def02fe3a22bc8fab99ae1e23c6593b398a4b4f8112cc3a21c3af0e","matched":true},
+      {"owner":"P03","locale":"en","field":"description","sha256":"6fa5714949ea47d75b31fdf2dab35672a9c6dface2b90e2227b1ebf2852be85b","matched":true}
+    ]
+  },
+  "frozen_invariants": {
+    "names_slugs_categories_logo_primary_images_unchanged": true,
+    "featured_unchanged": true,
+    "specification_definitions_unchanged": 7,
+    "specification_value_counts": {"P01":0,"P02":0,"P03":0},
+    "models_empty": true,
+    "relations_empty": true,
+    "f05_english_missing": true,
+    "old_pilot_draft_and_route_closed": true,
+    "img05_not_publicly_associated": true
+  },
+  "revision_audit": {
+    "revision_count_before": 15,
+    "revision_count_after": 15,
+    "audit_event_count_before": 24,
+    "audit_event_count_after": 60,
+    "audit_events_added": 36,
+    "added_translation_review_events": 12,
+    "added_publication_status_change_events": 24
+  },
+  "protection": {
+    "https": true,
+    "basic_auth": true,
+    "gateway_noindex": true,
+    "anonymous_website_status": 401,
+    "anonymous_admin_status": 401,
+    "anonymous_public_api_status": 401,
+    "authenticated_website_status": 200,
+    "authenticated_admin_status": 200,
+    "authenticated_public_api_status": 200,
+    "sitemap_enabled": false,
+    "sitemap_status": 404,
+    "only_phase37_host_port_published": 443,
+    "direct_origin_bypass": false,
+    "analytics_enabled": false,
+    "public_tunnel_created": false
+  },
+  "browser": {
+    "expected_200_pages_checked": 16,
+    "expected_200_pages_passed": 16,
+    "all_checked_pages_noindex": true,
+    "old_pilot_status": 404,
+    "old_pilot_links_in_lists": 0,
+    "copy_text_checks_passed": true,
+    "empty_spec_sections_hidden": true,
+    "desktop_horizontal_overflow": false,
+    "mobile_375_horizontal_overflow": false,
+    "mobile_320_horizontal_overflow": false,
+    "language_menu": {
+      "opened_by_click": true,
+      "external_alternate_followed": false,
+      "local_english_pages_checked_directly": true,
+      "status": "PASS_WITH_NAVIGATION_LIMITATION"
+    },
+    "gallery": {
+      "opened_by_click": true,
+      "focus_moved_to_close": true,
+      "escape_closed": true,
+      "focus_returned": true,
+      "image_rendered": false,
+      "status": "FAIL"
+    },
+    "rfq": {
+      "entry_clicked": true,
+      "host_remained_local": true,
+      "source_type": "product",
+      "source_slug": "electroplated-screw",
+      "submitted": false,
+      "attachment_uploaded": false,
+      "email_sent": false,
+      "status": "PASS"
+    }
+  },
+  "media_delivery": [
+    {"alias":"IMG-02","anonymous_status":401,"authenticated_status":200,"content_type":"image/webp","content_length":15374,"noindex":true,"width":null,"height":null,"ui_rendered":false},
+    {"alias":"IMG-03","anonymous_status":401,"authenticated_status":200,"content_type":"image/webp","content_length":10492,"noindex":true,"width":null,"height":null,"ui_rendered":false},
+    {"alias":"IMG-04","anonymous_status":401,"authenticated_status":200,"content_type":"image/webp","content_length":16528,"noindex":true,"width":null,"height":null,"ui_rendered":false}
+  ],
+  "findings": [
+    {
+      "severity": "blocking_visual",
+      "code": "MEDIA_INTRINSIC_DIMENSIONS_MISSING",
+      "status": "OPEN",
+      "summary": "三款产品媒体文件可读取，但媒体记录 width/height 为空，PublicImage 因此显示图片暂不可用。"
+    },
+    {
+      "severity": "preview_navigation",
+      "code": "LANGUAGE_ALTERNATE_USES_OFFICIAL_CANONICAL",
+      "status": "OPEN",
+      "summary": "语言菜单 alternate 指向正式 canonical；验收时未跟随，英文页面通过本地 HTTPS 地址直接验证。"
+    }
+  ],
+  "screenshots": [
+    {"name":"01-home-zh-desktop.png","sha256":"a3df9418940c6d22a64b4d5d737144708e714a8c1fc5784bbcdf5cb342f50b4c"},
+    {"name":"02-language-menu-zh-open.png","sha256":"8b890b67f3594afba9521e1656d6a1708dc8588a03e6a6a0d8a908cc22594e3d"},
+    {"name":"03-home-en-desktop.png","sha256":"f741bb52e7a10bb2576ee873dba86accaf238be4f54f2b6c92eaf177eb1300b7"},
+    {"name":"04-about-zh-desktop.png","sha256":"2f4566d4b25e3926c4eaafbd3821ed943780af5366e8d3bc8adbeb3735011b96"},
+    {"name":"05-about-en-desktop.png","sha256":"49adf650525174a763eed0fbac4dcefe083435d2127e75492d4ec622ad5dbae6"},
+    {"name":"06-products-zh-desktop.png","sha256":"bdaa852b8c331b95a9301c7e4cebbe6da928473d192c2e150260d9e5da3da841"},
+    {"name":"07-p01-zh-desktop.png","sha256":"fe4be9bd42076180e0abe48748b377703a685e918b05f1974305aa598f5b47dc"},
+    {"name":"08-p01-en-desktop.png","sha256":"8d6a613cc2222a223e42025ccc6dc935d96e929b01def2159fb60a0fecfa6107"},
+    {"name":"09-p02-zh-desktop.png","sha256":"c7a221813830c07bf59f7b83bdee46a0d95ae6a85cc6229a2eb41c4267326ce1"},
+    {"name":"10-p03-zh-desktop.png","sha256":"843148ed818ff76c9126616daa89e872fe1db52471c4f275f9afe201534a2308"},
+    {"name":"11-p03-gallery-open.png","sha256":"cce32961eac9ed998bf09744553e77497056ab3b7ae43ad967108612ef1c4d94"},
+    {"name":"12-rfq-entry-p03.png","sha256":"354802cb336e2294550ec87342c3e4be1a9472ab7a1583138881175a933e3e78"},
+    {"name":"13-p02-zh-mobile-375.png","sha256":"77f1b24995f1912fe9270cdd0447a440be99b7c140faecf22e40062a89a59261"},
+    {"name":"14-p02-zh-mobile-320.png","sha256":"7219754d304e6b9af0c316ebde3af2649d56b37d4b1c892839540cda8a336177"}
+  ],
+  "not_executed": [
+    "production_publish",
+    "deployment",
+    "dns_change",
+    "github_push_or_merge",
+    "search_engine_submission",
+    "analytics_enablement",
+    "rfq_submission",
+    "attachment_upload",
+    "unrelated_full_test_suite"
+  ]
+}

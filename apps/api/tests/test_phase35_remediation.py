@@ -440,6 +440,7 @@ def test_public_rfq_schema_rejects_client_supplied_internal_source_fields() -> N
                 email="lee@example.com",
                 message="Need a quote",
                 consent_privacy=True,
+                preferred_language="en",
                 **{field_name: value},
             )
 
@@ -459,7 +460,7 @@ async def test_rfq_model_and_attachment_item_must_belong_to_parent(remediation_f
         model = ProductModel(product_id=other_product.id, model_code="B-01", status="enabled")
         session.add(model)
         await session.flush()
-        payload = RFQCreate(company_name="ACME", contact_name="Lee", email="lee@example.com", consent_privacy=True, items=[RFQItemInput(product_id=product.id, product_model_id=model.id)])
+        payload = RFQCreate(company_name="ACME", contact_name="Lee", email="lee@example.com", consent_privacy=True, preferred_language="en", items=[RFQItemInput(product_id=product.id, product_model_id=model.id)])
         with pytest.raises(AppException) as mismatch:
             await create_rfq(session, payload, ip="198.51.100.8", user_agent="test")
         assert mismatch.value.code == "product_model_mismatch"

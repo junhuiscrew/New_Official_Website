@@ -258,6 +258,7 @@ services:
       target: test
     environment:
       APP_ENV: test
+      PRIVACY_P1_TEST_ONLY: '1'
       APP_VERSION: 0.4.0
       DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test
       TEST_DATABASE_URL: postgresql+asyncpg://junhui_test:junhui-test-only@postgres-test:5432/junhui_test

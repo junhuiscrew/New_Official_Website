@@ -11,6 +11,9 @@ from app.api.v1.health import router as health_router
 from app.api.v1.locales import router as locales_router
 from app.api.v1.media import public_router as public_media_router
 from app.api.v1.media import router as media_router
+from app.api.v1.presentation import router as presentation_router
+from app.api.v1.privacy import public_router as public_privacy_router
+from app.api.v1.privacy import router as privacy_router
 from app.api.v1.public import router as public_router
 from app.api.v1.rbac import router as rbac_router
 from app.api.v1.rfq import public_router as public_rfq_router
@@ -29,6 +32,9 @@ api_v1_router.include_router(authority_router)
 api_v1_router.include_router(discovery_router)
 api_v1_router.include_router(downloads_router)
 api_v1_router.include_router(public_router)
+api_v1_router.include_router(privacy_router)
+api_v1_router.include_router(public_privacy_router)
+api_v1_router.include_router(presentation_router)
 api_v1_router.include_router(trust_router)
 api_v1_router.include_router(media_router)
 api_v1_router.include_router(public_media_router)

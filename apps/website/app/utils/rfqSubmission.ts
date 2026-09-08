@@ -52,10 +52,14 @@ function optionalText(value: string): string | null {
 /**
  * 构建匿名 RFQ 载荷，只提交可由服务端重新解析的白名单类型与 slug，不接收内部 ID。
  *
- * 输入：form，客户端表单状态；source，可选的公开页面来源。
+ * 输入：form，客户端表单状态；source，可选的公开页面来源；privacyContextToken，当前政策上下文令牌。
  * 输出：可直接发送给匿名 RFQ POST 的最小化对象。
  */
-export function buildRfqSubmissionPayload(form: RfqFormState, source: RfqSourceContext | null) {
+export function buildRfqSubmissionPayload(
+  form: RfqFormState,
+  source: RfqSourceContext | null,
+  privacyContextToken: string,
+) {
   return {
     company_name: form.company_name.trim(),
     contact_name: form.contact_name.trim(),
@@ -67,6 +71,7 @@ export function buildRfqSubmissionPayload(form: RfqFormState, source: RfqSourceC
     message: optionalText(form.message),
     preferred_language: form.preferred_language,
     consent_privacy: form.consent_privacy,
+    privacy_context_token: privacyContextToken,
     consent_marketing: form.consent_marketing,
     // 蜜罐值必须原样提交，不能因客户端清洗而削弱后端反垃圾判断。
     honeypot: form.honeypot,

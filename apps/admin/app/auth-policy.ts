@@ -5,9 +5,23 @@ const routePermissions: Record<string, string> = {
   '/users': 'user.read',
   '/roles': 'role.read',
   '/locales': 'locale.read',
+  '/privacy': 'privacy.read',
+  '/homepage': 'content.read',
+  '/site-overview': 'content.read',
 }
 
 export type AdminRouteDecision = 'allow' | 'login' | 'forbidden'
+
+/**
+ * 规范化 Admin 路由尾斜杠，防止同一页面绕过前端权限提示。
+ *
+ * 输入：path，Nuxt 路由路径。
+ * 输出：string，根路径保持不变，其他路径移除全部尾斜杠。
+ */
+function normalizeAdminRoutePath(path: string): string {
+  if (path === '/') return path
+  return path.replace(/\/+$/, '') || '/'
+}
 
 export function shouldAttemptSessionRefresh(
   statusCode: number | undefined,
@@ -22,9 +36,10 @@ export function decideAdminRouteAccess(
   isAuthenticated: boolean,
   permissions: string[],
 ): AdminRouteDecision {
-  if (path === '/login') return 'allow'
+  const normalizedPath = normalizeAdminRoutePath(path)
+  if (normalizedPath === '/login') return 'allow'
   if (!isAuthenticated) return 'login'
-  const requiredPermission = routePermissions[path]
+  const requiredPermission = routePermissions[normalizedPath]
   if (requiredPermission && !permissions.includes(requiredPermission)) return 'forbidden'
   return 'allow'
 }

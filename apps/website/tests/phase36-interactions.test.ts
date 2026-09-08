@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, ref, type Component } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import LanguageSwitcher from '../app/components/LanguageSwitcher.vue'
@@ -12,6 +13,46 @@ import { buildRfqSubmissionPayload, pendingAttachmentSnapshot } from '../app/uti
 /** 读取 Website app 内的源文件，便于锁定必须由 Nuxt SSR 执行的页面契约。 */
 function readAppSource(path: string): string {
   return readFileSync(resolve(process.cwd(), 'app', path), 'utf8')
+}
+
+/** 为新增异步 SSR setup 提供 Suspense，并等待政策检查和客户端 context 初始化完成。 */
+async function mountAsyncPage(component: Component) {
+  const frameworkInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  try {
+    const wrapper = mount(
+      defineComponent({
+        components: { AsyncPage: component },
+        template: '<Suspense><AsyncPage /></Suspense>',
+      }),
+    )
+    await flushPromises()
+    return wrapper
+  } finally {
+    frameworkInfo.mockRestore()
+  }
+}
+
+/** 返回字段完整的当前英文政策 envelope，保持测试与真实公开 DTO 同步。 */
+function privacyEnvelope() {
+  return {
+    success: true,
+    data: {
+      locale: 'en',
+      title: 'Privacy Policy',
+      body_markdown: '# Privacy',
+      content_format: 'markdown',
+      rendering_trust: 'untrusted',
+      version_label: 'privacy-v1',
+      content_hash: 'hash-v1',
+      hash_algorithm: 'sha256-nfc-json-v1',
+      effective_at: '2026-09-08T00:00:00+00:00',
+      canonical_path: '/en/privacy/',
+      canonical_url: 'https://junhuiscrewbarrel.com/en/privacy/',
+      alternates: { 'zh-CN': '/zh-cn/privacy/', en: '/en/privacy/' },
+      robots: { index: false, follow: true },
+    },
+    error: null,
+  }
 }
 
 afterEach(() => {
@@ -60,6 +101,14 @@ describe('Phase 3.6 RFQ journey', () => {
       .fn()
       .mockResolvedValueOnce({
         data: {
+          token: 'privacy-context-token',
+          expires_at: '2026-09-08T00:15:00+00:00',
+          version_label: 'privacy-v1',
+          locale: 'en',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
           reference: 'RFQ-20260905-ABC123',
           status: 'received',
           submission_token: 'short-lived-token',
@@ -72,9 +121,10 @@ describe('Phase 3.6 RFQ journey', () => {
       params: { lang: 'en' },
       query: { source_type: 'product', source_slug: 'precision-screw' },
     }))
+    vi.stubGlobal('useAsyncData', async () => ({ data: ref(privacyEnvelope()), error: ref(null) }))
     vi.stubGlobal('useHead', vi.fn())
     const { default: RfqPage } = await import('../app/pages/[lang]/request-a-quote/index.vue')
-    const wrapper = mount(RfqPage)
+    const wrapper = await mountAsyncPage(RfqPage)
 
     await wrapper.get('#rfq-company').setValue('ACME')
     await wrapper.get('#rfq-contact').setValue('Lee')
@@ -96,10 +146,12 @@ describe('Phase 3.6 RFQ journey', () => {
 
     expect(api.mock.calls.filter(([path]) => path === '/public/rfqs')).toHaveLength(1)
     expect(api.mock.calls.filter(([path]) => String(path).endsWith('/files'))).toHaveLength(2)
-    expect(api.mock.calls[0]?.[1]?.body).toMatchObject({
+    const rfqCall = api.mock.calls.find(([path]) => path === '/public/rfqs')
+    expect(rfqCall?.[1]?.body).toMatchObject({
       country_code: null,
       source_type: 'product',
       source_slug: 'precision-screw',
+      privacy_context_token: 'privacy-context-token',
     })
     expect(wrapper.html()).not.toContain('short-lived-token')
   })
@@ -134,6 +186,7 @@ describe('Phase 3.6 RFQ journey', () => {
         ],
       },
       { type: 'product', slug: 'precision-screw' },
+      'privacy-context-token',
     )
 
     expect(payload).toMatchObject({
@@ -147,6 +200,7 @@ describe('Phase 3.6 RFQ journey', () => {
       message: null,
       source_type: 'product',
       source_slug: 'precision-screw',
+      privacy_context_token: 'privacy-context-token',
     })
     expect(payload.items[0]).toMatchObject({ quantity: null, material_text: null })
     expect(payload).not.toHaveProperty('source_owner_id')
@@ -209,11 +263,21 @@ describe('Phase 3.6 RFQ journey', () => {
   })
 
   it('keeps the anti-bot honeypot out of the accessibility tree and keyboard order', async () => {
-    vi.stubGlobal('useApi', () => vi.fn())
+    vi.stubGlobal('useApi', () =>
+      vi.fn().mockResolvedValue({
+        data: {
+          token: 'privacy-context-token',
+          expires_at: '2026-09-08T00:15:00+00:00',
+          version_label: 'privacy-v1',
+          locale: 'en',
+        },
+      }),
+    )
     vi.stubGlobal('useRoute', () => ({ params: { lang: 'en' }, query: {} }))
+    vi.stubGlobal('useAsyncData', async () => ({ data: ref(privacyEnvelope()), error: ref(null) }))
     vi.stubGlobal('useHead', vi.fn())
     const { default: RfqPage } = await import('../app/pages/[lang]/request-a-quote/index.vue')
-    const wrapper = mount(RfqPage)
+    const wrapper = await mountAsyncPage(RfqPage)
     const honeypot = wrapper.get('label.honeypot')
 
     expect(honeypot.attributes('hidden')).toBeDefined()

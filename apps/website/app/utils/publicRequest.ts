@@ -35,3 +35,20 @@ export function publicRequestStatus(value: unknown): number {
   }
   return candidate.statusCode ?? candidate.status ?? candidate.response?.status ?? 500
 }
+
+/** 从公开 API 错误中读取稳定 error.code；未知结构返回 null。 */
+export function publicRequestErrorCode(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as {
+    data?: { error?: { code?: unknown } }
+    response?: { _data?: { error?: { code?: unknown } } }
+  }
+  const code = candidate.data?.error?.code ?? candidate.response?._data?.error?.code
+  if (typeof code === 'string' && code.trim()) return code
+  return null
+}
+
+/** 判断失败是否属于必须刷新政策并重新确认的 privacy_context_* 错误。 */
+export function isPrivacyContextFailure(value: unknown): boolean {
+  return publicRequestErrorCode(value)?.startsWith('privacy_context_') ?? false
+}

@@ -1,9 +1,11 @@
 <!-- 页面用途：匿名 RFQ 多项目公开表单；客户端状态仅改善体验，后端仍负责全部安全校验。 -->
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, toRef } from 'vue'
 
 import { normalizeLocale, type RfqSourceType } from '~/composables/useLocalePath'
+import { useRfqPrivacy } from '~/composables/useRfqPrivacy'
 import { ui } from '~/i18n/ui'
+import type { PublicPrivacyContextDto, PublicPrivacyPolicyDto } from '~/types/public'
 import {
   buildRfqSubmissionPayload,
   pendingAttachmentSnapshot,
@@ -11,7 +13,13 @@ import {
   type RfqInquiryItem,
   type RfqPendingAttachment,
 } from '~/utils/rfqSubmission'
-import { publicRequestStatus } from '~/utils/publicRequest'
+import { isPrivacyContextFailure, publicRequestStatus } from '~/utils/publicRequest'
+
+interface Envelope<T> {
+  success: boolean
+  data: T
+  error: unknown
+}
 
 const ACCEPTED_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.pdf,.dwg,.dxf,.step,.stp,.iges,.igs'
 const MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -22,6 +30,11 @@ const api = useApi()
 const route = useRoute()
 const locale = normalizeLocale(route.params.lang)
 const labels = computed(() => ui[locale])
+// SSR 只读取可公开政策；404 不跳转，表单保留浏览入口但保持不可提交。
+const { data: privacyResponse } = await useAsyncData(`rfq-privacy:${locale}`, () =>
+  api<Envelope<PublicPrivacyPolicyDto>>(`/public/privacy/${locale}`),
+)
+const initialPrivacyPolicy = privacyResponse.value?.data ?? null
 const RFQ_SOURCE_TYPES = new Set<RfqSourceType>([
   'product',
   'material',
@@ -104,9 +117,47 @@ const errorSummary = ref<HTMLElement | null>(null)
 // 提交令牌只留在当前页面内存中，用于失败附件重试；绝不渲染或持久化。
 const submissionReference = ref('')
 const submissionToken = ref('')
+
+/** 直接重新读取当前公开政策；恢复流程不会覆盖任何客户表单字段或 File 对象。 */
+async function loadLatestPrivacyPolicy(): Promise<PublicPrivacyPolicyDto> {
+  const response = await api<Envelope<PublicPrivacyPolicyDto>>(`/public/privacy/${locale}`)
+  if (!response.data) throw new Error('Privacy policy unavailable')
+  return response.data
+}
+
+/** 客户端直接请求 no-store 上下文；token 只写入当前组件的内存 ref。 */
+async function loadPrivacyContext(
+  policy: PublicPrivacyPolicyDto,
+): Promise<PublicPrivacyContextDto> {
+  const response = await api<Envelope<PublicPrivacyContextDto>>(
+    `/public/privacy/${locale}/context/${encodeURIComponent(policy.version_label)}`,
+  )
+  if (!response.data) throw new Error('Privacy context unavailable')
+  return response.data
+}
+
+const {
+  policy: privacyPolicy,
+  contextToken,
+  isContextLoading,
+  initializeContext,
+  recoverContext,
+} = useRfqPrivacy({
+  initialPolicy: initialPrivacyPolicy,
+  consentPrivacy: toRef(form, 'consent_privacy'),
+  loadPolicy: loadLatestPrivacyPolicy,
+  loadContext: loadPrivacyContext,
+})
+const canSubmit = computed(() => Boolean(privacyPolicy.value && contextToken.value))
 const hasFailedAttachments = computed(() =>
   attachments.value.some((attachment) => attachment.status === 'failed'),
 )
+
+// Context 不能通过 useAsyncData 进入 SSR 共享 payload，只能在浏览器挂载后按当前版本签发。
+onMounted(async () => {
+  const ready = await initializeContext()
+  if (!ready && privacyPolicy.value) errorMessage.value = labels.value.privacy.contextUnavailable
+})
 
 /** 新增一个空白项目，最多数量仍由服务端 schema 最终裁决。 */
 function addItem(): void {
@@ -219,6 +270,14 @@ async function submit(): Promise<void> {
     errorSummary.value?.focus()
     return
   }
+  if (!canSubmit.value) {
+    errorMessage.value = privacyPolicy.value
+      ? labels.value.privacy.contextUnavailable
+      : labels.value.privacy.unavailable
+    await nextTick()
+    errorSummary.value?.focus()
+    return
+  }
   if (!validateForm()) {
     errorMessage.value = labels.value.error.validation
     await nextTick()
@@ -232,7 +291,7 @@ async function submit(): Promise<void> {
       data: { reference: string; status: string; submission_token: string }
     }>('/public/rfqs', {
       method: 'POST',
-      body: buildRfqSubmissionPayload(form, activeSource.value),
+      body: buildRfqSubmissionPayload(form, activeSource.value, contextToken.value),
     })
     result.value = response.data.reference
     submissionReference.value = response.data.reference
@@ -240,6 +299,19 @@ async function submit(): Promise<void> {
     // 短期提交令牌只允许为刚创建的 RFQ 写入 private-rfq。
     await uploadAttachments(response.data.reference, response.data.submission_token)
   } catch (failure: unknown) {
+    if (isPrivacyContextFailure(failure)) {
+      // A→B、过期、伪造或错语言均重新绑定最新政策；旧勾选绝不迁移到新上下文。
+      const recovered = await recoverContext()
+      errors.value = { ...errors.value, consent_privacy: labels.value.error.required }
+      errorMessage.value = recovered
+        ? labels.value.privacy.reconfirm
+        : privacyPolicy.value
+          ? labels.value.privacy.contextUnavailable
+          : labels.value.privacy.unavailable
+      await nextTick()
+      errorSummary.value?.focus()
+      return
+    }
     // 已撤回或未发布的来源由后端返回 422；保留上下文并引导客户移除后重试。
     errorMessage.value =
       publicRequestStatus(failure) === 422 && activeSource.value
@@ -467,11 +539,18 @@ useHead(() => ({
 
         <fieldset>
           <legend>{{ labels.form.privacy }}</legend>
+          <p v-if="!privacyPolicy" class="rfq-form__message status-error" role="status">
+            {{ labels.privacy.unavailable }}
+          </p>
+          <p v-else class="rfq-form__hint">
+            {{ labels.privacy.version }}: {{ privacyPolicy.version_label }}
+          </p>
           <label class="rfq-form__check"
             ><input
               v-model="form.consent_privacy"
               type="checkbox"
               required
+              :disabled="!privacyPolicy || !contextToken || isContextLoading"
               aria-required="true"
               :aria-invalid="Boolean(errors.consent_privacy)"
               :aria-describedby="errors.consent_privacy ? 'rfq-consent-privacy-error' : undefined"
@@ -496,7 +575,11 @@ useHead(() => ({
         <label class="honeypot" hidden aria-hidden="true"
           >Website confirmation<input v-model="form.honeypot" tabindex="-1" autocomplete="off"
         /></label>
-        <button class="rfq-form__submit" type="submit" :disabled="isSubmitting || Boolean(result)">
+        <button
+          class="rfq-form__submit"
+          type="submit"
+          :disabled="isSubmitting || Boolean(result) || !canSubmit"
+        >
           {{ isSubmitting ? labels.form.submitting : labels.form.submit }}
         </button>
         <button

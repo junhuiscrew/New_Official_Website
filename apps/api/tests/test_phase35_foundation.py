@@ -83,8 +83,8 @@ def test_filename_sanitization_and_private_url_ttl() -> None:
 
 def test_public_rfq_response_input_has_no_internal_fields() -> None:
     """验证公共 RFQ 输入只包含公开表单字段，且隐私同意必填。"""
-    payload = RFQCreate(company_name="ACME", contact_name="Lee", email="Lee@Example.com", message="Need a quote", consent_privacy=True)
+    payload = RFQCreate(company_name="ACME", contact_name="Lee", email="Lee@Example.com", message="Need a quote", consent_privacy=True, preferred_language="en")
     assert str(payload.email) == "lee@example.com"
     assert "assigned_to" not in payload.model_dump()
     with pytest.raises(ValueError):
-        RFQCreate(company_name="ACME", contact_name="Lee", email="lee@example.com", consent_privacy=False)
+        RFQCreate(company_name="ACME", contact_name="Lee", email="lee@example.com", consent_privacy=False, preferred_language="en")

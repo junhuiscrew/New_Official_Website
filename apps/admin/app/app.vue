@@ -9,46 +9,58 @@ async function handleLogout() {
 </script>
 
 <template>
-  <header v-if="currentUser" class="admin-nav">
-    <strong>Junhui Admin</strong>
-    <nav aria-label="Admin modules">
-      <NuxtLink to="/">Overview</NuxtLink>
-      <NuxtLink v-if="currentUser.permissions.includes('user.read')" to="/users">Users</NuxtLink>
-      <NuxtLink v-if="currentUser.permissions.includes('role.read')" to="/roles">Roles</NuxtLink>
-      <NuxtLink v-if="currentUser.permissions.includes('locale.read')" to="/locales"
-        >Locales</NuxtLink
-      >
-      <NuxtLink
-        v-if="
-          currentUser.permissions.some(
-            (permission) =>
-              permission.endsWith('.read') &&
-              [
-                'catalog.read',
-                'material.read',
-                'technology.read',
-                'application.read',
-                'solution.read',
-              ].includes(permission),
-          )
-        "
-        to="/catalog"
-        >Catalog</NuxtLink
-      >
-      <NuxtLink v-if="currentUser.permissions.includes('case.read')" to="/cases">Cases</NuxtLink>
-      <NuxtLink v-if="currentUser.permissions.includes('knowledge.read')" to="/knowledge"
-        >Knowledge</NuxtLink
-      >
-      <NuxtLink v-if="currentUser.permissions.includes('faq.read')" to="/faqs">FAQ</NuxtLink>
-      <NuxtLink v-if="currentUser.permissions.includes('expert.read')" to="/experts"
-        >Experts</NuxtLink
-      >
-      <NuxtLink v-if="currentUser.permissions.includes('seo.read')" to="/site-pages/products"
-        >Products SEO</NuxtLink
-      >
-    </nav>
-    <span>{{ currentUser.display_name || currentUser.email }}</span>
-    <button type="button" @click="handleLogout">Logout</button>
-  </header>
+  <!-- 认证用户只在客户端中间件确认后出现，避免 SSR 空壳与客户端权限导航产生 hydration mismatch。 -->
+  <ClientOnly>
+    <header v-if="currentUser" class="admin-nav">
+      <strong>Junhui Admin</strong>
+      <nav aria-label="Admin modules">
+        <NuxtLink to="/">Overview</NuxtLink>
+        <NuxtLink v-if="currentUser.permissions.includes('user.read')" to="/users">Users</NuxtLink>
+        <NuxtLink v-if="currentUser.permissions.includes('role.read')" to="/roles">Roles</NuxtLink>
+        <NuxtLink v-if="currentUser.permissions.includes('locale.read')" to="/locales"
+          >Locales</NuxtLink
+        >
+        <NuxtLink
+          v-if="
+            currentUser.permissions.some(
+              (permission) =>
+                permission.endsWith('.read') &&
+                [
+                  'catalog.read',
+                  'material.read',
+                  'technology.read',
+                  'application.read',
+                  'solution.read',
+                ].includes(permission),
+            )
+          "
+          to="/catalog"
+          >Catalog</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('case.read')" to="/cases">Cases</NuxtLink>
+        <NuxtLink v-if="currentUser.permissions.includes('knowledge.read')" to="/knowledge"
+          >Knowledge</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('faq.read')" to="/faqs">FAQ</NuxtLink>
+        <NuxtLink v-if="currentUser.permissions.includes('expert.read')" to="/experts"
+          >Experts</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('seo.read')" to="/site-pages/products"
+          >Products SEO</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('privacy.read')" to="/privacy"
+          >Privacy</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('content.read')" to="/homepage"
+          >Homepage</NuxtLink
+        >
+        <NuxtLink v-if="currentUser.permissions.includes('content.read')" to="/site-overview"
+          >Site Overview</NuxtLink
+        >
+      </nav>
+      <span>{{ currentUser.display_name || currentUser.email }}</span>
+      <button type="button" @click="handleLogout">Logout</button>
+    </header>
+  </ClientOnly>
   <NuxtPage />
 </template>

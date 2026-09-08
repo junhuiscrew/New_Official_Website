@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 import ArticleCard from './ArticleCard.vue'
 import CaseCard from './CaseCard.vue'
+import HomepagePresentation from './HomepagePresentation.vue'
 import PageHero from './PageHero.vue'
 import ProductCard from './ProductCard.vue'
 import RfqCta from './RfqCta.vue'
@@ -13,7 +14,7 @@ import { ui } from '~/i18n/ui'
 import type { HomeDto, LocaleSlug, PublicCardDto } from '~/types/public'
 import { serializeJsonLd } from '~/utils/jsonLd'
 
-const props = defineProps<{ locale: LocaleSlug; home: HomeDto }>()
+const props = defineProps<{ locale: LocaleSlug; home: HomeDto; preview?: boolean }>()
 const labels = computed(() => ui[props.locale])
 const heroTitle = computed(
   () => props.home.company?.company_name?.trim() || labels.value.home.fallbackTitle,
@@ -116,7 +117,8 @@ useHead(() => {
     head.title = seo.title
     head.meta = [
       ...(seo.description ? [{ name: 'description', content: seo.description }] : []),
-      { name: 'robots', content: seo.robots },
+      // 认证完整预览必须覆盖公开 SEO 的索引资格，避免 Head 合并时回退为 index。
+      { name: 'robots', content: props.preview ? 'noindex, nofollow' : seo.robots },
       ...(seo.og_title ? [{ property: 'og:title', content: seo.og_title }] : []),
       ...(seo.og_description ? [{ property: 'og:description', content: seo.og_description }] : []),
     ]
@@ -150,224 +152,241 @@ function cardKey(item: PublicCardDto): string {
 
 <template>
   <div class="home-page">
-    <PageHero
-      :title="heroTitle"
-      :summary="heroSummary"
-      :primary-label="labels.cta.requestQuote"
-      :primary-href="`/${locale}/request-a-quote/`"
-      :secondary-label="labels.cta.exploreProducts"
-      :secondary-href="`/${locale}/products/`"
-      :media="home.hero_media"
+    <HomepagePresentation
+      v-if="home.presentation"
+      :locale="locale"
+      :home="home"
+      :preview="preview ?? home.preview ?? false"
     />
 
-    <section
-      v-if="home.product_categories.length"
-      class="public-section"
-      data-home-section="product-categories"
-    >
-      <div class="public-container">
-        <SectionHeader
-          :title="labels.sections.productCategories"
-          :description="labels.home.categoriesIntro"
-        />
-        <div class="home-grid home-grid--categories">
-          <article
-            v-for="item in home.product_categories"
-            :key="cardKey(item)"
-            class="home-link-card"
-          >
-            <img
-              v-if="item.media?.type === 'image'"
-              data-testid="card-media"
-              :src="item.media.src"
-              :alt="item.media.alt"
-              :width="item.media.width ?? undefined"
-              :height="item.media.height ?? undefined"
-              loading="lazy"
-            />
-            <div>
+    <template v-else>
+      <PageHero
+        :title="heroTitle"
+        :summary="heroSummary"
+        :primary-label="labels.cta.requestQuote"
+        :primary-href="`/${locale}/request-a-quote/`"
+        :secondary-label="labels.cta.exploreProducts"
+        :secondary-href="`/${locale}/products/`"
+        :media="home.hero_media"
+      />
+
+      <section
+        v-if="home.product_categories.length"
+        class="public-section"
+        data-home-section="product-categories"
+      >
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.productCategories"
+            :description="labels.home.categoriesIntro"
+          />
+          <div class="home-grid home-grid--categories">
+            <article
+              v-for="item in home.product_categories"
+              :key="cardKey(item)"
+              class="home-link-card"
+            >
+              <img
+                v-if="item.media?.type === 'image'"
+                data-testid="card-media"
+                :src="item.media.src"
+                :alt="item.media.alt"
+                :width="item.media.width ?? undefined"
+                :height="item.media.height ?? undefined"
+                loading="lazy"
+              />
+              <div>
+                <h3>
+                  <a :href="item.url">{{ item.name }}</a>
+                </h3>
+                <p v-if="item.summary">{{ item.summary }}</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="advantages.length"
+        class="home-trust-strip"
+        data-home-section="trust-strip"
+        :aria-labelledby="`trust-strip-title-${locale}`"
+      >
+        <div class="public-container">
+          <h2 :id="`trust-strip-title-${locale}`">{{ labels.sections.whyJunhui }}</h2>
+          <ul>
+            <li v-for="advantage in advantages" :key="advantage">{{ advantage }}</li>
+          </ul>
+        </div>
+      </section>
+
+      <section
+        v-if="home.materials.length || home.solutions.length"
+        class="public-section public-section--muted"
+        data-home-section="discovery"
+      >
+        <div class="public-container">
+          <SectionHeader :title="labels.home.discoveryTitle" />
+          <div class="home-discovery">
+            <section v-if="home.materials.length">
+              <h3>{{ labels.sections.solveByMaterial }}</h3>
+              <ul class="home-link-list">
+                <li v-for="item in home.materials" :key="cardKey(item)">
+                  <a :href="item.url">
+                    <span>{{ item.name }}</span>
+                    <small v-if="item.summary">{{ item.summary }}</small>
+                  </a>
+                </li>
+              </ul>
+            </section>
+            <section v-if="home.solutions.length">
+              <h3>{{ labels.sections.solveByProblem }}</h3>
+              <ul class="home-link-list">
+                <li v-for="item in home.solutions" :key="cardKey(item)">
+                  <a :href="item.url">
+                    <span>{{ item.name }}</span>
+                    <small v-if="item.summary">{{ item.summary }}</small>
+                  </a>
+                </li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="home.capabilities.length"
+        class="public-section"
+        data-home-section="capabilities"
+      >
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.manufacturingCapabilities"
+            :description="labels.home.capabilitiesIntro"
+          />
+          <div class="home-grid">
+            <article v-for="item in home.capabilities" :key="cardKey(item)" class="home-text-card">
+              <p class="eyebrow">{{ labels.navigation.capabilities }}</p>
               <h3>
                 <a :href="item.url">{{ item.name }}</a>
               </h3>
               <p v-if="item.summary">{{ item.summary }}</p>
-            </div>
-          </article>
+            </article>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section
-      v-if="advantages.length"
-      class="home-trust-strip"
-      data-home-section="trust-strip"
-      :aria-labelledby="`trust-strip-title-${locale}`"
-    >
-      <div class="public-container">
-        <h2 :id="`trust-strip-title-${locale}`">{{ labels.sections.whyJunhui }}</h2>
-        <ul>
-          <li v-for="advantage in advantages" :key="advantage">{{ advantage }}</li>
-        </ul>
-      </div>
-    </section>
-
-    <section
-      v-if="home.materials.length || home.solutions.length"
-      class="public-section public-section--muted"
-      data-home-section="discovery"
-    >
-      <div class="public-container">
-        <SectionHeader :title="labels.home.discoveryTitle" />
-        <div class="home-discovery">
-          <section v-if="home.materials.length">
-            <h3>{{ labels.sections.solveByMaterial }}</h3>
-            <ul class="home-link-list">
-              <li v-for="item in home.materials" :key="cardKey(item)">
-                <a :href="item.url">
-                  <span>{{ item.name }}</span>
-                  <small v-if="item.summary">{{ item.summary }}</small>
-                </a>
-              </li>
-            </ul>
-          </section>
-          <section v-if="home.solutions.length">
-            <h3>{{ labels.sections.solveByProblem }}</h3>
-            <ul class="home-link-list">
-              <li v-for="item in home.solutions" :key="cardKey(item)">
-                <a :href="item.url">
-                  <span>{{ item.name }}</span>
-                  <small v-if="item.summary">{{ item.summary }}</small>
-                </a>
-              </li>
-            </ul>
-          </section>
-        </div>
-      </div>
-    </section>
-
-    <section
-      v-if="home.capabilities.length"
-      class="public-section"
-      data-home-section="capabilities"
-    >
-      <div class="public-container">
-        <SectionHeader
-          :title="labels.sections.manufacturingCapabilities"
-          :description="labels.home.capabilitiesIntro"
-        />
-        <div class="home-grid">
-          <article v-for="item in home.capabilities" :key="cardKey(item)" class="home-text-card">
-            <p class="eyebrow">{{ labels.navigation.capabilities }}</p>
-            <h3>
-              <a :href="item.url">{{ item.name }}</a>
-            </h3>
-            <p v-if="item.summary">{{ item.summary }}</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section
-      v-if="home.featured_products.length"
-      class="public-section public-section--muted"
-      data-home-section="featured-products"
-    >
-      <div class="public-container">
-        <SectionHeader
-          :title="labels.sections.featuredProducts"
-          :description="labels.home.productsIntro"
-        />
-        <div class="home-grid">
-          <ProductCard
-            v-for="item in home.featured_products"
-            :key="cardKey(item)"
-            :item="item"
-            :locale="locale"
+      <section
+        v-if="home.featured_products.length"
+        class="public-section public-section--muted"
+        data-home-section="featured-products"
+      >
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.featuredProducts"
+            :description="labels.home.productsIntro"
           />
-        </div>
-      </div>
-    </section>
-
-    <section
-      v-if="home.applications.length"
-      class="public-section"
-      data-home-section="applications"
-    >
-      <div class="public-container">
-        <SectionHeader
-          :title="labels.sections.applications"
-          :description="labels.home.applicationsIntro"
-        />
-        <div class="home-grid">
-          <article v-for="item in home.applications" :key="cardKey(item)" class="home-link-card">
-            <img
-              v-if="item.media?.type === 'image'"
-              data-testid="card-media"
-              :src="item.media.src"
-              :alt="item.media.alt"
-              :width="item.media.width ?? undefined"
-              :height="item.media.height ?? undefined"
-              loading="lazy"
+          <div class="home-grid">
+            <ProductCard
+              v-for="item in home.featured_products"
+              :key="cardKey(item)"
+              :item="item"
+              :locale="locale"
             />
-            <div>
-              <h3>
-                <a :href="item.url">{{ item.name }}</a>
-              </h3>
-              <p v-if="item.summary">{{ item.summary }}</p>
-            </div>
-          </article>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section
-      v-if="home.cases.length"
-      class="public-section public-section--muted"
-      data-home-section="cases"
-    >
-      <div class="public-container">
-        <SectionHeader :title="labels.sections.caseStudies" :description="labels.home.casesIntro" />
-        <div class="home-grid home-grid--wide">
-          <CaseCard v-for="item in home.cases" :key="cardKey(item)" :item="item" :locale="locale" />
-        </div>
-      </div>
-    </section>
-
-    <section v-if="home.knowledge.length" class="public-section" data-home-section="knowledge">
-      <div class="public-container">
-        <SectionHeader
-          :title="labels.sections.technicalKnowledge"
-          :description="labels.home.knowledgeIntro"
-        />
-        <div class="home-grid">
-          <ArticleCard
-            v-for="item in home.knowledge"
-            :key="cardKey(item)"
-            :item="item"
-            :locale="locale"
+      <section
+        v-if="home.applications.length"
+        class="public-section"
+        data-home-section="applications"
+      >
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.applications"
+            :description="labels.home.applicationsIntro"
           />
+          <div class="home-grid">
+            <article v-for="item in home.applications" :key="cardKey(item)" class="home-link-card">
+              <img
+                v-if="item.media?.type === 'image'"
+                data-testid="card-media"
+                :src="item.media.src"
+                :alt="item.media.alt"
+                :width="item.media.width ?? undefined"
+                :height="item.media.height ?? undefined"
+                loading="lazy"
+              />
+              <div>
+                <h3>
+                  <a :href="item.url">{{ item.name }}</a>
+                </h3>
+                <p v-if="item.summary">{{ item.summary }}</p>
+              </div>
+            </article>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section
-      v-if="trustMetrics.length"
-      class="public-section public-section--muted"
-      data-home-section="trust-summary"
-    >
-      <div class="public-container">
-        <SectionHeader :title="labels.home.trustTitle" :description="labels.home.trustIntro" />
-        <dl class="home-metrics">
-          <TrustMetric
-            v-for="metric in trustMetrics"
-            :key="metric.key"
-            :label="metric.label"
-            :value="metric.value"
+      <section
+        v-if="home.cases.length"
+        class="public-section public-section--muted"
+        data-home-section="cases"
+      >
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.caseStudies"
+            :description="labels.home.casesIntro"
           />
-        </dl>
-      </div>
-    </section>
+          <div class="home-grid home-grid--wide">
+            <CaseCard
+              v-for="item in home.cases"
+              :key="cardKey(item)"
+              :item="item"
+              :locale="locale"
+            />
+          </div>
+        </div>
+      </section>
 
-    <RfqCta :locale="locale" />
+      <section v-if="home.knowledge.length" class="public-section" data-home-section="knowledge">
+        <div class="public-container">
+          <SectionHeader
+            :title="labels.sections.technicalKnowledge"
+            :description="labels.home.knowledgeIntro"
+          />
+          <div class="home-grid">
+            <ArticleCard
+              v-for="item in home.knowledge"
+              :key="cardKey(item)"
+              :item="item"
+              :locale="locale"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="trustMetrics.length"
+        class="public-section public-section--muted"
+        data-home-section="trust-summary"
+      >
+        <div class="public-container">
+          <SectionHeader :title="labels.home.trustTitle" :description="labels.home.trustIntro" />
+          <dl class="home-metrics">
+            <TrustMetric
+              v-for="metric in trustMetrics"
+              :key="metric.key"
+              :label="metric.label"
+              :value="metric.value"
+            />
+          </dl>
+        </div>
+      </section>
+
+      <RfqCta :locale="locale" />
+    </template>
   </div>
 </template>
 

@@ -204,7 +204,10 @@ class SitePage(UuidPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "site_pages"
     __table_args__ = (
         UniqueConstraint("system_key", name="uq_site_pages_system_key"),
-        CheckConstraint("system_key IN ('products')", name="site_page_system_key_value"),
+        CheckConstraint(
+            "system_key IN ('products','privacy','home')",
+            name="site_page_system_key_value",
+        ),
         CheckConstraint(
             "status IN ('enabled','disabled','retired')", name="site_page_status_value"
         ),
@@ -212,7 +215,9 @@ class SitePage(UuidPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     system_key: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="系统稳定页面键：仅允许products"
+        String(64),
+        nullable=False,
+        comment="系统稳定页面键：仅允许products、privacy或home",
     )
     status: Mapped[str] = mapped_column(
         String(32),

@@ -3,6 +3,34 @@
 /** URL 使用的受支持语言。 */
 export type LocaleSlug = 'zh-cn' | 'en'
 
+/** 当前语言唯一合格的公开隐私政策；正文始终按不可信 Markdown 处理。 */
+export interface PublicPrivacyPolicyDto {
+  locale: 'zh-CN' | 'en'
+  title: string
+  body_markdown: string
+  content_format: 'markdown'
+  rendering_trust: 'untrusted'
+  version_label: string
+  content_hash: string
+  hash_algorithm: string
+  effective_at: string
+  canonical_path: string
+  canonical_url: string
+  alternates: Partial<Record<'zh-CN' | 'en', string>>
+  robots: {
+    index: boolean
+    follow: boolean
+  }
+}
+
+/** 客户端短期持有的 RFQ 隐私上下文；不得进入 SSR payload 或持久化存储。 */
+export interface PublicPrivacyContextDto {
+  token: string
+  expires_at: string
+  version_label: string
+  locale: 'zh-CN' | 'en'
+}
+
 /** 公开内容类型，仅用于展示、导航和来源上下文。 */
 export type PublicContentType =
   | 'product_category'
@@ -258,6 +286,50 @@ export interface PublicTrustSummaryDto {
   export_markets?: string[]
 }
 
+/** 首页固定十四模块的稳定键；前端不接受后台任意扩展组件名。 */
+export type HomepageModuleKey =
+  | 'hero'
+  | 'core_product_families'
+  | 'materials'
+  | 'special_applications'
+  | 'technologies'
+  | 'manufacturing_capability'
+  | 'why_junhui'
+  | 'factory_equipment'
+  | 'solutions'
+  | 'case_studies'
+  | 'technical_knowledge'
+  | 'certificates_patents'
+  | 'global_markets'
+  | 'rfq_cta'
+
+/** 后台允许选择的有限首页视觉变体。 */
+export type HomepageModuleVariant =
+  | 'product-focus'
+  | 'product-rail'
+  | 'light'
+  | 'soft'
+  | 'navy'
+  | 'split'
+  | 'rail'
+
+/** 单个首页模块的公开渲染配置及真实内容状态。 */
+export interface HomepageModuleDto {
+  key: HomepageModuleKey
+  visible: boolean
+  variant: HomepageModuleVariant
+  product_slugs: string[]
+  content_status: 'available' | 'missing'
+  missing_reason: string | null
+  management_url: string
+}
+
+/** 首页应用版或作者草稿的服务端配置。 */
+export interface HomepagePresentationDto {
+  revision: number
+  modules: HomepageModuleDto[]
+}
+
 /** 单次 SSR 首页请求返回的公开聚合 DTO。 */
 export interface HomeDto {
   locale: LocaleSlug
@@ -265,13 +337,20 @@ export interface HomeDto {
   hero_media: PublicMediaDto | null
   product_categories: PublicCardDto[]
   featured_products: PublicCardDto[]
+  homepage_products?: PublicCardDto[]
   materials: PublicCardDto[]
+  technologies?: PublicCardDto[]
   solutions: PublicCardDto[]
   capabilities: PublicCardDto[]
+  equipment?: PublicTrustListItemDto[]
   applications: PublicCardDto[]
   cases: PublicCardDto[]
   knowledge: PublicCardDto[]
+  certificates?: PublicTrustListItemDto[]
+  patents?: PublicTrustListItemDto[]
   trust_summary: PublicTrustSummaryDto | null
+  presentation?: HomepagePresentationDto
+  preview?: boolean
   seo: SeoDto
   schema: unknown[]
 }

@@ -1,5 +1,6 @@
 """把业务、校验和 HTTP 异常转换为统一 API 错误响应。"""
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -17,6 +18,7 @@ class AppException(Exception):
         code: str，稳定的机器可读错误码。
         message: str，面向客户端的错误说明。
         details: Any | None，可选的结构化错误上下文。
+        headers: Mapping[str, str] | None，可选且安全的 HTTP 响应头。
 
     输出：AppException，由全局处理器转换为 JSON。
     """
@@ -27,12 +29,14 @@ class AppException(Exception):
         code: str,
         message: str,
         details: Any | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.details = details
+        self.headers = dict(headers or {})
 
 
 def _error_response(
@@ -40,6 +44,7 @@ def _error_response(
     code: str,
     message: str,
     details: Any | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     """
     创建符合统一约定的错误响应。
@@ -49,6 +54,7 @@ def _error_response(
         code: str，机器可读错误码。
         message: str，安全的错误说明。
         details: Any | None，可选错误详情。
+        headers: Mapping[str, str] | None，可选且安全的响应头。
 
     输出：JSONResponse，统一错误 envelope。
     """
@@ -59,6 +65,7 @@ def _error_response(
             "data": None,
             "error": {"code": code, "message": message, "details": details},
         },
+        headers=headers,
     )
 
 
@@ -75,7 +82,13 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppException)
     async def handle_app_exception(_request: Request, exc: AppException) -> JSONResponse:
         """处理已知业务异常。"""
-        return _error_response(exc.status_code, exc.code, exc.message, exc.details)
+        return _error_response(
+            exc.status_code,
+            exc.code,
+            exc.message,
+            exc.details,
+            exc.headers,
+        )
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(

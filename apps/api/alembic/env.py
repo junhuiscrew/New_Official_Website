@@ -20,6 +20,8 @@ from app.modules.content import models as content_models  # noqa: F401
 from app.modules.discovery import models as discovery_models  # noqa: F401
 from app.modules.localization import models as localization_models  # noqa: F401
 from app.modules.media import models as media_models  # noqa: F401
+from app.modules.presentation import models as presentation_models  # noqa: F401
+from app.modules.privacy import models as privacy_models  # noqa: F401
 from app.modules.rfq import models as rfq_models  # noqa: F401
 from app.modules.users import models as user_models  # noqa: F401
 

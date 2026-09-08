@@ -20,6 +20,12 @@ describe('admin route guard policy', () => {
     expect(decideAdminRouteAccess('/users', true, ['user.read'])).toBe('allow')
   })
 
+  it('normalizes trailing slashes before enforcing Privacy permission', () => {
+    expect(decideAdminRouteAccess('/privacy', true, [])).toBe('forbidden')
+    expect(decideAdminRouteAccess('/privacy/', true, [])).toBe('forbidden')
+    expect(decideAdminRouteAccess('/privacy///', true, ['privacy.read'])).toBe('allow')
+  })
+
   it('refreshes an expired access session only in the browser', () => {
     expect(shouldAttemptSessionRefresh(401, false)).toBe(true)
     expect(shouldAttemptSessionRefresh(401, true)).toBe(false)

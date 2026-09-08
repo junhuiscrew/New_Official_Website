@@ -39,7 +39,8 @@ class RFQCreate(BaseModel):
     country_code: str | None = Field(default=None, min_length=2, max_length=2)
     website: str | None = Field(default=None, max_length=500)
     message: str | None = Field(default=None, max_length=10000)
-    preferred_language: str | None = Field(default=None, max_length=32)
+    # 数据库字段继续允许历史 null；新的公开提交必须明确绑定 Privacy 支持语言。
+    preferred_language: Literal["zh-CN", "en"]
     source_type: (
         Literal[
             "product",
@@ -64,6 +65,7 @@ class RFQCreate(BaseModel):
     items: list[RFQItemInput] = Field(default_factory=list, max_length=20)
     consent_privacy: bool
     consent_marketing: bool = False
+    privacy_context_token: str | None = Field(default=None, min_length=1, max_length=4096)
     honeypot: str = Field(default="", max_length=100)
 
     @field_validator("email")

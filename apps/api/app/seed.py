@@ -84,6 +84,11 @@ PERMISSION_CODES: tuple[str, ...] = (
     "content.review",
     "content.publish",
     "content.archive",
+    "privacy.read",
+    "privacy.edit",
+    "privacy.review",
+    "privacy.publish",
+    "privacy.history",
     "translation.read",
     "translation.create",
     "translation.update",
@@ -217,6 +222,9 @@ AUTHORITY_PERMISSIONS = frozenset(
     for code in PERMISSION_CODES
     if code.startswith(("case.", "knowledge.", "faq.", "expert.", "source."))
 )
+PRIVACY_PERMISSIONS = frozenset(
+    code for code in PERMISSION_CODES if code.startswith("privacy.")
+)
 
 # 角色矩阵只声明系统基线；Seed 只补充缺失关系，不删除管理员后续添加的自定义映射。
 ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
@@ -228,6 +236,7 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
     | SPECIFICATION_PERMISSIONS
     | STRUCTURED_CONTENT_PERMISSIONS
     | AUTHORITY_PERMISSIONS
+    | PRIVACY_PERMISSIONS
     | frozenset(
         {
             "user.read",
@@ -270,6 +279,8 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "faq.create",
             "faq.update",
             "expert.read",
+            "privacy.read",
+            "privacy.edit",
         }
     ),
     "translator": frozenset(
@@ -283,6 +294,8 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "knowledge.read",
             "faq.read",
             "expert.read",
+            "privacy.read",
+            "privacy.edit",
         }
     ),
     "reviewer": frozenset(
@@ -314,6 +327,10 @@ ROLE_PERMISSION_MATRIX: dict[str, frozenset[str]] = {
             "expert.read",
             "expert.review",
             "expert.publish",
+            "privacy.read",
+            "privacy.review",
+            "privacy.publish",
+            "privacy.history",
         }
     ),
     "seo_manager": frozenset(

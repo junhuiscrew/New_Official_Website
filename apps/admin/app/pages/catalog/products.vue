@@ -977,7 +977,8 @@ onMounted(load)
 .product-section-nav {
   position: sticky;
   z-index: 5;
-  top: 0;
+  /* 顶部栏固定后，分区导航紧随其下，避免覆盖标题和首行参数。 */
+  top: 5rem;
   margin-bottom: 1rem;
   padding: 0.65rem;
   display: flex;
@@ -997,6 +998,11 @@ onMounted(load)
   font-size: 0.72rem;
   font-weight: 750;
   text-decoration: none;
+}
+
+/* 锚点定位预留顶部栏与分区导航的总高度，点击“规格”后首行保持完整可见。 */
+.sub-editor {
+  scroll-margin-top: 9rem;
 }
 
 /* 产品浏览器：在一屏内完成搜索、筛选、定位与状态识别。 */

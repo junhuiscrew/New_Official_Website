@@ -174,4 +174,35 @@ describe('Website Presentation R1 shared renderer', () => {
     expect(about).toContain('about-page__advantages-grid')
     expect(about).toContain('about-page__contact-panel')
   })
+
+  it('renders backend company advantages and a compact application text state', () => {
+    const data = homepage()
+    data.company!.full_intro = 'DEMO工作流说明。'
+    data.company!.advantages = ['定制需求沟通', '加工与检测衔接', '配套件协同']
+    data.applications = [
+      {
+        type: 'application',
+        slug: 'demo-application',
+        name: '汽车部件应用场景（演示）',
+        url: '/zh-cn/applications/demo-application/',
+        summary: '围绕需求记录与检查节点组织演示场景。',
+        media: null,
+      },
+    ]
+    data.presentation!.modules = data.presentation!.modules.map((module) =>
+      module.key === 'special_applications'
+        ? { ...module, content_status: 'available' }
+        : module.key === 'why_junhui'
+          ? { ...module, content_status: 'available' }
+          : module,
+    )
+
+    const wrapper = mount(HomePage, { props: { locale: 'zh-cn', home: data } })
+
+    expect(wrapper.text()).toContain('定制需求沟通')
+    expect(wrapper.find('.presentation-applications__feature--text-only').exists()).toBe(true)
+    expect(wrapper.find('.presentation-applications__feature').text()).toContain(
+      '汽车部件应用场景（演示）',
+    )
+  })
 })

@@ -207,4 +207,11 @@ describe('catalog admin routes', () => {
     expect(source).toContain("group.status === 'enabled'")
     expect(source).toContain('v-for="item in availableDefinitions"')
   })
+
+  it('keeps the product section navigator below the fixed admin topbar', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
+
+    expect(source).toContain('top: 5rem')
+    expect(source).toContain('scroll-margin-top:')
+  })
 })

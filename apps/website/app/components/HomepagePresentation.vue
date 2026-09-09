@@ -49,6 +49,9 @@ const companyFactChips = computed(() =>
     { label: labels.value.home.factoryArea, value: props.home.company?.factory_area_sqm },
   ].filter((fact) => fact.value !== null && fact.value !== undefined && fact.value !== ''),
 )
+const companyAdvantages = computed(() =>
+  (props.home.company?.advantages ?? []).map((item) => item.trim()).filter(Boolean),
+)
 
 /** 输入固定模块键；输出当前语言的纯界面标题。 */
 function moduleTitle(key: HomepageModuleKey): string {
@@ -279,6 +282,10 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             <a
               v-if="cardsFor(module.key)[0]"
               class="presentation-applications__feature"
+              :class="{
+                'presentation-applications__feature--text-only':
+                  cardsFor(module.key)[0]!.media?.type !== 'image',
+              }"
               :href="publicHref(cardsFor(module.key)[0]!.url)"
             >
               <PublicImage
@@ -328,6 +335,12 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             <div class="presentation-about__marker" aria-hidden="true">JH</div>
             <div>
               <p v-for="paragraph in aboutParagraphs" :key="paragraph">{{ paragraph }}</p>
+              <ol v-if="companyAdvantages.length" class="presentation-about__advantages">
+                <li v-for="(advantage, advantageIndex) in companyAdvantages" :key="advantage">
+                  <span>{{ String(advantageIndex + 1).padStart(2, '0') }}</span>
+                  <strong>{{ advantage }}</strong>
+                </li>
+              </ol>
               <dl v-if="companyFactChips.length" class="presentation-about__facts">
                 <div v-for="fact in companyFactChips" :key="fact.label">
                   <dt>{{ fact.label }}</dt>
@@ -781,6 +794,14 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   overflow: hidden;
   background: #071b31;
 }
+.presentation-applications__feature--text-only {
+  align-self: start;
+  min-height: 0;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  color: #173651;
+  background: linear-gradient(135deg, rgb(232 244 252 / 96%), rgb(246 250 253 / 94%)), #e8f4fc;
+  border: 1px solid #b9d4e8;
+}
 .presentation-applications__feature :deep(.public-image),
 .presentation-applications__feature :deep(img) {
   width: 100%;
@@ -807,10 +828,29 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   padding: 1.5rem;
   color: #fff;
 }
+.presentation-applications__feature--text-only::after {
+  display: none;
+}
+.presentation-applications__feature--text-only > div {
+  position: static;
+  padding: 0;
+  color: #173651;
+}
 .presentation-applications__feature h3 {
   margin-block: 0.35rem;
   color: #fff;
   font-size: 1.6rem;
+}
+.presentation-applications__feature--text-only h3 {
+  color: #092946;
+}
+.presentation-applications__feature--text-only .eyebrow {
+  color: #147dc4;
+}
+.presentation-applications__feature--text-only > div > p:last-child {
+  margin: 0;
+  color: #526c80;
+  line-height: 1.75;
 }
 .presentation-applications__list {
   display: grid;
@@ -1007,6 +1047,34 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   gap: var(--space-5);
   color: var(--color-neutral-700);
   font-size: clamp(1rem, 1.5vw, 1.16rem);
+}
+.presentation-about__advantages {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  list-style: none;
+  background: #cbdbe7;
+  border: 1px solid #cbdbe7;
+}
+.presentation-about__advantages li {
+  padding: 0.9rem 1rem;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.8rem;
+  color: #173651;
+  background: #fff;
+}
+.presentation-about__advantages span {
+  color: #147dc4;
+  font-family: var(--font-technical);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+.presentation-about__advantages strong {
+  font-size: 0.94rem;
+  font-weight: 750;
+  line-height: 1.55;
 }
 .presentation-about__facts {
   margin: 0;

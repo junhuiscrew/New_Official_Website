@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { normalizeLocale, rfqUrl } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, PublicCompanyProfileDto } from '~/types/public'
+import { telephoneHref } from '~/utils/contact'
 import { serializeJsonLd } from '~/utils/jsonLd'
 
 interface Envelope<T> {
@@ -43,6 +44,8 @@ const companyFacts = computed(() =>
 const hasContact = computed(() =>
   Boolean(page.value.phone || page.value.email || page.value.address),
 )
+// 非号码的演示联系方式保留为可见文字，避免生成不可用的 tel URL。
+const phoneHref = computed(() => telephoneHref(page.value.phone))
 
 // canonical、hreflang 与 Schema 全部来自 Company Public DTO。
 useHead(() => ({
@@ -123,7 +126,8 @@ useHead(() => ({
       <section v-if="hasContact" class="about-page__contact">
         <h2>{{ labels.trust.contact }}</h2>
         <address>
-          <a v-if="page.phone" :href="`tel:${page.phone}`">{{ page.phone }}</a>
+          <a v-if="phoneHref" :href="phoneHref">{{ page.phone }}</a>
+          <span v-else-if="page.phone">{{ page.phone }}</span>
           <a v-if="page.email" :href="`mailto:${page.email}`">{{ page.email }}</a>
           <span v-if="page.address">{{ page.address }}</span>
         </address>

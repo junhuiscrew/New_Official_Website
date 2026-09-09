@@ -110,7 +110,16 @@ def build_article_schema(article: dict[str, Any], author: dict[str, Any]) -> dic
     输入：article 公开文章字段与 author 公开人物字段。
     输出：dict[str, Any]，Article JSON-LD；虚构作者时拒绝。
     """
-    if not author.get("is_real_person_verified"):
+    is_verified_person = bool(
+        author.get("identity_kind", "person") == "person"
+        and author.get("is_real_person_verified")
+    )
+    is_demo_organization = bool(
+        author.get("identity_kind") == "organization"
+        and author.get("is_demo_content")
+        and not author.get("is_real_person_verified")
+    )
+    if not is_verified_person and not is_demo_organization:
         raise AppException(409, "verified_author_required", "Article Schema 必须使用已核验的真实作者")
     return {
         "@context": "https://schema.org",
@@ -118,7 +127,10 @@ def build_article_schema(article: dict[str, Any], author: dict[str, Any]) -> dic
         "headline": article["headline"],
         "description": article.get("description"),
         "url": article["url"],
-        "author": {"@type": "Person", "name": author["name"]},
+        "author": {
+            "@type": "Person" if is_verified_person else "Organization",
+            "name": author["name"],
+        },
         "publisher": build_organization_schema(),
         **({"dateModified": article["date_modified"]} if article.get("date_modified") else {}),
     }

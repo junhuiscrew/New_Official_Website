@@ -107,8 +107,8 @@ const activeLanguage = computed(
   () => detail.value?.languages.find((item) => item.locale.code === activeLocaleCode.value) ?? null,
 )
 const previewUrl = computed(
-  () =>
-    `https://admin.junhuiscrewbarrel.com/preview/${activeLanguage.value?.locale.slug ?? 'zh-cn'}/`,
+  // 使用当前后台同源路径，确保主实例与 Demo 各自留在自己的认证边界内。
+  () => `/preview/${activeLanguage.value?.locale.slug ?? 'zh-cn'}/`,
 )
 const hasUnappliedChanges = computed(() => {
   const applied = activeLanguage.value?.layout.applied.modules ?? []

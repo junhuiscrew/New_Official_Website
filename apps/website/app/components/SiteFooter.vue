@@ -4,6 +4,7 @@ import { computed } from 'vue'
 
 import { ui } from '~/i18n/ui'
 import type { LocaleSlug, NavigationDto } from '~/types/public'
+import { telephoneHref } from '~/utils/contact'
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +19,8 @@ const props = withDefaults(
 const labels = computed(() => ui[props.locale])
 const company = computed(() => props.navigation.company)
 const primary = computed(() => new Set(props.navigation.primary))
+// 演示环境可使用“演示联系电话”等展示标签；只有真实号码格式才输出可拨号链接。
+const phoneHref = computed(() => telephoneHref(company.value?.phone))
 </script>
 
 <template>
@@ -27,8 +30,12 @@ const primary = computed(() => new Set(props.navigation.primary))
         <h2>{{ labels.footer.company }}</h2>
         <strong>{{ company.name }}</strong>
         <address>
-          <a v-if="company.phone" :href="`tel:${company.phone}`">{{ company.phone }}</a>
-          <a v-if="company.email" :href="`mailto:${company.email}`">{{ company.email }}</a>
+          <a v-if="phoneHref" :href="phoneHref">{{ company.phone }}</a>
+          <span v-else-if="company.phone">{{ company.phone }}</span>
+          <a v-if="company.email && !navigation.demo_mode" :href="`mailto:${company.email}`">{{
+            company.email
+          }}</a>
+          <span v-else-if="company.email">{{ company.email }} · DEMO</span>
           <span v-if="company.address">{{ company.address }}</span>
         </address>
       </section>
@@ -64,7 +71,13 @@ const primary = computed(() => new Set(props.navigation.primary))
         <h2>{{ labels.footer.contact }}</h2>
         <ul>
           <li>
+            <a :href="`/${locale}/contact/`">{{ labels.navigation.contact }}</a>
+          </li>
+          <li>
             <a :href="`/${locale}/request-a-quote/`">{{ labels.cta.requestQuote }}</a>
+          </li>
+          <li>
+            <a :href="`/${locale}/downloads/`">{{ labels.navigation.downloads }}</a>
           </li>
         </ul>
       </section>

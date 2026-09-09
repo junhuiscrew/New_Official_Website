@@ -1,0 +1,15 @@
+# 将现有 loopback TLS 网关加入 Demo R2 专用边缘网络；不新增宿主监听端口。
+services:
+  nginx:
+    networks:
+      default: {}
+      demo_edge: {}
+    volumes: !override
+      - ./infra/nginx/nginx.local-domain-demo-edge.conf:/etc/nginx/nginx.conf:ro
+      - ./data/demo-r2/tls/local-domain-demo-edge.crt:/etc/nginx/tls/local-domain.crt:ro
+      - ./data/demo-r2/tls/local-domain-demo-edge.key:/etc/nginx/tls/local-domain.key:ro
+
+networks:
+  demo_edge:
+    name: junhui_demo_r2_edge
+    external: true

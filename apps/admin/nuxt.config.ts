@@ -19,6 +19,8 @@ export default defineNuxtConfig({
     apiInternalBase: 'http://api:8000/api/v1',
     public: {
       apiBase: '/api/v1',
+      demoMode: false,
+      websiteUrl: 'https://junhuiscrewbarrel.com',
     },
   },
   typescript: {

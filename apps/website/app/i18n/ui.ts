@@ -19,6 +19,8 @@ const zhCn = {
     caseStudies: '案例研究',
     knowledge: '技术知识',
     about: '关于骏辉',
+    contact: '联系我们',
+    downloads: '资料下载',
     solveAProblem: '解决问题',
     viewAllProducts: '查看全部产品',
     viewAllSolutions: '查看全部解决方案',
@@ -101,6 +103,8 @@ const zhCn = {
     exportMarkets: '出口市场',
     rfqTitle: '讨论您的项目需求',
     rfqSummary: '提交应用、材料或问题信息，我们将据此了解您的询价需求。',
+    contactTitle: '从需求开始沟通',
+    contactSummary: '通过询价表单说明产品、材料、尺寸或当前问题。演示环境不会发送真实邮件。',
   },
   presentation: {
     badge: '骏辉产品与制造',
@@ -109,6 +113,7 @@ const zhCn = {
     contentUnavailable: '当前没有符合公开门禁的内容。',
     manage: '前往对应后台',
     viewAll: '查看全部',
+    marketDisclaimer: '演示区域布局，不代表骏辉实际出口记录。',
     moduleNames: {
       hero: '首页主视觉',
       core_product_families: '核心产品系列',
@@ -369,6 +374,8 @@ const en: UiDictionary<typeof zhCn> = {
     caseStudies: 'Case Studies',
     knowledge: 'Knowledge',
     about: 'About',
+    contact: 'Contact',
+    downloads: 'Downloads',
     solveAProblem: 'Solve a Problem',
     viewAllProducts: 'View All Products',
     viewAllSolutions: 'View All Solutions',
@@ -452,6 +459,9 @@ const en: UiDictionary<typeof zhCn> = {
     exportMarkets: 'Export Markets',
     rfqTitle: 'Discuss Your Project Requirements',
     rfqSummary: 'Share your application, material, or problem so we can understand your request.',
+    contactTitle: 'Start with your requirements',
+    contactSummary:
+      'Use the RFQ form to describe products, materials, dimensions or current issues. The demo environment does not send real email.',
   },
   presentation: {
     badge: 'Junhui Products & Manufacturing',
@@ -461,6 +471,7 @@ const en: UiDictionary<typeof zhCn> = {
     contentUnavailable: 'No content currently passes the public publication gates.',
     manage: 'Open the relevant admin area',
     viewAll: 'View all',
+    marketDisclaimer: 'Illustrative demo regions; not a record of Junhui exports.',
     moduleNames: {
       hero: 'Homepage Hero',
       core_product_families: 'Core Product Families',

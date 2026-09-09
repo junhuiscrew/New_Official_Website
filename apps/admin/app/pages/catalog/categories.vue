@@ -1,5 +1,6 @@
 <!-- 页面用途：ProductCategory 树形列表、父级选择、状态排序和双语 CRUD。 -->
 <script setup lang="ts">
+import TranslationFields from '~/components/catalog/TranslationFields.vue'
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
 
 interface CategoryItem {

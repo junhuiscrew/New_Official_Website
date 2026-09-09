@@ -41,6 +41,19 @@ describe('catalog admin routes', () => {
     expect(source).toContain('parseHighlights')
   })
 
+  it('offers a high-density product browser with readable searchable relations', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
+    expect(source).toContain('productSearch')
+    expect(source).toContain('selectedCategoryFilter')
+    expect(source).toContain('selectedStatusFilter')
+    expect(source).toContain('pagedProducts')
+    expect(source).toContain('product-media-thumb')
+    expect(source).toContain('relationSearch')
+    expect(source).toContain('filteredRelationOptions')
+    expect(source).toContain('readableItemLabel')
+    expect(source).toContain('hydrateNamedItems')
+  })
+
   it('provides real Product translation review and publication actions', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
     expect(source).toContain('translation_statuses')
@@ -80,6 +93,20 @@ describe('catalog admin routes', () => {
     expect(apiSource).toContain('X-CSRF-Token')
     expect(translationSource).toContain('zh-CN')
     expect(translationSource).toContain('en')
+  })
+
+  it('explicitly imports the nested translation editor wherever it is rendered', () => {
+    for (const path of [
+      'app/pages/catalog/categories.vue',
+      'app/pages/catalog/products.vue',
+      'app/pages/catalog/specifications.vue',
+      'app/components/catalog/EntityCrud.vue',
+    ]) {
+      const source = readFileSync(resolve(process.cwd(), path), 'utf8')
+      expect(source).toContain(
+        "import TranslationFields from '~/components/catalog/TranslationFields.vue'",
+      )
+    }
   })
 
   it('builds exact API payloads for all five specification value types', async () => {

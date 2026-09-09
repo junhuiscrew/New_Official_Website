@@ -124,6 +124,7 @@ export interface NavigationCompanyDto {
 /** Desktop、Mobile 与 Footer 共用的导航聚合 DTO。 */
 export interface NavigationDto {
   locale: LocaleSlug
+  demo_mode?: boolean
   primary: Array<
     | 'products'
     | 'solutions'
@@ -330,11 +331,19 @@ export interface HomepagePresentationDto {
   modules: HomepageModuleDto[]
 }
 
+/** Demo首页中由真实媒体库和持久关联提供的视频及封面。 */
+export interface DemoVideoDto {
+  media: PublicMediaDto
+  poster: PublicMediaDto | null
+}
+
 /** 单次 SSR 首页请求返回的公开聚合 DTO。 */
 export interface HomeDto {
   locale: LocaleSlug
+  demo_mode?: boolean
   company: PublicCompanyDto | null
   hero_media: PublicMediaDto | null
+  demo_videos?: DemoVideoDto[]
   product_categories: PublicCardDto[]
   featured_products: PublicCardDto[]
   homepage_products?: PublicCardDto[]
@@ -531,7 +540,9 @@ export interface PublicKnowledgeDetailDto {
     name: string
     job_title: string | null
     short_bio: string | null
-    is_real_person_verified: true
+    identity_kind: 'person' | 'organization'
+    is_real_person_verified: boolean
+    is_demo_content: boolean
   }
   reviewer: { name: string; job_title: string | null } | null
   published_at: string | null

@@ -17,6 +17,7 @@ from app.modules.authority import models as authority_models  # noqa: F401
 from app.modules.catalog import models as catalog_models  # noqa: F401
 from app.modules.company import models as company_models  # noqa: F401
 from app.modules.content import models as content_models  # noqa: F401
+from app.modules.demo import models as demo_models  # noqa: F401
 from app.modules.discovery import models as discovery_models  # noqa: F401
 from app.modules.localization import models as localization_models  # noqa: F401
 from app.modules.media import models as media_models  # noqa: F401

@@ -15,5 +15,7 @@ useHead({ title: 'Company Trust', meta: [{ name: 'robots', content: 'noindex, no
       ><NuxtLink to="/media">Media Library</NuxtLink><NuxtLink to="/downloads">Downloads</NuxtLink>
     </nav>
     <p>真实 Company Profile、能力、设备、证书、专利、荣誉和展会使用统一 Trust 生命周期。</p>
+    <!-- 子页出口：确保公司、设备、证书等真实编辑器在各自路由内渲染。 -->
+    <NuxtPage />
   </main>
 </template>

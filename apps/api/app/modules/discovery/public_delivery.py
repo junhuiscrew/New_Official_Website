@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import literal, or_, select
+from sqlalchemy import and_, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -37,6 +37,7 @@ from app.modules.authority.models import (
     KnowledgeCategoryTranslation,
 )
 from app.modules.authority.public import serialize_public_case
+from app.modules.authority.services import article_author_is_eligible
 from app.modules.catalog.models import (
     Application,
     ApplicationSolution,
@@ -82,6 +83,29 @@ from app.modules.media.models import MediaAsset, MediaAssetTranslation
 
 from .public_schemas import PublicMediaDto
 from .public_specs import serialize_public_specifications
+
+
+def article_author_visibility_clause() -> Any:
+    """
+    返回当前环境可用于文章的作者SQL门禁。
+
+    输入：无，读取显式运行配置。
+    输出：SQLAlchemy条件；生产仅允许核验真人，Demo另允许未冒充真人的编辑组织。
+    """
+    verified_person = and_(
+        AuthorExpert.identity_kind == "person",
+        AuthorExpert.is_real_person_verified.is_(True),
+    )
+    if not get_settings().demo_mode:
+        return verified_person
+    return or_(
+        verified_person,
+        and_(
+            AuthorExpert.identity_kind == "organization",
+            AuthorExpert.is_real_person_verified.is_(False),
+            AuthorExpert.public_profile_enabled.is_(False),
+        ),
+    )
 
 OFFICIAL_ORIGIN = "https://junhuiscrewbarrel.com"
 PUBLIC_HANDLER_OWNER_TYPES = frozenset(
@@ -428,7 +452,7 @@ async def resolve_public_rfq_source(
             .where(
                 KnowledgeCategory.status == "enabled",
                 AuthorExpert.status == "enabled",
-                AuthorExpert.is_real_person_verified.is_(True),
+                article_author_visibility_clause(),
             )
         )
     elif source_type == "author_expert":
@@ -621,7 +645,7 @@ async def _published_link(
             or category is None
             or category.status != "enabled"
             or author is None
-            or not author.is_real_person_verified
+            or not article_author_is_eligible(author, demo_mode=get_settings().demo_mode)
             or author_translation is None
             or translation is None
         ):
@@ -914,7 +938,7 @@ async def _published_relation_links(
             .where(
                 KnowledgeCategory.status == "enabled",
                 AuthorExpert.status == "enabled",
-                AuthorExpert.is_real_person_verified.is_(True),
+                article_author_visibility_clause(),
             )
         )
 
@@ -1594,7 +1618,7 @@ async def get_public_knowledge(
         translation is None
         or author is None
         or author_translation is None
-        or not author.is_real_person_verified
+        or not article_author_is_eligible(author, demo_mode=get_settings().demo_mode)
     ):
         raise AppException(404, "public_content_not_found", "公开内容不存在")
     category = await session.get(KnowledgeCategory, article.category_id)
@@ -1671,7 +1695,9 @@ async def get_public_knowledge(
         "name": author_translation.name,
         "job_title": author_translation.job_title,
         "short_bio": author_translation.short_bio,
-        "is_real_person_verified": True,
+        "identity_kind": author.identity_kind,
+        "is_real_person_verified": bool(author.is_real_person_verified),
+        "is_demo_content": bool(get_settings().demo_mode),
     }
     article_schema = build_article_schema(
         {

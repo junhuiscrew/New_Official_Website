@@ -10,6 +10,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
 from app.modules.authority.models import (
@@ -25,6 +26,7 @@ from app.modules.authority.models import (
     KnowledgeArticle,
     KnowledgeArticleTranslation,
 )
+from app.modules.authority.services import editorial_identity_is_eligible
 from app.modules.catalog.models import Product, ProductSpecValue, ProductTranslation
 from app.modules.company.models import (
     CompanyProfile,
@@ -1106,7 +1108,10 @@ async def upsert_geo_document(
     )
     if payload.reviewer_id:
         reviewer = await session.get(AuthorExpert, payload.reviewer_id)
-        if reviewer is None or not reviewer.is_real_person_verified:
+        # 生产仍只接受已核验真人；显式隔离 Demo 可使用不冒充真人的演示编辑组织。
+        if reviewer is None or not editorial_identity_is_eligible(
+            reviewer, demo_mode=get_settings().demo_mode
+        ):
             raise AppException(409, "verified_reviewer_required", "GEO reviewer 必须是已核验的真实专家")
     values = payload.model_dump()
     document = await session.scalar(
@@ -1124,6 +1129,8 @@ async def upsert_geo_document(
             setattr(document, key, value)
     write_audit_log(session, action="geo.upsert", target_type=owner_type, target_id=str(owner_id), user_id=actor_id, metadata={"locale_id": str(locale_id)})
     await session.flush()
+    # 复核人查询或同事务关联写入可能使字段过期；显式刷新后再交给 API 序列化。
+    await session.refresh(document)
     return document
 
 

@@ -6,5 +6,10 @@
 **/__pycache__
 **/.pytest_cache
 .env
-data
+data/*
+!data/demo-r2/
+data/demo-r2/*
+!data/demo-r2/input/
+data/demo-r2/input/*
+!data/demo-r2/input/demo-content-v1.json
 

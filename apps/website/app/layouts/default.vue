@@ -23,6 +23,7 @@ const currentYear = useState('public-current-year', () => new Date().getUTCFullY
 function emptyNavigation(locale: NavigationDto['locale']): NavigationDto {
   return {
     locale,
+    demo_mode: false,
     primary: [],
     products: { categories: [], featured: [] },
     solutions: { featured: [], problems: [] },

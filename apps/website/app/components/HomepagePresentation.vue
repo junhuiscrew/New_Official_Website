@@ -12,6 +12,7 @@ import type {
 } from '~/types/public'
 
 import PublicImage from './PublicImage.vue'
+import PublicVideo from './PublicVideo.vue'
 
 const props = defineProps<{ locale: LocaleSlug; home: HomeDto; preview: boolean }>()
 const labels = computed(() => ui[props.locale])
@@ -24,7 +25,10 @@ const renderedModules = computed(() =>
 )
 
 const heroTitle = computed(
-  () => props.home.company?.company_name?.trim() || labels.value.home.fallbackTitle,
+  () =>
+    (props.home.demo_mode ? props.home.company?.mission?.trim() : '') ||
+    props.home.company?.company_name?.trim() ||
+    labels.value.home.fallbackTitle,
 )
 const heroSummary = computed(
   () => props.home.company?.short_intro?.trim() || labels.value.home.fallbackSummary,
@@ -46,13 +50,15 @@ function moduleTitle(key: HomepageModuleKey): string {
 /** 输入站内路径；输出预览和普通站均能正确点击的本地域名地址。 */
 function publicHref(path: string | null | undefined): string {
   if (!path) return '#'
-  if (!props.preview || /^https?:\/\//i.test(path)) return path
-  return `https://junhuiscrewbarrel.com${path.startsWith('/') ? path : `/${path}`}`
+  return path
 }
 
 /** 输入管理路径；输出只在 Admin 域名内打开的真实入口。 */
 function adminHref(path: string): string {
-  return `https://admin.junhuiscrewbarrel.com${path}`
+  const origin = props.home.demo_mode
+    ? 'https://admin-demo.junhuiscrewbarrel.com'
+    : 'https://admin.junhuiscrewbarrel.com'
+  return `${origin}${path}`
 }
 
 /** 按模块声明的 slug 顺序筛选后端已核验产品，不制造 featured 关系。 */
@@ -97,9 +103,15 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
         <div class="presentation-hero__glow" aria-hidden="true" />
         <div class="public-container presentation-hero__grid">
           <div class="presentation-hero__copy">
-            <p class="presentation-kicker">{{ labels.presentation.badge }}</p>
+            <div class="presentation-hero__badges">
+              <p class="presentation-kicker">{{ labels.presentation.badge }}</p>
+              <span v-if="home.demo_mode" class="presentation-demo-badge">DEMO R2</span>
+            </div>
             <h1>{{ heroTitle }}</h1>
             <p class="presentation-hero__summary">{{ heroSummary }}</p>
+            <p v-if="home.demo_mode" class="presentation-hero__company">
+              {{ home.company?.company_name }}
+            </p>
             <div class="presentation-actions">
               <a class="button button--primary" :href="publicHref(`/${locale}/products/`)">
                 {{ labels.cta.exploreProducts }}
@@ -109,8 +121,27 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
               </a>
             </div>
           </div>
+          <div v-if="home.hero_media?.type === 'image'" class="presentation-hero__visual">
+            <figure class="presentation-hero__main-media">
+              <PublicImage
+                :media="{ ...home.hero_media, loading: 'eager' }"
+                :locale="locale"
+                sizes="(max-width: 48rem) 100vw, 48vw"
+              />
+            </figure>
+            <div v-if="productsFor(module).length" class="presentation-hero__product-tags">
+              <a
+                v-for="(product, productIndex) in productsFor(module).slice(0, 3)"
+                :key="product.slug"
+                :href="publicHref(product.url)"
+              >
+                <span>{{ String(productIndex + 1).padStart(2, '0') }}</span>
+                {{ product.name }}
+              </a>
+            </div>
+          </div>
           <div
-            v-if="productsFor(module).length"
+            v-else-if="productsFor(module).length"
             class="presentation-hero__visual"
             aria-hidden="true"
           >
@@ -226,12 +257,23 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             </div>
           </div>
 
-          <div v-else-if="module.key === 'factory_equipment'" class="presentation-data-grid">
-            <article v-for="equipment in home.equipment ?? []" :key="equipment.slug">
-              <p class="eyebrow">{{ equipment.type }}</p>
-              <h3>{{ equipment.title }}</h3>
-              <p v-if="equipment.summary">{{ equipment.summary }}</p>
-            </article>
+          <div v-else-if="module.key === 'factory_equipment'" class="presentation-factory">
+            <div v-if="home.demo_videos?.length" class="presentation-video-grid">
+              <article v-for="(video, videoIndex) in home.demo_videos" :key="video.media.src">
+                <div>
+                  <p class="eyebrow">DEMO VIDEO {{ String(videoIndex + 1).padStart(2, '0') }}</p>
+                  <h3>{{ video.media.alt }}</h3>
+                </div>
+                <PublicVideo :media="video.media" :poster="video.poster" />
+              </article>
+            </div>
+            <div class="presentation-equipment-rail">
+              <article v-for="equipment in home.equipment ?? []" :key="equipment.slug">
+                <p class="eyebrow">{{ equipment.type }}</p>
+                <h3>{{ equipment.title }}</h3>
+                <p v-if="equipment.summary">{{ equipment.summary }}</p>
+              </article>
+            </div>
           </div>
 
           <div v-else-if="module.key === 'certificates_patents'" class="presentation-data-grid">
@@ -250,6 +292,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
 
           <ul v-else-if="module.key === 'global_markets'" class="presentation-markets">
             <li v-for="market in home.company?.export_markets ?? []" :key="market">{{ market }}</li>
+            <li v-if="home.demo_mode" class="presentation-markets__note">
+              {{ labels.presentation.marketDisclaimer }}
+            </li>
           </ul>
 
           <div v-else class="presentation-data-grid">
@@ -347,6 +392,27 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   gap: var(--space-6);
 }
 
+.presentation-hero__badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.presentation-hero__badges .presentation-kicker {
+  margin: 0;
+}
+
+.presentation-demo-badge {
+  padding: 0.34rem 0.55rem;
+  color: #082a4f;
+  background: #8fd2ff;
+  border-radius: 99rem;
+  font-family: var(--font-technical);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+}
+
 .presentation-kicker,
 .presentation-index {
   color: #75bdff;
@@ -367,6 +433,13 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   max-width: 43rem;
   color: #d6e7f7;
   font-size: clamp(1rem, 1.5vw, 1.2rem);
+}
+
+.presentation-hero__company {
+  color: #8fc8f6;
+  font-family: var(--font-technical);
+  font-size: var(--font-size-small);
+  letter-spacing: 0.04em;
 }
 
 .presentation-actions {
@@ -401,6 +474,10 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   min-height: 31rem;
 }
 
+.presentation-hero__visual:has(.presentation-hero__main-media) {
+  min-height: auto;
+}
+
 .presentation-hero__visual > figure {
   position: absolute;
   margin: 0;
@@ -430,6 +507,59 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
+}
+
+.presentation-hero__visual > .presentation-hero__main-media {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  border: 1px solid rgb(255 255 255 / 24%);
+  box-shadow: 0 2.4rem 6rem rgb(0 9 22 / 50%);
+}
+
+.presentation-hero__main-media::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 58%, rgb(3 17 35 / 64%));
+  content: '';
+  pointer-events: none;
+}
+
+.presentation-hero__main-media :deep(img) {
+  aspect-ratio: 4 / 3;
+}
+
+.presentation-hero__product-tags {
+  position: absolute;
+  right: -1.5rem;
+  bottom: -1.5rem;
+  width: min(24rem, 86%);
+  display: grid;
+  background: rgb(255 255 255 / 96%);
+  border-top: 3px solid #268fec;
+  box-shadow: 0 1.4rem 3rem rgb(0 9 22 / 35%);
+}
+
+.presentation-hero__product-tags a {
+  padding: 0.85rem 1rem;
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  align-items: center;
+  color: #0c2b4b;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-decoration: none;
+  border-bottom: 1px solid #d9e6f1;
+}
+
+.presentation-hero__product-tags a:last-child {
+  border-bottom: 0;
+}
+
+.presentation-hero__product-tags span {
+  color: #1684e4;
+  font-family: var(--font-technical);
+  font-size: 0.68rem;
 }
 
 .presentation-section {
@@ -511,6 +641,55 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-5);
+}
+
+.presentation-factory {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.presentation-video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.presentation-video-grid article {
+  overflow: hidden;
+  background: #061a30;
+  border: 1px solid #244764;
+  box-shadow: 0 1.4rem 3rem rgb(0 12 28 / 24%);
+}
+
+.presentation-video-grid article > div {
+  padding: var(--space-5);
+}
+
+.presentation-video-grid h3 {
+  margin-top: var(--space-2);
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.presentation-video-grid :deep(video) {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.presentation-equipment-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid #9db6cc;
+}
+
+.presentation-equipment-rail article {
+  padding: var(--space-5);
+  border-right: 1px solid #c6d5e2;
+  border-bottom: 1px solid #c6d5e2;
+}
+
+.presentation-equipment-rail article:nth-child(3n) {
+  border-right: 0;
 }
 
 .presentation-products article,
@@ -644,6 +823,13 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   border: 1px solid var(--color-blue-100);
 }
 
+.presentation-markets .presentation-markets__note {
+  flex-basis: 100%;
+  color: #c6def4;
+  background: transparent;
+  border-color: rgb(161 206 245 / 24%);
+}
+
 .presentation-rfq {
   padding-block: clamp(4rem, 8vw, 7rem);
   background:
@@ -677,8 +863,17 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   }
 
   .presentation-products,
-  .presentation-data-grid {
+  .presentation-data-grid,
+  .presentation-equipment-rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .presentation-equipment-rail article:nth-child(3n) {
+    border-right: 1px solid #c6d5e2;
+  }
+
+  .presentation-equipment-rail article:nth-child(2n) {
+    border-right: 0;
   }
 }
 
@@ -709,6 +904,20 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
     min-height: 22rem;
   }
 
+  .presentation-hero__visual:has(.presentation-hero__main-media) {
+    min-height: auto;
+    padding-bottom: 5rem;
+  }
+
+  .presentation-hero__product-tags {
+    right: 0;
+    bottom: 0;
+  }
+
+  .presentation-video-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .presentation-heading {
     grid-template-columns: 2.4rem minmax(0, 1fr);
   }
@@ -723,6 +932,7 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   .presentation-actions,
   .presentation-products,
   .presentation-data-grid,
+  .presentation-equipment-rail,
   .presentation-empty {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -733,6 +943,10 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
 
   .presentation-hero__visual {
     min-height: 19rem;
+  }
+
+  .presentation-hero__visual:has(.presentation-hero__main-media) {
+    min-height: auto;
   }
 
   .presentation-hero__visual > figure {

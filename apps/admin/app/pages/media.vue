@@ -1,4 +1,4 @@
-<!-- 页面用途：公开 Media Library 最小列表，私有 RFQ 文件不通过 media.read 暴露。 -->
+<!-- 页面用途：公开媒体资源库，以可读文件名维护上传、预览和双语元数据。 -->
 <script setup lang="ts">
 useHead({ title: 'Media Library', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const api = useAuthorityApi()
@@ -52,7 +52,7 @@ onMounted(load)
         >Asset
         <select v-model="selectedAsset">
           <option v-for="item in items" :key="String(item.id)" :value="String(item.id)">
-            {{ item.file_extension }} · {{ item.id }}
+            {{ item.type }} · {{ item.filename }}
           </option>
         </select></label
       ><label
@@ -67,10 +67,78 @@ onMounted(load)
       ><label>Caption <textarea v-model="translations.caption" /></label
       ><button type="submit">Save metadata</button>
     </form>
-    <ul>
-      <li v-for="item in items" :key="String(item.id)">
-        {{ item.type }} · {{ item.visibility }} · {{ item.file_extension }}
-      </li>
-    </ul>
+    <section class="media-library-grid">
+      <article v-for="item in items" :key="String(item.id)">
+        <img
+          v-if="item.type === 'image'"
+          :src="String(item.url)"
+          :alt="String(item.filename)"
+          loading="lazy"
+        />
+        <video v-else-if="item.type === 'video'" controls preload="none">
+          <source :src="String(item.url)" :type="String(item.mime_type)" />
+        </video>
+        <div v-else class="media-library-file">{{ item.file_extension }}</div>
+        <div>
+          <strong>{{ item.filename }}</strong>
+          <span>{{ item.type }} · {{ item.visibility }}</span>
+        </div>
+      </article>
+    </section>
   </main>
 </template>
+
+<style scoped>
+.admin-shell {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+.admin-shell > form {
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+  background: #fff;
+  border: 1px solid #dce4ec;
+  border-radius: 0.8rem;
+}
+.media-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 1rem;
+}
+.media-library-grid article {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dce4ec;
+  border-radius: 0.75rem;
+}
+.media-library-grid img,
+.media-library-grid video,
+.media-library-file {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  object-fit: cover;
+  color: #75bce9;
+  background: #07192c;
+}
+.media-library-grid article > div:last-child {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.3rem;
+}
+.media-library-grid strong {
+  overflow: hidden;
+  color: #23394e;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-library-grid span {
+  color: #78899a;
+  font-size: 0.68rem;
+}
+</style>

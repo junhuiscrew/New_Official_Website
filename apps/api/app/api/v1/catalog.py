@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -399,10 +399,23 @@ async def _entity_detail(
 
 
 async def _write_result(session: AsyncSession, operation: Any) -> Any:
-    """提交 Catalog 事务并把唯一/FK 冲突转换为稳定业务错误。"""
+    """
+    提交 Catalog 事务，并保证 ORM 返回值可在异步响应层安全序列化。
+
+    输入：
+        session: AsyncSession，当前请求的数据库会话。
+        operation: Any，返回 ORM 实体、标量或 None 的异步写操作。
+
+    输出：
+        Any，提交后的写操作结果；ORM 实体会先主动刷新。
+    """
     try:
         result = await operation
         await session.commit()
+        # 真实 PostgreSQL 生命周期更新可能使实体过期；在异步上下文内主动刷新，
+        # 避免响应序列化阶段触发隐式 IO 并抛出 MissingGreenlet。
+        if inspect(result, raiseerr=False) is not None:
+            await session.refresh(result)
         return result
     except IntegrityError as exc:
         await session.rollback()

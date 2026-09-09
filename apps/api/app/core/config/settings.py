@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "staging", "production"] = "development"
     app_name: str = "Junhui Global Website API"
     app_version: str = "0.4.0"
+    demo_mode: bool = False
+    demo_batch_id: str | None = None
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
@@ -147,6 +149,12 @@ class Settings(BaseSettings):
         """
         if "*" in self.cors_allowed_origins:
             raise ValueError("Cookie authentication forbids wildcard CORS origins")
+
+        # Demo 功能必须显式带批次开启，且绝不能进入生产环境。
+        if self.demo_mode and not self.demo_batch_id:
+            raise ValueError("Demo mode requires a demo batch id")
+        if self.demo_mode and self.app_env == "production":
+            raise ValueError("Demo mode is forbidden in production")
 
         if self.app_env == "development":
             return self

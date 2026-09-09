@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
 from app.modules.audit.service import write_audit_log
 from app.modules.authority.models import (
@@ -264,15 +265,49 @@ async def create_knowledge_category(session: AsyncSession, payload: KnowledgeCat
 
 async def create_author_expert(session: AsyncSession, payload: AuthorExpertCreate, actor_id: uuid.UUID | None = None) -> AuthorExpert:
     """创建真实人物；输入 session/payload/actor_id，输出 AuthorExpert。"""
+    if payload.identity_kind == "organization":
+        if not get_settings().demo_mode:
+            raise AppException(409, "demo_author_not_allowed", "编辑组织只允许用于显式Demo环境")
+        if payload.is_real_person_verified or payload.public_profile_enabled:
+            raise AppException(409, "demo_author_identity_invalid", "演示编辑组织不能标记为真人或建立人物页")
     if payload.public_profile_enabled and not payload.is_real_person_verified:
         raise AppException(409, "verified_person_required", "公开 Expert 页面必须对应已核验的真实人物")
     return await _create_entity(session, "author_expert", payload, actor_id)
 
 
+def editorial_identity_is_eligible(author: AuthorExpert, *, demo_mode: bool) -> bool:
+    """
+    判断编辑身份是否符合当前运行环境的内容治理资格。
+
+    输入：author，作者实体；demo_mode，是否为显式隔离Demo环境。
+    输出：bool，真人已核验或Demo编辑组织满足专用条件时为True。
+    """
+    if author.identity_kind == "person":
+        return bool(author.is_real_person_verified)
+    return bool(
+        demo_mode
+        and author.identity_kind == "organization"
+        and not author.is_real_person_verified
+        and not author.public_profile_enabled
+    )
+
+
+def article_author_is_eligible(author: AuthorExpert, *, demo_mode: bool) -> bool:
+    """
+    判断文章作者是否符合当前运行环境的公开资格。
+
+    输入：author，作者实体；demo_mode，是否为显式隔离Demo环境。
+    输出：bool，复用统一编辑身份资格结果。
+    """
+    return editorial_identity_is_eligible(author, demo_mode=demo_mode)
+
+
 async def create_knowledge_article(session: AsyncSession, payload: KnowledgeArticleCreate, actor_id: uuid.UUID | None = None) -> KnowledgeArticle:
     """创建知识文章；输入 session/payload/actor_id，输出 KnowledgeArticle。"""
     author = await session.get(AuthorExpert, payload.author_id)
-    if author is None or not author.is_real_person_verified:
+    if author is None or not editorial_identity_is_eligible(
+        author, demo_mode=get_settings().demo_mode
+    ):
         raise AppException(409, "verified_author_required", "知识文章必须使用已核验的真实作者")
     if payload.reviewer_id:
         reviewer = await session.get(AuthorExpert, payload.reviewer_id)
@@ -447,7 +482,11 @@ async def update_knowledge_article(session: AsyncSession, entity_id: uuid.UUID, 
     """更新知识文章；输入 session/id/payload/actor，输出 KnowledgeArticle。"""
     if payload.author_id:
         author = await session.get(AuthorExpert, payload.author_id)
-        if author is None or not author.is_real_person_verified:
+        # 更新与创建共用身份资格：生产只接受已核验真人；显式 Demo 环境
+        # 可使用未冒充真人、未开放人物页的演示编辑组织。
+        if author is None or not editorial_identity_is_eligible(
+            author, demo_mode=get_settings().demo_mode
+        ):
             raise AppException(409, "verified_author_required", "知识文章必须使用已核验的真实作者")
     return await _update_entity(session, "knowledge_article", entity_id, payload, actor_id)
 

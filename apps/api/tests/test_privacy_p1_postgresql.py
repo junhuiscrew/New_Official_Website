@@ -200,8 +200,9 @@ async def test_postgresql_migration_then_central_seed_contract_is_ready() -> Non
         "seo_manager": 0,
     }
     async with factory() as session:
+        # Privacy 回归运行在当前完整迁移链上，Demo R2 追加迁移不能被误判为失败。
         assert await session.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260908_0014"
+            "20260909_0015"
         )
         assert await session.scalar(text("SELECT to_regclass('privacy_notice_versions')")) == (
             "privacy_notice_versions"

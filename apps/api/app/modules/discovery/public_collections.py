@@ -10,6 +10,7 @@ from sqlalchemy import case, func, literal, literal_column, or_, select, union_a
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.core.config import get_settings
 from app.core.exceptions.handlers import AppException
 from app.modules.authority.models import (
     AuthorExpert,
@@ -50,6 +51,7 @@ from app.modules.content.models import (
     SitePageTranslation,
     TranslationStatus,
 )
+from app.modules.demo.models import ContentMediaLink
 from app.modules.discovery.models import SeoDocument
 from app.modules.discovery.schema_generator import (
     build_breadcrumb_schema,
@@ -69,6 +71,7 @@ from .public_delivery import (
     _locale,
     _public_media,
     _public_route,
+    article_author_visibility_clause,
 )
 from .public_schemas import PublicMediaDto
 from .public_specs import serialize_public_specifications_for_products
@@ -278,7 +281,7 @@ def _public_collection_statement(
             .where(
                 KnowledgeCategory.status == "enabled",
                 AuthorExpert.status == "enabled",
-                AuthorExpert.is_real_person_verified.is_(True),
+                article_author_visibility_clause(),
             )
         )
     elif owner_type == "author_expert":
@@ -550,7 +553,7 @@ async def _authority_card_payloads(
             .where(
                 AuthorExpert.id.in_(person_ids),
                 AuthorExpert.status == "enabled",
-                AuthorExpert.is_real_person_verified.is_(True),
+                article_author_visibility_clause(),
             )
         )
     ).all()
@@ -1329,6 +1332,7 @@ async def get_public_navigation(
 
     return {
         "locale": locale.slug,
+        "demo_mode": get_settings().demo_mode,
         # 只返回当前语言有严格公开内容的稳定键；标签和路径仍由 Nuxt i18n/路由负责。
         "primary": [key for key in _PRIMARY_NAVIGATION if available_sections[key]],
         "products": {
@@ -1391,6 +1395,55 @@ async def get_public_home(
         if company is not None and profile is not None
         else None
     )
+    demo_videos: list[dict[str, Any]] = []
+    if get_settings().demo_mode and profile is not None:
+        # 仅Demo实例读取显式挂到公司首页的公开视频；主实例不会查询演示关系表。
+        media_links = list(
+            (
+                await session.scalars(
+                    select(ContentMediaLink)
+                    .where(
+                        ContentMediaLink.owner_type == "company_profile",
+                        ContentMediaLink.owner_id == profile.id,
+                        ContentMediaLink.role.in_(["video", "video_poster"]),
+                    )
+                    .order_by(ContentMediaLink.sort_order, ContentMediaLink.role)
+                )
+            ).all()
+        )
+        links_by_role = {
+            (link.role, link.sort_order): link
+            for link in media_links
+        }
+        for order in (0, 1):
+            video_link = links_by_role.get(("video", order))
+            if video_link is None:
+                continue
+            video = await _public_media(
+                session,
+                video_link.media_asset_id,
+                locale.id,
+                f"Demo video {order + 1}",
+            )
+            if video is None or video.type != "video":
+                continue
+            poster_link = links_by_role.get(("video_poster", order))
+            poster = (
+                await _public_media(
+                    session,
+                    poster_link.media_asset_id,
+                    locale.id,
+                    f"Demo video poster {order + 1}",
+                )
+                if poster_link is not None
+                else None
+            )
+            demo_videos.append(
+                {
+                    "media": video.model_dump(),
+                    "poster": poster.model_dump() if poster and poster.type == "image" else None,
+                }
+            )
 
     category_rows = await _published_row_tuples(session, "product_category", locale, 12, False)
     product_rows = await _published_row_tuples(session, "product", locale, 12, True)
@@ -1484,6 +1537,8 @@ async def get_public_home(
         "locale": locale.slug,
         "company": company,
         "hero_media": hero_media.model_dump() if hero_media else None,
+        "demo_mode": get_settings().demo_mode,
+        "demo_videos": demo_videos,
         "product_categories": product_categories,
         "featured_products": featured_products,
         "homepage_products": homepage_products,

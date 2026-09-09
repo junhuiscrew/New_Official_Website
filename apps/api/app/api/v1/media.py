@@ -27,6 +27,7 @@ def _public_dto(asset: MediaAsset) -> dict[str, object]:
     """生成不泄露 storage credential 的媒体 DTO。"""
     return {
         "id": str(asset.id), "type": asset.media_type,
+        "filename": asset.original_filename,
         "url": f"/api/v1/public/media/{asset.id}" if asset.visibility == "public" else None,
         "mime_type": asset.mime_type, "file_extension": asset.file_extension,
         "file_size_bytes": asset.file_size_bytes, "width": asset.width,

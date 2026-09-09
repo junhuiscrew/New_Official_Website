@@ -5,6 +5,11 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('phase 3.5 remediation admin', () => {
+  it('renders nested Trust editors instead of swallowing their routes', () => {
+    const parent = readFileSync(resolve(process.cwd(), 'app/pages/trust.vue'), 'utf8')
+    expect(parent).toContain('<NuxtPage')
+  })
+
   it('ships separate real CRUD pages for every Trust family', () => {
     for (const page of [
       'company',

@@ -112,12 +112,20 @@ class AuthorExpert(UuidPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint(_LIFECYCLE_CHECK, name="author_expert_status_value"),
         CheckConstraint("role_type IN ('author','expert','author_expert')", name="author_expert_role_type_value"),
+        CheckConstraint("identity_kind IN ('person','organization')", name="author_expert_identity_kind_value"),
         {"comment": "真实作者专家表"},
     )
 
     slug: Mapped[str] = mapped_column(String(160), unique=True, nullable=False, comment="稳定作者专家Slug")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="enabled", server_default="enabled", comment="业务状态：enabled启用，disabled停用，retired退役")
     role_type: Mapped[str] = mapped_column(String(24), nullable=False, comment="人物类型：author作者，expert专家，author_expert兼任")
+    identity_kind: Mapped[str] = mapped_column(
+        String(24),
+        nullable=False,
+        default="person",
+        server_default="person",
+        comment="身份类型：person真实人物，organization演示编辑组织",
+    )
     is_real_person_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", comment="是否已核验为真实人物")
     public_profile_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false", comment="是否允许发布独立公开资料页")
     profile_media_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, comment="公开头像媒体ID")

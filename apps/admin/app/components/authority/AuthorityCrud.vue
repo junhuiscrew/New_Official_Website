@@ -1,8 +1,10 @@
 <!-- 组件职责：提供 Case、Knowledge、FAQ、真实 Expert 的最小真实 CRUD 与发现层编辑。 -->
 <script setup lang="ts">
-import type { GeoDraft } from '~/components/discovery/GeoEditor.vue'
-import type { SeoDraft } from '~/components/discovery/SeoEditor.vue'
-import type { SourceDraft } from '~/components/discovery/SourceCitationEditor.vue'
+import GeoEditor, { type GeoDraft } from '~/components/discovery/GeoEditor.vue'
+import SeoEditor, { type SeoDraft } from '~/components/discovery/SeoEditor.vue'
+import SourceCitationEditor, {
+  type SourceDraft,
+} from '~/components/discovery/SourceCitationEditor.vue'
 
 type AuthorityResource = 'cases' | 'knowledge' | 'faqs' | 'experts'
 interface AuthorityItem {
@@ -29,6 +31,16 @@ interface LifecycleRow {
   active?: boolean
   indexable?: boolean
 }
+interface MediaItem {
+  id: string
+  filename: string
+  type: string
+}
+interface RelationOption {
+  id: string
+  slug?: string
+  translations?: Array<Record<string, unknown>>
+}
 
 const props = defineProps<{ title: string; resource: AuthorityResource }>()
 const api = useAuthorityApi()
@@ -36,6 +48,7 @@ const items = ref<AuthorityItem[]>([])
 const locales = ref<LocaleItem[]>([])
 const categories = ref<AuthorityItem[]>([])
 const experts = ref<AuthorityItem[]>([])
+const media = ref<MediaItem[]>([])
 const selectedId = ref('')
 const activeLocaleId = ref('')
 const errorMessage = ref('')
@@ -73,34 +86,98 @@ const form = reactive({
   linkedin_url: '',
   translations: [] as TranslationDraft[],
 })
-const relationText = reactive({
-  product_ids: '',
-  material_ids: '',
-  technology_ids: '',
-  application_ids: '',
-  solution_ids: '',
-  case_ids: '',
-  faq_ids: '',
-  article_ids: '',
+const relationIds = reactive<Record<string, string[]>>({
+  product_ids: [],
+  material_ids: [],
+  technology_ids: [],
+  application_ids: [],
+  solution_ids: [],
+  case_ids: [],
+  faq_ids: [],
+  article_ids: [],
 })
-const seo = ref<SeoDraft>({
-  seo_title: '',
-  meta_description: '',
-  canonical_override: '',
-  robots_index: true,
-  robots_follow: true,
-  og_title: '',
-  og_description: '',
-})
-const geo = ref<GeoDraft>({
-  direct_answer: '',
-  target_questions_json: [],
-  key_facts_json: [],
-  evidence_json: [],
-  related_questions_json: [],
-  reviewer_id: '',
-  last_reviewed_at: '',
-})
+const relationOptions = reactive<Record<string, RelationOption[]>>({})
+const relationSources: Record<string, { path: string; label: string }> = {
+  product_ids: { path: '/catalog/products', label: '产品' },
+  material_ids: { path: '/catalog/materials', label: '材料' },
+  technology_ids: { path: '/catalog/technologies', label: '工艺' },
+  application_ids: { path: '/catalog/applications', label: '应用' },
+  solution_ids: { path: '/catalog/solutions', label: '方案' },
+  case_ids: { path: '/authority/cases', label: '案例' },
+  faq_ids: { path: '/authority/faqs', label: 'FAQ' },
+  article_ids: { path: '/authority/knowledge', label: '文章' },
+}
+/** 输出一份新的 SEO 空白表单，防止切换语言时沿用上一语言内容。 */
+function emptySeoDraft(): SeoDraft {
+  return {
+    seo_title: '',
+    meta_description: '',
+    canonical_override: '',
+    robots_index: true,
+    robots_follow: true,
+    og_title: '',
+    og_description: '',
+  }
+}
+
+/** 输出一份新的 GEO 空白表单，确保每个语言独立读取与保存。 */
+function emptyGeoDraft(): GeoDraft {
+  return {
+    direct_answer: '',
+    target_questions_json: [],
+    key_facts_json: [],
+    evidence_json: [],
+    related_questions_json: [],
+    reviewer_id: '',
+    last_reviewed_at: '',
+  }
+}
+
+/**
+ * 将 API SEO 文档转换成仅含可编辑字段的表单。
+ *
+ * 输入：document，可能包含服务端只读元数据的 SEO 回读对象。
+ * 输出：SeoDraft，不携带ID、owner或审计时间等只读字段。
+ */
+function seoDraftFromDocument(document?: Record<string, unknown>): SeoDraft {
+  return {
+    seo_title: String(document?.seo_title ?? ''),
+    meta_description: String(document?.meta_description ?? ''),
+    canonical_override: String(document?.canonical_override ?? ''),
+    robots_index: typeof document?.robots_index === 'boolean' ? document.robots_index : true,
+    robots_follow: typeof document?.robots_follow === 'boolean' ? document.robots_follow : true,
+    og_title: String(document?.og_title ?? ''),
+    og_description: String(document?.og_description ?? ''),
+  }
+}
+
+/** 输入未知值；输出只保留字符串成员的数组。 */
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
+}
+
+/**
+ * 将 API GEO 文档转换成仅含可编辑字段的表单。
+ *
+ * 输入：document，可能包含服务端只读元数据的 GEO 回读对象。
+ * 输出：GeoDraft，可安全再次提交给严格校验接口。
+ */
+function geoDraftFromDocument(document?: Record<string, unknown>): GeoDraft {
+  return {
+    direct_answer: String(document?.direct_answer ?? ''),
+    target_questions_json: stringList(document?.target_questions_json),
+    key_facts_json: stringList(document?.key_facts_json),
+    evidence_json: stringList(document?.evidence_json),
+    related_questions_json: stringList(document?.related_questions_json),
+    reviewer_id: String(document?.reviewer_id ?? ''),
+    last_reviewed_at: String(document?.last_reviewed_at ?? ''),
+  }
+}
+
+const seo = ref<SeoDraft>(emptySeoDraft())
+const geo = ref<GeoDraft>(emptyGeoDraft())
 const geoVisibleSourceText = ref('')
 const source = ref<SourceDraft>({ title: '', url: '', publisher: '', source_type: 'official' })
 
@@ -169,13 +246,34 @@ function resetForm() {
     years_experience: 0,
     linkedin_url: '',
   })
-  Object.keys(relationText).forEach((key) => {
-    relationText[key as keyof typeof relationText] = ''
+  Object.keys(relationIds).forEach((key) => {
+    relationIds[key] = []
   })
   emptyTranslations()
   translationStatuses.value = []
   publications.value = []
   routes.value = []
+}
+
+/**
+ * 读取关系选择器的可读选项。
+ *
+ * 输入：key，关系字段名；source，受权限保护的实体列表地址与标签。
+ * 输出：Promise<RelationOption[]>；FAQ 因无 slug 会补读详情中的双语问题，其余实体沿用列表。
+ */
+async function loadRelationOptions(
+  key: string,
+  source: { path: string; label: string },
+): Promise<RelationOption[]> {
+  const options = (await api.list<RelationOption>(source.path)).items
+  if (key !== 'faq_ids') return options
+  return Promise.all(
+    options.map(async (option) => {
+      if (option.translations?.length) return option
+      const detail = await api.detail<RelationOption>(`${source.path}/${option.id}`)
+      return { ...option, translations: detail.translations || [] }
+    }),
+  )
 }
 
 async function load() {
@@ -184,18 +282,35 @@ async function load() {
       api.list<AuthorityItem>(`/authority/${props.resource}`),
       api.detail<LocaleItem[]>('/locales'),
     ])
-    items.value = result.items
+    // 列表要等依赖选项全部加载后再出现，避免用户点击记录后被初始化末尾重置为“新建”。
+    const loadedItems = result.items
     locales.value = localeItems
     activeLocaleId.value ||= localeItems[0]?.id || ''
+    const expertResult = await api.list<AuthorityItem>('/authority/experts')
+    experts.value = expertResult.items
     if (props.resource === 'knowledge') {
-      const [categoryResult, expertResult] = await Promise.all([
-        api.list<AuthorityItem>('/authority/knowledge-categories'),
-        api.list<AuthorityItem>('/authority/experts'),
-      ])
+      const categoryResult = await api.list<AuthorityItem>('/authority/knowledge-categories')
       categories.value = categoryResult.items
-      experts.value = expertResult.items
+    }
+    if (props.resource === 'cases') {
+      try {
+        media.value = await api.detail<MediaItem[]>('/media')
+      } catch {
+        media.value = []
+      }
+    }
+    if (hasRelations.value) {
+      const relationResults = await Promise.allSettled(
+        Object.entries(relationSources).map(
+          async ([key, source]) => [key, await loadRelationOptions(key, source)] as const,
+        ),
+      )
+      for (const result of relationResults) {
+        if (result.status === 'fulfilled') relationOptions[result.value[0]] = result.value[1]
+      }
     }
     resetForm()
+    items.value = loadedItems
     errorMessage.value = ''
   } catch (error) {
     errorMessage.value =
@@ -203,7 +318,7 @@ async function load() {
   }
 }
 
-async function editItem(item: AuthorityItem) {
+async function editItem(item: Pick<AuthorityItem, 'id'>) {
   try {
     const detail = await api.detail<
       AuthorityItem & {
@@ -234,12 +349,11 @@ async function editItem(item: AuthorityItem) {
     translationStatuses.value = detail.translation_statuses || []
     publications.value = detail.publications || []
     routes.value = detail.routes || []
-    for (const key of Object.keys(relationText) as Array<keyof typeof relationText>)
-      relationText[key] = (detail.relations?.[key] || []).join('\n')
+    for (const key of Object.keys(relationIds)) relationIds[key] = detail.relations?.[key] || []
     const seoDocument = detail.seo_documents?.find((row) => row.locale_id === activeLocaleId.value)
-    if (seoDocument) seo.value = { ...seo.value, ...(seoDocument as unknown as SeoDraft) }
+    seo.value = seoDraftFromDocument(seoDocument)
     const geoDocument = detail.geo_documents?.find((row) => row.locale_id === activeLocaleId.value)
-    if (geoDocument) geo.value = { ...geo.value, ...(geoDocument as unknown as GeoDraft) }
+    geo.value = geoDraftFromDocument(geoDocument)
     if (activeLocaleId.value) {
       try {
         const preview = await api.detail<{ visible_source_text: string }>(
@@ -256,12 +370,33 @@ async function editItem(item: AuthorityItem) {
   }
 }
 
+/**
+ * 按操作开始时固定的记录ID重新读取编辑器。
+ *
+ * 输入：recordId，生命周期请求发出前捕获的实体ID。
+ * 输出：Promise<void>，回读同一实体且不依赖异步变化中的列表。
+ */
+async function reloadSelectedItem(recordId: string) {
+  if (!recordId) return
+  await editItem({ id: recordId })
+}
+
 function translationsPayload() {
   return form.translations
     .map((translation) => ({
       locale_id: translation.locale_id,
       fields: Object.fromEntries(
-        Object.entries(translation.fields).filter(([, value]) => value.trim()),
+        Object.entries(translation.fields)
+          .filter(([, value]) => value.trim())
+          .map(([key, value]) => [
+            key,
+            key === 'expertise_json'
+              ? value
+                  .split(/\r?\n/)
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+              : value,
+          ]),
       ),
     }))
     .filter((translation) => Object.keys(translation.fields).length > 0)
@@ -311,15 +446,29 @@ function masterPayload(): Record<string, unknown> {
 }
 
 function relationPayload(): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(relationText).map(([key, value]) => [
-      key,
-      value
-        .split(/[\s,]+/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ]),
-  )
+  return Object.fromEntries(Object.entries(relationIds))
+}
+
+/** 输入关系选项；输出优先使用slug或翻译标题的可读名称，永不显示UUID。 */
+function relationLabel(item: RelationOption): string {
+  if (item.slug) return item.slug
+  const translation = item.translations?.[0]
+  return String(translation?.title || translation?.name || translation?.question || '未命名内容')
+}
+
+/** 输入内容条目；输出列表中用于识别记录的可读名称。 */
+function authorityLabel(item: AuthorityItem): string {
+  return relationLabel(item as RelationOption)
+}
+
+/** 输出GEO复核人下拉框所需的可读专家选项。 */
+const expertOptions = computed(() =>
+  experts.value.map((expert) => ({ id: expert.id, label: authorityLabel(expert) })),
+)
+
+/** 输入关系字段键；输出稳定中文标签，防止模板读取可选对象时报错。 */
+function relationSourceLabel(key: string): string {
+  return relationSources[key]?.label || key
 }
 
 async function save() {
@@ -349,19 +498,36 @@ async function saveSeo() {
   if (!selectedId.value || !activeLocaleId.value) return
   await api.replace(
     `/discovery/seo/${ownerType.value}/${selectedId.value}/${activeLocaleId.value}`,
-    { ...seo.value, canonical_override: seo.value.canonical_override || null },
+    {
+      seo_title: seo.value.seo_title,
+      meta_description: seo.value.meta_description,
+      canonical_override: seo.value.canonical_override || null,
+      robots_index: seo.value.robots_index,
+      robots_follow: seo.value.robots_follow,
+      og_title: seo.value.og_title,
+      og_description: seo.value.og_description,
+    },
   )
+}
+
+/** 输出严格符合 GEO Upsert 的字段，阻止服务端只读元数据回灌。 */
+function geoPayload() {
+  return {
+    direct_answer: geo.value.direct_answer,
+    target_questions_json: geo.value.target_questions_json,
+    key_facts_json: geo.value.key_facts_json,
+    evidence_json: geo.value.evidence_json,
+    related_questions_json: geo.value.related_questions_json,
+    reviewer_id: geo.value.reviewer_id || null,
+    last_reviewed_at: geo.value.last_reviewed_at || null,
+  }
 }
 
 async function saveGeo() {
   if (!selectedId.value || !activeLocaleId.value) return
   const result = await api.replace<{ id: string }>(
     `/discovery/geo/${ownerType.value}/${selectedId.value}/${activeLocaleId.value}`,
-    {
-      ...geo.value,
-      reviewer_id: geo.value.reviewer_id || null,
-      last_reviewed_at: geo.value.last_reviewed_at || null,
-    },
+    geoPayload(),
   )
   source.value.geo_document_id = result.id
 }
@@ -374,23 +540,58 @@ async function saveSource() {
 
 async function reviewTranslation() {
   if (!selectedId.value || !activeLocaleId.value) return
+  const recordId = selectedId.value
   await api.request(
-    `/authority/${props.resource}/${selectedId.value}/translations/${activeLocaleId.value}/review`,
+    `/authority/${props.resource}/${recordId}/translations/${activeLocaleId.value}/review`,
     { method: 'POST' },
   )
-  await editItem(items.value.find((item) => item.id === selectedId.value)!)
+  await reloadSelectedItem(recordId)
 }
 
 async function publishContent() {
   if (!selectedId.value || !activeLocaleId.value) return
-  const suffix =
-    props.resource === 'faqs'
-      ? `translations/${activeLocaleId.value}/publish`
-      : `publications/${activeLocaleId.value}/published`
-  await api.request(`/authority/${props.resource}/${selectedId.value}/${suffix}`, {
-    method: 'POST',
-  })
-  await editItem(items.value.find((item) => item.id === selectedId.value)!)
+  if (props.resource !== 'faqs') {
+    await transitionContentPublication('published')
+    return
+  }
+  const recordId = selectedId.value
+  await api.request(
+    `/authority/${props.resource}/${recordId}/translations/${activeLocaleId.value}/publish`,
+    {
+      method: 'POST',
+    },
+  )
+  await reloadSelectedItem(recordId)
+}
+
+/**
+ * 按服务端状态机转换当前语言的页面发布状态。
+ *
+ * 输入：targetStatus，目标发布状态，仅允许恢复草稿、送审、发布或撤回。
+ * 输出：Promise<void>，转换完成后重新读取该实体的真实生命周期。
+ */
+async function transitionContentPublication(
+  targetStatus: 'draft' | 'review' | 'published' | 'archived',
+) {
+  if (!selectedId.value || !activeLocaleId.value || props.resource === 'faqs') return
+  const recordId = selectedId.value
+  await api.request(
+    `/authority/${props.resource}/${recordId}/publications/${activeLocaleId.value}/${targetStatus}`,
+    {
+      method: 'POST',
+    },
+  )
+  await reloadSelectedItem(recordId)
+}
+
+/**
+ * 撤回当前语言的独立页面发布。
+ *
+ * 输入：无，使用当前实体和语言选择。
+ * 输出：Promise<void>，后端完成 archived 转换后重新读取生命周期状态。
+ */
+async function archivePublication() {
+  await transitionContentPublication('archived')
 }
 
 const activeLifecycle = computed(() => ({
@@ -398,6 +599,13 @@ const activeLifecycle = computed(() => ({
   publication: publications.value.find((row) => row.locale_id === activeLocaleId.value),
   route: routes.value.find((row) => row.locale_id === activeLocaleId.value),
 }))
+
+// 切换发现层语言时重新从后端读取该语言的 SEO、GEO 与正文来源，避免跨语言串值。
+watch(activeLocaleId, async (localeId, previousLocaleId) => {
+  if (!selectedId.value || !localeId || localeId === previousLocaleId) return
+  const selectedItem = items.value.find((item) => item.id === selectedId.value)
+  if (selectedItem) await editItem(selectedItem)
+})
 
 onMounted(load)
 </script>
@@ -416,7 +624,7 @@ onMounted(load)
       <div class="catalog-grid">
         <div class="record-list">
           <button v-for="item in items" :key="item.id" type="button" @click="editItem(item)">
-            <strong>{{ item.slug || item.id }}</strong
+            <strong>{{ authorityLabel(item) }}</strong
             ><span>{{ item.status }}</span>
           </button>
         </div>
@@ -444,7 +652,18 @@ onMounted(load)
               <legend>Private client identity and explicit consent</legend>
               <label>Client name <input v-model="form.client_name" /></label
               ><label>Client address <textarea v-model="form.client_address" /></label
-              ><label>Client logo media ID <input v-model="form.client_logo_media_id" /></label
+              ><label
+                >Client logo media
+                <select v-model="form.client_logo_media_id">
+                  <option value="">No client logo</option>
+                  <option
+                    v-for="asset in media.filter((item) => item.type === 'image')"
+                    :key="asset.id"
+                    :value="asset.id"
+                  >
+                    {{ asset.filename }}
+                  </option>
+                </select> </label
               ><label
                 ><input v-model="form.client_name_public" type="checkbox" />
                 client_name_public</label
@@ -518,11 +737,20 @@ onMounted(load)
             </label>
           </fieldset>
           <fieldset v-if="hasRelations">
-            <legend>Explicit relation IDs</legend>
-            <label v-for="(_value, key) in relationText" :key="key"
-              >{{ key
-              }}<textarea v-model="relationText[key]" placeholder="One UUID per line" /></label
-            ><small>Relations are explicit structured links, not hidden in rich text.</small>
+            <legend>内容关系</legend>
+            <label v-for="source in Object.keys(relationSources)" :key="source">
+              {{ relationSourceLabel(source) }}
+              <select v-model="relationIds[source]" multiple>
+                <option
+                  v-for="option in relationOptions[source] || []"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ relationLabel(option) }}
+                </option>
+              </select>
+            </label>
+            <small>按住 Ctrl / Command 可多选；后台仅显示可读名称，关联ID由表单内部提交。</small>
           </fieldset>
           <div class="form-actions">
             <button type="submit">{{ selectedId ? 'Save changes' : 'Create' }}</button
@@ -552,11 +780,56 @@ onMounted(load)
             }}
             · indexable={{ activeLifecycle.route?.indexable ?? false }}
           </p>
-          <button type="button" @click="reviewTranslation">Mark human reviewed</button
-          ><button type="button" @click="publishContent">Publish</button>
+          <button
+            v-if="
+              !['human_reviewed', 'published'].includes(
+                activeLifecycle.translation?.status || 'missing',
+              )
+            "
+            type="button"
+            @click="reviewTranslation"
+          >
+            Mark human reviewed</button
+          ><button
+            v-if="resource === 'faqs' && activeLifecycle.translation?.status !== 'published'"
+            type="button"
+            @click="publishContent"
+          >
+            Publish answer</button
+          ><button
+            v-if="resource !== 'faqs' && activeLifecycle.publication?.status === 'archived'"
+            type="button"
+            @click="transitionContentPublication('draft')"
+          >
+            Restore draft</button
+          ><button
+            v-if="resource !== 'faqs' && activeLifecycle.publication?.status === 'draft'"
+            type="button"
+            @click="transitionContentPublication('review')"
+          >
+            Submit for review</button
+          ><button
+            v-if="
+              resource !== 'faqs' &&
+              (activeLifecycle.publication?.status === 'review' ||
+                activeLifecycle.publication?.status === 'scheduled')
+            "
+            type="button"
+            @click="publishContent"
+          >
+            Publish</button
+          ><button
+            v-if="resource !== 'faqs' && activeLifecycle.publication?.status === 'published'"
+            type="button"
+            class="danger"
+            @click="archivePublication"
+          >
+            Withdraw publication
+          </button>
         </fieldset>
         <SeoEditor v-model="seo" @save="saveSeo" /><GeoEditor
           v-model="geo"
+          :reviewers="expertOptions"
           :server-visible-source-text="geoVisibleSourceText"
           @save="saveGeo"
         /><SourceCitationEditor v-model="source" @save="saveSource" />

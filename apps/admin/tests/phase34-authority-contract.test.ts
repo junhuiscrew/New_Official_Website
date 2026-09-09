@@ -41,6 +41,19 @@ describe('phase 3.4 authority admin', () => {
     expect(geo).toContain('direct_answer')
     expect(geo).toContain('key_facts_json')
     expect(geo).toContain('evidence_json')
+
+    const authorityCrud = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+    expect(authorityCrud).toContain(
+      "import SeoEditor, { type SeoDraft } from '~/components/discovery/SeoEditor.vue'",
+    )
+    expect(authorityCrud).toContain(
+      "import GeoEditor, { type GeoDraft } from '~/components/discovery/GeoEditor.vue'",
+    )
+    expect(authorityCrud).toContain('import SourceCitationEditor, {')
+    expect(authorityCrud).toContain("} from '~/components/discovery/SourceCitationEditor.vue'")
   })
 
   it('renders customer privacy controls and real author verification', () => {
@@ -57,5 +70,68 @@ describe('phase 3.4 authority admin', () => {
     expect(source).toContain('Publication lifecycle')
     expect(source).toContain('publications/${activeLocaleId.value}')
     expect(source).toContain('translations/${activeLocaleId.value}')
+    expect(source).toContain('archivePublication')
+    expect(source).toContain("transitionContentPublication('archived')")
+    expect(source).toContain('watch(activeLocaleId')
+    expect(source).toContain('emptySeoDraft()')
+    expect(source).toContain('emptyGeoDraft()')
+  })
+
+  it('only exposes the record list after dependent editor data is ready', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+    const loadIndex = source.indexOf('async function load')
+    const resetIndex = source.indexOf('resetForm()', loadIndex)
+    const itemAssignmentIndex = source.indexOf('items.value = loadedItems')
+
+    expect(itemAssignmentIndex).toBeGreaterThan(resetIndex)
+  })
+
+  it('whitelists editable SEO and GEO fields when reading and saving documents', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('function seoDraftFromDocument')
+    expect(source).toContain('function geoDraftFromDocument')
+    expect(source).toContain('function geoPayload')
+    expect(source).not.toContain('...(geoDocument ?')
+  })
+
+  it('reloads lifecycle state by the captured record id instead of a mutable list lookup', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('async function reloadSelectedItem')
+    expect(source).not.toContain('items.value.find((item) => item.id === selectedId.value)!')
+  })
+
+  it('renders the complete publication state machine for routed authority content', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('transitionContentPublication')
+    expect(source).toContain('Restore draft')
+    expect(source).toContain('Submit for review')
+    expect(source).toContain("activeLifecycle.publication?.status === 'review'")
+    expect(source).toContain("activeLifecycle.publication?.status === 'archived'")
+  })
+
+  it('loads readable FAQ labels for relation selectors without exposing UUID entry', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('async function loadRelationOptions')
+    expect(source).toContain("key !== 'faq_ids'")
+    expect(source).toContain('`${source.path}/${option.id}`')
   })
 })

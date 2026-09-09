@@ -10,7 +10,16 @@ export interface GeoDraft {
   last_reviewed_at: string
 }
 
-const props = defineProps<{ modelValue: GeoDraft; serverVisibleSourceText: string }>()
+interface ReviewerOption {
+  id: string
+  label: string
+}
+
+const props = defineProps<{
+  modelValue: GeoDraft
+  serverVisibleSourceText: string
+  reviewers: ReviewerOption[]
+}>()
 const emit = defineEmits<{ 'update:modelValue': [value: GeoDraft]; save: [] }>()
 
 function updateText(field: keyof GeoDraft, value: string) {
@@ -70,11 +79,17 @@ function updateLines(
       />
     </label>
     <label
-      >Reviewer ID
-      <input
+      >内容复核人
+      <select
         :value="modelValue.reviewer_id"
-        @input="updateText('reviewer_id', ($event.target as HTMLInputElement).value)"
-    /></label>
+        @change="updateText('reviewer_id', ($event.target as HTMLSelectElement).value)"
+      >
+        <option value="">尚未指定</option>
+        <option v-for="reviewer in reviewers" :key="reviewer.id" :value="reviewer.id">
+          {{ reviewer.label }}
+        </option>
+      </select></label
+    >
     <label
       >Last reviewed
       <input

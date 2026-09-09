@@ -737,13 +737,25 @@ async def test_postgresql_products_site_page_initialization_is_concurrent_and_re
     assert first_id == second_id
 
     async with factory() as session:
-        assert await session.scalar(select(func.count()).select_from(SitePage)) == 1
-        assert await session.scalar(select(func.count()).select_from(SitePageTranslation)) == 2
+        # 中央 seed 还会建立 Privacy 固定页；这里只核对 Products 页面自身，避免跨功能计数耦合。
+        assert await session.scalar(
+            select(func.count())
+            .select_from(SitePage)
+            .where(SitePage.system_key == "products")
+        ) == 1
+        assert await session.scalar(
+            select(func.count())
+            .select_from(SitePageTranslation)
+            .where(SitePageTranslation.site_page_id == first_id)
+        ) == 2
         assert (
             await session.scalar(
                 select(func.count())
                 .select_from(ContentRoute)
-                .where(ContentRoute.owner_type == "site_page")
+                .where(
+                    ContentRoute.owner_type == "site_page",
+                    ContentRoute.owner_id == first_id,
+                )
             )
             == 2
         )

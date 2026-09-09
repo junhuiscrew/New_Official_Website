@@ -22,11 +22,18 @@ describe('Website Presentation R1 Admin contract', () => {
 
   it('separates edit, preview and apply permissions', () => {
     const source = readFileSync(resolve(process.cwd(), 'app/pages/homepage.vue'), 'utf8')
+    const demoNginx = readFileSync(
+      resolve(process.cwd(), '../../infra/nginx/nginx.local-domain-demo-edge.conf'),
+      'utf8',
+    )
 
     expect(source).toContain("permissions.includes('content.read')")
     expect(source).toContain("permissions.includes('content.update')")
     expect(source).toContain("permissions.includes('content.publish')")
-    expect(source).toContain('https://admin.junhuiscrewbarrel.com/preview/')
+    expect(source).toContain('`/preview/${activeLanguage.value?.locale.slug')
+    expect(source).not.toContain('https://admin.junhuiscrewbarrel.com/preview/')
+    expect(demoNginx).toContain('set $demo_website_preview_upstream http://demo-r2-website:3000;')
+    expect(demoNginx).toContain('location ^~ /preview/')
   })
 
   it('provides the site overview and guarded navigation entries', () => {
@@ -40,5 +47,12 @@ describe('Website Presentation R1 Admin contract', () => {
     expect(app).toContain('to="/site-overview"')
     expect(app).toContain("currentUser.permissions.includes('content.read')")
     expect(app).toContain('<ClientOnly>')
+  })
+
+  it('keeps hydrated admin content clear of the fixed sidebar', () => {
+    const css = readFileSync(resolve(process.cwd(), 'app/assets/css/main.css'), 'utf8')
+
+    expect(css).toContain('.admin-app:has(.admin-sidebar)')
+    expect(css).toContain('grid-template-columns: var(--admin-sidebar-width) minmax(0, 1fr)')
   })
 })

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Product presentation motion · DEMO</title>
+    <style>
+      /* 页面用途：用于生成可播放的产品展示演示视频，不代表真实工厂拍摄。 */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #031b38; font-family: Arial, sans-serif; color: white; }
+      body { display: grid; place-items: center; }
+      .grid { position: absolute; inset: 0; opacity: .32; background-image: linear-gradient(rgba(71,156,255,.18) 1px, transparent 1px), linear-gradient(90deg, rgba(71,156,255,.18) 1px, transparent 1px); background-size: 54px 54px; animation: drift 8s linear infinite; }
+      .halo { position: absolute; width: 720px; height: 720px; border-radius: 50%; background: radial-gradient(circle, rgba(29,127,245,.52), transparent 66%); animation: pulse 3s ease-in-out infinite; }
+      .screw { position: relative; width: 760px; height: 96px; border-radius: 48px; background: linear-gradient(180deg,#f7fbff 0%,#7e9cbb 34%,#dcecff 51%,#496d93 72%,#d7e9fb 100%); box-shadow: 0 35px 80px rgba(0,0,0,.42), 0 0 55px rgba(46,150,255,.32); transform: rotate(-9deg); animation: float 5s ease-in-out infinite; overflow: hidden; }
+      .screw::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(72deg, transparent 0 35px, rgba(1,24,49,.65) 36px 47px, rgba(255,255,255,.42) 48px 54px); animation: flow 2.6s linear infinite; }
+      .copy { position: absolute; left: 7vw; bottom: 8vh; }
+      .eyebrow { color: #75baff; letter-spacing: .22em; font-weight: 700; font-size: 20px; }
+      h1 { margin: 12px 0 6px; font-size: 58px; letter-spacing: -.02em; }
+      p { margin: 0; font-size: 22px; color: #c4dbf3; }
+      .badge { position: absolute; top: 38px; right: 42px; padding: 12px 18px; border: 1px solid #5ea9f3; border-radius: 999px; color: #d8ecff; background: rgba(3,27,56,.74); font-weight: 700; letter-spacing: .08em; }
+      @keyframes drift { to { background-position: 108px 54px; } }
+      @keyframes pulse { 50% { transform: scale(1.12); opacity: .72; } }
+      @keyframes float { 50% { transform: translateY(-24px) rotate(-4deg) scale(1.025); } }
+      @keyframes flow { to { transform: translateX(108px); } }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div><div class="halo"></div><div class="screw"></div>
+    <div class="copy"><div class="eyebrow">PRODUCT PRESENTATION</div><h1>Precision Flow · Demo</h1><p>产品展示动效 / Illustrative product motion</p></div>
+    <div class="badge">DEMO · 演示素材</div>
+  </body>
+</html>

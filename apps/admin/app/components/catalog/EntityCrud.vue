@@ -1,5 +1,6 @@
 <!-- 组件职责：为 Material / Technology / Application / Solution 提供最小真实 CRUD。 -->
 <script setup lang="ts">
+import TranslationFields from '~/components/catalog/TranslationFields.vue'
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
 
 interface EntityItem {

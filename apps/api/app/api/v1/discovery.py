@@ -427,8 +427,10 @@ async def put_geo_document(
 ) -> ApiResponse[dict[str, Any]]:
     """新增或更新经过可见事实校验的 GEO 文档。"""
     document = await upsert_geo_document(session, owner_type, owner_id, locale_id, payload, user.id)
+    # 与 SEO 写接口一致，在 commit 使 ORM 字段过期前完成同步序列化。
+    serialized = _serialize(document)
     await _commit(session)
-    return success_response(_serialize(document))
+    return success_response(serialized)
 
 
 @router.get("/sources", response_model=ApiResponse[list[dict[str, Any]]])

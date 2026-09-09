@@ -127,6 +127,7 @@ class AuthorExpertCreate(BaseModel):
     slug: str
     status: Literal["enabled", "disabled", "retired"] = "enabled"
     role_type: Literal["author", "expert", "author_expert"]
+    identity_kind: Literal["person", "organization"] = "person"
     is_real_person_verified: bool = False
     public_profile_enabled: bool = False
     profile_media_id: uuid.UUID | None = None
@@ -145,6 +146,7 @@ class AuthorExpertUpdate(BaseModel):
     slug: str | None = None
     status: Literal["enabled", "disabled", "retired"] | None = None
     role_type: Literal["author", "expert", "author_expert"] | None = None
+    identity_kind: Literal["person", "organization"] | None = None
     is_real_person_verified: bool | None = None
     public_profile_enabled: bool | None = None
     profile_media_id: uuid.UUID | None = None

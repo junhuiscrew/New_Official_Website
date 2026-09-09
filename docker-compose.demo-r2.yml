@@ -1,0 +1,139 @@
+# Demo R2 独立数据栈；必须通过显式迁移和 demo-r2-setup 初始化，普通启动不会写业务数据。
+name: junhui-demo-r2
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${DEMO_POSTGRES_DB:?Demo PostgreSQL database is required}
+      POSTGRES_USER: ${DEMO_POSTGRES_USER:?Demo PostgreSQL user is required}
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:?Demo PostgreSQL password is required}
+    ports: !reset []
+    volumes: !override
+      - postgres_demo_r2_data:/var/lib/postgresql/data
+
+  redis:
+    ports: !reset []
+    volumes: !override
+      - redis_demo_r2_data:/data
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: ${DEMO_MINIO_ACCESS_KEY:?Demo MinIO access key is required}
+      MINIO_ROOT_PASSWORD: ${DEMO_MINIO_SECRET_KEY:?Demo MinIO secret is required}
+    ports: !reset []
+    volumes: !override
+      - minio_demo_r2_data:/data
+
+  minio-init:
+    environment:
+      MINIO_ROOT_USER: ${DEMO_MINIO_ACCESS_KEY:?Demo MinIO access key is required}
+      MINIO_ROOT_PASSWORD: ${DEMO_MINIO_SECRET_KEY:?Demo MinIO secret is required}
+
+  api:
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8000'
+    environment:
+      APP_ENV: staging
+      APP_NAME: Junhui Demo R2 API
+      APP_VERSION: 0.5.0-demo-r2
+      DEMO_MODE: 'true'
+      DEMO_BATCH_ID: JH-DEMO-R2-V1
+      DATABASE_URL: postgresql+asyncpg://${DEMO_POSTGRES_USER}:${DEMO_POSTGRES_PASSWORD}@postgres:5432/${DEMO_POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: api-demo.junhuiscrewbarrel.com
+      MINIO_ACCESS_KEY: ${DEMO_MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${DEMO_MINIO_SECRET_KEY}
+      MINIO_INTERNAL_SECURE: 'false'
+      MINIO_PUBLIC_SECURE: 'true'
+      AUTH_COOKIE_SECURE: 'true'
+      AUTH_COOKIE_SAMESITE: lax
+      CORS_ALLOWED_ORIGINS: '["https://demo.junhuiscrewbarrel.com","https://admin-demo.junhuiscrewbarrel.com","https://api-demo.junhuiscrewbarrel.com"]'
+      JWT_SIGNING_SECRET: ${DEMO_JWT_SIGNING_SECRET}
+      REFRESH_TOKEN_SECRET: ${DEMO_REFRESH_TOKEN_SECRET}
+      PUBLIC_SITEMAP_ENABLED: 'false'
+      LLMS_TXT_ENABLED: 'false'
+      ANALYTICS_ENABLED: 'false'
+      MARKETING_EMAIL_ENABLED: 'false'
+      FAQ_SCHEMA_ENABLED: 'false'
+      MALWARE_SCANNER_ENABLED: 'false'
+      TRUSTED_PROXY_CIDRS: '["172.16.0.0/12"]'
+    ports: !reset []
+    networks:
+      default: {}
+      demo_edge:
+        aliases: [demo-r2-api]
+
+  worker:
+    environment:
+      APP_ENV: staging
+      DEMO_MODE: 'true'
+      DEMO_BATCH_ID: JH-DEMO-R2-V1
+      DATABASE_URL: postgresql+asyncpg://${DEMO_POSTGRES_USER}:${DEMO_POSTGRES_PASSWORD}@postgres:5432/${DEMO_POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: api-demo.junhuiscrewbarrel.com
+      MINIO_ACCESS_KEY: ${DEMO_MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${DEMO_MINIO_SECRET_KEY}
+      MINIO_INTERNAL_SECURE: 'false'
+      MINIO_PUBLIC_SECURE: 'true'
+      CORS_ALLOWED_ORIGINS: '["https://demo.junhuiscrewbarrel.com","https://admin-demo.junhuiscrewbarrel.com","https://api-demo.junhuiscrewbarrel.com"]'
+      JWT_SIGNING_SECRET: ${DEMO_JWT_SIGNING_SECRET}
+      REFRESH_TOKEN_SECRET: ${DEMO_REFRESH_TOKEN_SECRET}
+      MALWARE_SCANNER_ENABLED: 'false'
+    ports: !reset []
+
+  website:
+    environment:
+      NUXT_PUBLIC_SITE_URL: https://demo.junhuiscrewbarrel.com
+      NUXT_PUBLIC_ADMIN_URL: https://admin-demo.junhuiscrewbarrel.com
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_INTERNAL_BASE: http://api:8000/api/v1
+      NUXT_PUBLIC_SITEMAP_ENABLED: 'false'
+      NUXT_PUBLIC_ANALYTICS_ENABLED: 'false'
+      NUXT_PUBLIC_DEMO_MODE: 'true'
+    healthcheck:
+      # Demo 首页包含完整 14 模块；读取响应体后主动释放 Undici 连接，避免健康命令空等到超时。
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/zh-cn/').then(async r=>{await r.arrayBuffer();if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+    ports: !reset []
+    networks:
+      default: {}
+      demo_edge:
+        aliases: [demo-r2-website]
+
+  admin:
+    environment:
+      NUXT_PUBLIC_API_BASE: /api/v1
+      NUXT_API_INTERNAL_BASE: http://api:8000/api/v1
+      NUXT_PUBLIC_DEMO_MODE: 'true'
+      NUXT_PUBLIC_WEBSITE_URL: https://demo.junhuiscrewbarrel.com
+    ports: !reset []
+    networks:
+      default: {}
+      demo_edge:
+        aliases: [demo-r2-admin]
+
+  nginx:
+    profiles: [unused-demo-nginx]
+    ports: !reset []
+
+volumes:
+  postgres_demo_r2_data:
+  redis_demo_r2_data:
+  minio_demo_r2_data:
+
+networks:
+  demo_edge:
+    name: junhui_demo_r2_edge
+    external: true

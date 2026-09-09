@@ -1,5 +1,6 @@
 <!-- 页面用途：维护规格分组、规格定义，以及产品已经确认的结构化规格值。 -->
 <script setup lang="ts">
+import TranslationFields from '~/components/catalog/TranslationFields.vue'
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
 import {
   buildSpecificationValuePayload,

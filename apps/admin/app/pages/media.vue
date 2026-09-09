@@ -2,15 +2,65 @@
 <script setup lang="ts">
 useHead({ title: 'Media Library', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
 const api = useAuthorityApi()
-const items = ref<Array<Record<string, unknown>>>([])
-const locales = ref<Array<{ id: string; native_name: string }>>([])
+interface MediaItem {
+  id: string
+  type: string
+  filename: string
+  url: string | null
+  mime_type: string
+  file_extension: string
+  visibility: string
+  width: number | null
+  height: number | null
+}
+interface LocaleItem {
+  id: string
+  code: string
+  native_name: string
+}
+interface MediaTranslation {
+  locale_id: string
+  alt_text: string
+  title: string
+  caption: string
+}
+interface MediaDetail extends MediaItem {
+  translations: MediaTranslation[]
+}
+
+const items = ref<MediaItem[]>([])
+const locales = ref<LocaleItem[]>([])
 const selectedAsset = ref('')
 const selectedLocale = ref('')
 const file = ref<File | null>(null)
+const loadingDetail = ref(false)
+const message = ref('')
 const translations = reactive({ alt_text: '', title: '', caption: '' })
+
+const selectedItem = computed(() => items.value.find((item) => item.id === selectedAsset.value))
+
+/** 读取当前媒体和语言的已保存元数据，避免选择后显示空白表单。 */
+async function loadTranslation(): Promise<void> {
+  if (!selectedAsset.value || !selectedLocale.value) return
+  loadingDetail.value = true
+  message.value = ''
+  try {
+    const detail = await api.detail<MediaDetail>(`/media/${selectedAsset.value}`)
+    const localized = detail.translations.find((item) => item.locale_id === selectedLocale.value)
+    translations.alt_text = localized?.alt_text || ''
+    translations.title = localized?.title || ''
+    translations.caption = localized?.caption || ''
+  } finally {
+    loadingDetail.value = false
+  }
+}
+
 async function load() {
-  items.value = await api.detail('/media')
-  locales.value = await api.detail('/locales')
+  items.value = await api.detail<MediaItem[]>('/media')
+  locales.value = await api.detail<LocaleItem[]>('/locales')
+  selectedAsset.value ||= items.value[0]?.id || ''
+  selectedLocale.value ||= locales.value[0]?.id || ''
+  await loadTranslation()
 }
 async function upload() {
   if (!file.value) return
@@ -31,88 +81,193 @@ async function saveTranslation() {
     method: 'PATCH',
     body,
   })
+  await loadTranslation()
+  message.value = '已保存，并从媒体详情接口重新读取。'
 }
+watch([selectedAsset, selectedLocale], loadTranslation)
 onMounted(load)
 </script>
 <template>
-  <main class="admin-shell">
-    <h1>Media Library</h1>
-    <form @submit.prevent="upload">
-      <label
-        >Public file
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/webm"
-          @change="file = ($event.target as HTMLInputElement).files?.[0] || null" /></label
-      ><button type="submit">Upload to public-media</button>
-    </form>
-    <form @submit.prevent="saveTranslation">
-      <h2>Localized metadata</h2>
-      <label
-        >Asset
-        <select v-model="selectedAsset">
-          <option v-for="item in items" :key="String(item.id)" :value="String(item.id)">
-            {{ item.type }} · {{ item.filename }}
-          </option>
-        </select></label
-      ><label
-        >Locale
-        <select v-model="selectedLocale">
-          <option v-for="locale in locales" :key="locale.id" :value="locale.id">
-            {{ locale.native_name }}
-          </option>
-        </select></label
-      ><label>Alt text <input v-model="translations.alt_text" /></label
-      ><label>Title <input v-model="translations.title" /></label
-      ><label>Caption <textarea v-model="translations.caption" /></label
-      ><button type="submit">Save metadata</button>
-    </form>
-    <section class="media-library-grid">
-      <article v-for="item in items" :key="String(item.id)">
+  <main class="admin-shell media-page">
+    <header class="media-page__heading">
+      <div>
+        <p>MEDIA OPERATIONS</p>
+        <h1>媒体资源库</h1>
+        <span>选择已有记录即可回填双语 Alt、标题与图注；文件本身不会被替换。</span>
+      </div>
+      <form @submit.prevent="upload">
+        <label
+          >上传公开文件
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4,video/webm"
+            @change="file = ($event.target as HTMLInputElement).files?.[0] || null" /></label
+        ><button type="submit">上传</button>
+      </form>
+    </header>
+    <section class="media-workspace">
+      <form class="media-editor" :aria-busy="loadingDetail" @submit.prevent="saveTranslation">
+        <p class="media-editor__eyebrow">LOCALIZED METADATA</p>
+        <h2>{{ selectedItem?.filename || '选择媒体' }}</h2>
         <img
-          v-if="item.type === 'image'"
-          :src="String(item.url)"
-          :alt="String(item.filename)"
-          loading="lazy"
+          v-if="selectedItem?.type === 'image' && selectedItem.url"
+          :src="selectedItem.url"
+          :alt="translations.alt_text || selectedItem.filename"
         />
-        <video v-else-if="item.type === 'video'" controls preload="none">
-          <source :src="String(item.url)" :type="String(item.mime_type)" />
-        </video>
-        <div v-else class="media-library-file">{{ item.file_extension }}</div>
-        <div>
-          <strong>{{ item.filename }}</strong>
-          <span>{{ item.type }} · {{ item.visibility }}</span>
-        </div>
-      </article>
+        <label
+          >媒体
+          <select v-model="selectedAsset">
+            <option v-for="item in items" :key="item.id" :value="item.id">
+              {{ item.type }} · {{ item.filename }}
+            </option>
+          </select></label
+        ><label
+          >语言
+          <select v-model="selectedLocale">
+            <option v-for="locale in locales" :key="locale.id" :value="locale.id">
+              {{ locale.native_name }}
+            </option>
+          </select></label
+        >
+        <p v-if="loadingDetail" class="media-editor__loading" role="status">
+          正在读取已保存元数据…
+        </p>
+        <label
+          >替代文本（Alt） <input v-model="translations.alt_text" :disabled="loadingDetail"
+        /></label>
+        <label>标题 <input v-model="translations.title" :disabled="loadingDetail" /></label>
+        <label>图注 <textarea v-model="translations.caption" :disabled="loadingDetail" /></label>
+        <button type="submit" :disabled="loadingDetail">保存元数据</button>
+        <p v-if="message" role="status">{{ message }}</p>
+      </form>
+      <div class="media-library-grid">
+        <button
+          v-for="item in items"
+          :key="item.id"
+          type="button"
+          :class="{ 'media-library-card--selected': item.id === selectedAsset }"
+          @click="selectedAsset = item.id"
+        >
+          <img
+            v-if="item.type === 'image'"
+            :src="String(item.url)"
+            :alt="item.filename"
+            loading="lazy"
+          />
+          <video v-else-if="item.type === 'video'" controls preload="none">
+            <source :src="String(item.url)" :type="String(item.mime_type)" />
+          </video>
+          <div v-else class="media-library-file">{{ item.file_extension }}</div>
+          <div>
+            <strong>{{ item.filename }}</strong>
+            <span>{{ item.type }} · {{ item.visibility }}</span>
+            <small v-if="item.width && item.height">{{ item.width }} × {{ item.height }}</small>
+          </div>
+        </button>
+      </div>
     </section>
   </main>
 </template>
 
 <style scoped>
-.admin-shell {
+.media-page {
   display: grid;
   align-content: start;
+  gap: 1.25rem;
+}
+.media-page__heading {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #d9ecfb;
+  background: linear-gradient(110deg, #07182b, #0b568f);
+  border-radius: 0.9rem;
+}
+.media-page__heading h1,
+.media-page__heading p {
+  margin: 0;
+  color: #fff;
+}
+.media-page__heading p {
+  color: #77cdf5;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.media-page__heading span {
+  display: block;
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+}
+.media-page__heading form {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+.media-workspace {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.32fr) minmax(0, 1fr);
+  align-items: start;
   gap: 1rem;
 }
-.admin-shell > form {
-  padding: 1rem;
+.media-editor {
+  position: sticky;
+  top: 1rem;
+  padding: 1.1rem;
   display: grid;
   gap: 0.8rem;
   background: #fff;
   border: 1px solid #dce4ec;
   border-radius: 0.8rem;
 }
+.media-editor h2,
+.media-editor__eyebrow {
+  margin: 0;
+}
+.media-editor__eyebrow {
+  color: #1474bd;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.media-editor > img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: #e9f1f7;
+}
+.media-editor label {
+  display: grid;
+  gap: 0.35rem;
+  color: #40566c;
+  font-size: 0.75rem;
+}
+.media-editor__loading {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  color: #0a5e9e;
+  background: #eaf6ff;
+}
 .media-library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
   gap: 1rem;
 }
-.media-library-grid article {
+.media-library-grid > button {
   min-width: 0;
+  padding: 0;
+  text-align: left;
   overflow: hidden;
   background: #fff;
   border: 1px solid #dce4ec;
   border-radius: 0.75rem;
+  cursor: pointer;
+}
+.media-library-grid > .media-library-card--selected {
+  border-color: #1685d1;
+  box-shadow: 0 0 0 3px rgb(22 133 209 / 14%);
 }
 .media-library-grid img,
 .media-library-grid video,
@@ -125,7 +280,7 @@ onMounted(load)
   color: #75bce9;
   background: #07192c;
 }
-.media-library-grid article > div:last-child {
+.media-library-grid > button > div:last-child {
   padding: 0.75rem;
   display: grid;
   gap: 0.3rem;
@@ -140,5 +295,22 @@ onMounted(load)
 .media-library-grid span {
   color: #78899a;
   font-size: 0.68rem;
+}
+.media-library-grid small {
+  color: #8395a6;
+  font-size: 0.65rem;
+}
+@media (max-width: 58rem) {
+  .media-page__heading,
+  .media-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .media-page__heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .media-editor {
+    position: static;
+  }
 }
 </style>

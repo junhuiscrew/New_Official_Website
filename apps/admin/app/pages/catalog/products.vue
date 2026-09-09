@@ -2,6 +2,11 @@
 <script setup lang="ts">
 import TranslationFields from '~/components/catalog/TranslationFields.vue'
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
+import {
+  buildSpecificationValuePayload,
+  type SpecificationValueDraft,
+  type SpecificationValueType,
+} from '~/utils/specificationValue'
 
 interface NamedItem {
   id: string
@@ -27,6 +32,24 @@ interface SpecValue {
   definition_id: string
   value_number: number | null
   value_text: string | null
+  value_min: number | null
+  value_max: number | null
+  value_boolean: boolean | null
+  enum_value: string | null
+  unit_override: string | null
+  sort_order: number
+  is_public: boolean
+}
+interface SpecificationDefinitionItem extends NamedItem {
+  group_id: string
+  code: string
+  value_type: SpecificationValueType
+  default_unit: string | null
+  translations: Array<Record<string, unknown>>
+}
+interface SpecificationGroupItem extends NamedItem {
+  code: string
+  translations: Array<Record<string, unknown>>
 }
 interface MediaItem {
   id: string
@@ -72,7 +95,8 @@ const materials = ref<NamedItem[]>([])
 const technologies = ref<NamedItem[]>([])
 const applications = ref<NamedItem[]>([])
 const solutions = ref<NamedItem[]>([])
-const definitions = ref<NamedItem[]>([])
+const definitions = ref<SpecificationDefinitionItem[]>([])
+const specificationGroups = ref<SpecificationGroupItem[]>([])
 const locales = ref<LocaleItem[]>([])
 const media = ref<MediaItem[]>([])
 const translationStatuses = ref<LifecycleItem[]>([])
@@ -81,7 +105,17 @@ const routes = ref<RouteItem[]>([])
 const selectedId = ref<string | null>(null)
 const errorMessage = ref('')
 const modelCode = ref('')
-const specification = reactive({ definition_id: '', value_number: 0 })
+const specification = reactive<SpecificationValueDraft>({
+  product_id: '',
+  product_model_id: '',
+  definition_id: '',
+  value_text: '',
+  value_number: null,
+  value_min: null,
+  value_max: null,
+  value_boolean: false,
+  enum_value: '',
+})
 const productSearch = ref('')
 const selectedCategoryFilter = ref('')
 const selectedStatusFilter = ref('')
@@ -110,6 +144,67 @@ const form = reactive({
   models: [] as ProductModelItem[],
   specifications: [] as SpecValue[],
 })
+
+const selectedDefinition = computed(() =>
+  definitions.value.find((item) => item.id === specification.definition_id),
+)
+const editableSpecificationRows = computed(() =>
+  form.specifications
+    .map((value) => ({ value, definition: definitionForValue(value) }))
+    .filter((row): row is { value: SpecValue; definition: SpecificationDefinitionItem } =>
+      Boolean(row.definition),
+    ),
+)
+
+/** 输入规格定义；输出优先中文、其次英文的名称，并保留稳定 code 作为辅助识别。 */
+function readableDefinitionLabel(definition: SpecificationDefinitionItem): string {
+  return readableItemLabel(definition)
+}
+
+/** 输入规格定义；输出其所属分组的可读名称。 */
+function readableGroupLabel(definition: SpecificationDefinitionItem): string {
+  const group = specificationGroups.value.find((item) => item.id === definition.group_id)
+  return group ? readableItemLabel(group) : '未分组'
+}
+
+/** 输入已保存规格值；输出对应定义，供类型化编辑器渲染。 */
+function definitionForValue(value: SpecValue): SpecificationDefinitionItem | undefined {
+  return definitions.value.find((item) => item.id === value.definition_id)
+}
+
+/** 输入规格值与定义；输出供编辑人员核对的当前可读值。 */
+function readableSpecificationValue(
+  value: SpecValue,
+  definition: SpecificationDefinitionItem,
+): string {
+  const raw =
+    definition.value_type === 'range'
+      ? `${value.value_min ?? '—'} – ${value.value_max ?? '—'}`
+      : definition.value_type === 'boolean'
+        ? value.value_boolean
+          ? '是'
+          : '否'
+        : definition.value_type === 'number'
+          ? String(value.value_number ?? '—')
+          : definition.value_type === 'enum'
+            ? value.enum_value || '—'
+            : value.value_text || '—'
+  const unit = value.unit_override || definition.default_unit
+  return unit ? `${raw} ${unit}` : raw
+}
+
+/** 清空新增参数表单中的类型值，同时保留当前产品归属。 */
+function resetSpecificationDraft(): void {
+  Object.assign(specification, {
+    definition_id: '',
+    value_text: '',
+    value_number: null,
+    value_min: null,
+    value_max: null,
+    value_boolean: false,
+    enum_value: '',
+  })
+}
 
 /**
  * 输出后台列表和关系选择器中的可读名称。
@@ -221,6 +316,7 @@ async function load() {
       applicationResult,
       solutionResult,
       definitionResult,
+      specificationGroupResult,
       localeResult,
       mediaResult,
     ] = await Promise.all([
@@ -230,7 +326,8 @@ async function load() {
       api.list<NamedItem>('/catalog/technologies'),
       api.list<NamedItem>('/catalog/applications'),
       api.list<NamedItem>('/catalog/solutions'),
-      api.list<NamedItem>('/catalog/specifications/definitions'),
+      api.list<SpecificationDefinitionItem>('/catalog/specifications/definitions'),
+      api.list<SpecificationGroupItem>('/catalog/specifications/groups'),
       api.detail<LocaleItem[]>('/locales'),
       api.detail<MediaItem[]>('/media'),
     ])
@@ -241,6 +338,8 @@ async function load() {
       technologyDetails,
       applicationDetails,
       solutionDetails,
+      definitionDetails,
+      specificationGroupDetails,
     ] = await Promise.all([
       hydrateNamedItems('/catalog/products', productResult.items),
       hydrateNamedItems('/catalog/categories', categoryResult.items),
@@ -248,6 +347,8 @@ async function load() {
       hydrateNamedItems('/catalog/technologies', technologyResult.items),
       hydrateNamedItems('/catalog/applications', applicationResult.items),
       hydrateNamedItems('/catalog/solutions', solutionResult.items),
+      hydrateNamedItems('/catalog/specifications/definitions', definitionResult.items),
+      hydrateNamedItems('/catalog/specifications/groups', specificationGroupResult.items),
     ])
     products.value = productDetails
     categories.value = categoryDetails
@@ -255,7 +356,8 @@ async function load() {
     technologies.value = technologyDetails
     applications.value = applicationDetails
     solutions.value = solutionDetails
-    definitions.value = definitionResult.items
+    definitions.value = definitionDetails
+    specificationGroups.value = specificationGroupDetails
     locales.value = localeResult
     media.value = mediaResult
   } catch (error) {
@@ -284,12 +386,15 @@ function resetForm() {
   translationStatuses.value = []
   publications.value = []
   routes.value = []
+  specification.product_id = ''
+  resetSpecificationDraft()
 }
 
 async function editProduct(item: ProductDetail) {
   try {
     const detail = await api.detail<ProductDetail>(`/catalog/products/${item.id}`)
     selectedId.value = detail.id
+    specification.product_id = detail.id
     form.category_id = detail.category_id
     form.code = detail.code || ''
     form.slug = detail.slug
@@ -438,19 +543,40 @@ async function saveRelations() {
 }
 
 async function addSpecification() {
-  if (!selectedId.value || !specification.definition_id) return
-  await api.create('/catalog/specifications/values', {
-    product_id: selectedId.value,
-    definition_id: specification.definition_id,
-    value_number: specification.value_number,
-  })
+  if (!selectedId.value || !selectedDefinition.value) return
+  specification.product_id = selectedId.value
+  await api.create(
+    '/catalog/specifications/values',
+    buildSpecificationValuePayload(selectedDefinition.value.value_type, specification),
+  )
+  resetSpecificationDraft()
   await editProduct({ id: selectedId.value } as ProductDetail)
 }
 
 async function updateSpecification(value: SpecValue) {
-  await api.update(`/catalog/specifications/values/${value.id}`, {
+  const definition = definitionForValue(value)
+  if (!definition || !selectedId.value) return
+  const payload = buildSpecificationValuePayload(definition.value_type, {
+    product_id: selectedId.value,
+    product_model_id: '',
+    definition_id: definition.id,
+    value_text: value.value_text || '',
     value_number: value.value_number,
-    value_text: value.value_text,
+    value_min: value.value_min,
+    value_max: value.value_max,
+    value_boolean: Boolean(value.value_boolean),
+    enum_value: value.enum_value || '',
+  })
+  const {
+    product_id: _productId,
+    product_model_id: _modelId,
+    definition_id: _definitionId,
+    ...typedValue
+  } = payload
+  await api.update(`/catalog/specifications/values/${value.id}`, {
+    ...typedValue,
+    unit_override: value.unit_override || null,
+    is_public: value.is_public,
   })
   if (selectedId.value) await editProduct({ id: selectedId.value } as ProductDetail)
 }
@@ -469,6 +595,15 @@ onMounted(load)
         <button type="button" @click="resetForm">New</button>
       </header>
       <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+      <nav v-if="selectedId" class="product-section-nav" aria-label="产品编辑分区">
+        <a href="#product-basic">基础信息</a>
+        <a href="#product-content">双语正文</a>
+        <a href="#product-media">媒体</a>
+        <a href="#product-specifications">规格</a>
+        <a href="#product-relations">关系</a>
+        <a href="#product-discovery">SEO / GEO</a>
+        <a href="#product-publication">发布</a>
+      </nav>
       <div class="catalog-grid">
         <aside class="product-browser" aria-label="产品记录浏览器">
           <div class="product-browser__filters">
@@ -536,7 +671,7 @@ onMounted(load)
             </button>
           </nav>
         </aside>
-        <form class="editor-form" @submit.prevent="saveProduct">
+        <form id="product-basic" class="editor-form" @submit.prevent="saveProduct">
           <label
             >Category
             <select v-model="form.category_id" required>
@@ -558,7 +693,7 @@ onMounted(load)
           >
           <label>Sort order <input v-model.number="form.sort_order" type="number" /></label
           ><label><input v-model="form.featured" type="checkbox" /> Featured</label>
-          <label
+          <label id="product-media"
             >Primary media
             <select v-model="form.primary_media_id">
               <option value="">No primary media</option>
@@ -568,6 +703,7 @@ onMounted(load)
             </select></label
           >
           <TranslationFields
+            id="product-content"
             v-model="form.translations"
             :locales="locales"
             :extra-fields="[
@@ -583,7 +719,7 @@ onMounted(load)
           </div>
         </form>
       </div>
-      <section v-if="selectedId" class="sub-editor">
+      <section v-if="selectedId" id="product-publication" class="sub-editor">
         <h2>Translation review &amp; publication</h2>
         <div v-for="locale in locales" :key="locale.id" class="lifecycle-row">
           <p>
@@ -627,7 +763,7 @@ onMounted(load)
           </div>
         </div>
       </section>
-      <section v-if="selectedId" class="sub-editor">
+      <section v-if="selectedId" id="product-models" class="sub-editor">
         <h2>Product Models</h2>
         <div class="inline-form">
           <input v-model="modelCode" placeholder="Model code" /><button
@@ -644,7 +780,7 @@ onMounted(load)
           </li>
         </ul>
       </section>
-      <section v-if="selectedId" class="sub-editor">
+      <section v-if="selectedId" id="product-relations" class="sub-editor">
         <h2>Relations</h2>
         <p class="sub-editor__intro">
           Search by a readable name or slug, then select one or more linked records.
@@ -721,37 +857,148 @@ onMounted(load)
         </div>
         <button type="button" @click="saveRelations">Save relations</button>
       </section>
-      <section v-if="selectedId" class="sub-editor">
-        <h2>Specifications</h2>
-        <div class="inline-form">
+      <section
+        v-if="selectedId"
+        id="product-specifications"
+        class="sub-editor specification-editor"
+      >
+        <header class="specification-editor__heading">
+          <div>
+            <p>STRUCTURED PARAMETERS</p>
+            <h2>产品规格与参数</h2>
+          </div>
+          <span>{{ form.specifications.length }} 项已保存参数</span>
+        </header>
+        <div class="specification-create">
           <select v-model="specification.definition_id">
-            <option value="">Definition</option>
+            <option value="">选择参数定义</option>
             <option v-for="item in definitions" :key="item.id" :value="item.id">
-              {{ item.code }}
-            </option></select
-          ><input v-model.number="specification.value_number" type="number" /><button
-            type="button"
-            @click="addSpecification"
-          >
-            Add value
+              {{ readableGroupLabel(item) }} / {{ readableDefinitionLabel(item) }} ·
+              {{ item.value_type
+              }}<template v-if="item.default_unit"> · {{ item.default_unit }}</template>
+            </option>
+          </select>
+          <template v-if="selectedDefinition">
+            <label v-if="selectedDefinition.value_type === 'number'">
+              数值
+              <input v-model.number="specification.value_number" type="number" />
+            </label>
+            <div v-else-if="selectedDefinition.value_type === 'range'" class="spec-range-inputs">
+              <label>最小值 <input v-model.number="specification.value_min" type="number" /></label>
+              <label>最大值 <input v-model.number="specification.value_max" type="number" /></label>
+            </div>
+            <label
+              v-else-if="selectedDefinition.value_type === 'boolean'"
+              class="spec-boolean-input"
+            >
+              <input v-model="specification.value_boolean" type="checkbox" /> 是 / 否
+            </label>
+            <label v-else-if="selectedDefinition.value_type === 'enum'">
+              枚举值
+              <input v-model="specification.enum_value" />
+            </label>
+            <label v-else>
+              文本值
+              <textarea v-model="specification.value_text" rows="2" />
+            </label>
+          </template>
+          <button type="button" :disabled="!selectedDefinition" @click="addSpecification">
+            添加参数
           </button>
         </div>
-        <ul>
-          <li v-for="value in form.specifications" :key="value.id">
-            <input v-model.number="value.value_number" type="number" /><button
-              type="button"
-              @click="updateSpecification(value)"
-            >
-              Save
-            </button>
+        <ul class="specification-list">
+          <li
+            v-for="{ value, definition } in editableSpecificationRows"
+            :key="value.id"
+            class="spec-value-card"
+          >
+            <header>
+              <div>
+                <small>{{ readableGroupLabel(definition) }}</small>
+                <h3>{{ readableDefinitionLabel(definition) }}</h3>
+                <code>{{ definition.code }}</code>
+              </div>
+              <dl>
+                <div>
+                  <dt>类型</dt>
+                  <dd>{{ definition.value_type }}</dd>
+                </div>
+                <div>
+                  <dt>单位</dt>
+                  <dd>{{ value.unit_override || definition.default_unit || '无' }}</dd>
+                </div>
+                <div>
+                  <dt>当前值</dt>
+                  <dd>{{ readableSpecificationValue(value, definition) }}</dd>
+                </div>
+              </dl>
+            </header>
+            <div class="spec-value-card__controls">
+              <label v-if="definition.value_type === 'number'">
+                数值 <input v-model.number="value.value_number" type="number" />
+              </label>
+              <div v-else-if="definition.value_type === 'range'" class="spec-range-inputs">
+                <label>最小值 <input v-model.number="value.value_min" type="number" /></label>
+                <label>最大值 <input v-model.number="value.value_max" type="number" /></label>
+              </div>
+              <label v-else-if="definition.value_type === 'boolean'" class="spec-boolean-input">
+                <input v-model="value.value_boolean" type="checkbox" /> 当前为“是”
+              </label>
+              <label v-else-if="definition.value_type === 'enum'">
+                枚举值 <input v-model="value.enum_value" />
+              </label>
+              <label v-else> 文本值 <textarea v-model="value.value_text" rows="2" /></label>
+              <label
+                >单位覆盖
+                <input v-model="value.unit_override" :placeholder="definition.default_unit || '无'"
+              /></label>
+              <label class="spec-boolean-input"
+                ><input v-model="value.is_public" type="checkbox" /> 前台公开</label
+              >
+              <button type="button" @click="updateSpecification(value)">保存此参数</button>
+            </div>
           </li>
         </ul>
+      </section>
+      <section v-if="selectedId" id="product-discovery" class="sub-editor product-discovery-panel">
+        <div>
+          <p>SEO / GEO</p>
+          <h2>发现元数据</h2>
+          <span>产品正文与参数保留在本页；SEO/GEO 使用统一权限与审计接口维护。</span>
+        </div>
+        <NuxtLink to="/site-pages/products">打开页面级 SEO / GEO 工作区 →</NuxtLink>
       </section>
     </section>
   </main>
 </template>
 
 <style scoped>
+/* 分区导航：长编辑页可快速定位，避免日常维护依赖连续滚动。 */
+.product-section-nav {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  margin-bottom: 1rem;
+  padding: 0.65rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  background: rgb(246 250 253 / 96%);
+  border: 1px solid #d9e5ee;
+  border-radius: 0.75rem;
+  backdrop-filter: blur(10px);
+}
+.product-section-nav a {
+  padding: 0.45rem 0.7rem;
+  color: #22506f;
+  background: #fff;
+  border: 1px solid #d5e2ec;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
 /* 产品浏览器：在一屏内完成搜索、筛选、定位与状态识别。 */
 .product-browser {
   position: sticky;
@@ -916,13 +1163,163 @@ onMounted(load)
   padding: 0.45rem;
 }
 
+/* 规格编辑器：每一项同时呈现名称、分组、类型、单位和保存前当前值。 */
+.specification-editor {
+  display: grid;
+  gap: 1rem;
+}
+.specification-editor__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.specification-editor__heading p,
+.specification-editor__heading h2 {
+  margin: 0;
+}
+.specification-editor__heading p {
+  color: #1475b8;
+  font-size: 0.65rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+.specification-editor__heading > span {
+  color: #5d7185;
+  font-size: 0.75rem;
+}
+.specification-create {
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: minmax(15rem, 1.4fr) minmax(12rem, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  background: #f3f8fc;
+  border: 1px solid #d6e4ef;
+  border-radius: 0.7rem;
+}
+.specification-create label,
+.spec-value-card__controls label {
+  display: grid;
+  gap: 0.35rem;
+  color: #405a71;
+  font-size: 0.72rem;
+}
+.specification-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+}
+.spec-value-card {
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+  background: #fff;
+  border: 1px solid #dbe5ed;
+  border-left: 4px solid #1785cf;
+  border-radius: 0.7rem;
+}
+.spec-value-card > header {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
+  gap: 1rem;
+}
+.spec-value-card h3,
+.spec-value-card small {
+  margin: 0;
+}
+.spec-value-card h3 {
+  margin-block: 0.16rem;
+  font-size: 0.98rem;
+}
+.spec-value-card small,
+.spec-value-card code {
+  color: #667d91;
+  font-size: 0.68rem;
+}
+.spec-value-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.spec-value-card dl > div {
+  padding: 0.55rem;
+  background: #f5f8fb;
+  border-radius: 0.45rem;
+}
+.spec-value-card dt {
+  color: #71859a;
+  font-size: 0.62rem;
+}
+.spec-value-card dd {
+  margin: 0.16rem 0 0;
+  color: #123754;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+.spec-value-card__controls {
+  padding-top: 0.85rem;
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(8rem, 0.6fr) auto auto;
+  align-items: end;
+  gap: 0.7rem;
+  border-top: 1px solid #e3ebf1;
+}
+.spec-range-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.spec-boolean-input {
+  align-content: center;
+  grid-template-columns: auto 1fr !important;
+  align-items: center;
+}
+.product-discovery-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.product-discovery-panel p,
+.product-discovery-panel h2 {
+  margin: 0;
+}
+.product-discovery-panel p {
+  color: #1475b8;
+  font-size: 0.65rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+.product-discovery-panel span {
+  color: #64798d;
+  font-size: 0.78rem;
+}
+.product-discovery-panel a {
+  color: #0b6cb2;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 @media (max-width: 900px) {
   .product-browser {
     position: static;
   }
 
-  .relation-picker-grid {
+  .relation-picker-grid,
+  .specification-create,
+  .spec-value-card > header,
+  .spec-value-card__controls {
     grid-template-columns: 1fr;
+  }
+
+  .product-discovery-panel {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

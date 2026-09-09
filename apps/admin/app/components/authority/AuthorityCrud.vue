@@ -50,6 +50,7 @@ const categories = ref<AuthorityItem[]>([])
 const experts = ref<AuthorityItem[]>([])
 const media = ref<MediaItem[]>([])
 const selectedId = ref('')
+const loadingRecordId = ref('')
 const activeLocaleId = ref('')
 const errorMessage = ref('')
 const translationStatuses = ref<LifecycleRow[]>([])
@@ -218,6 +219,7 @@ function emptyTranslations() {
 
 function resetForm() {
   selectedId.value = ''
+  loadingRecordId.value = ''
   Object.assign(form, {
     slug: '',
     status: 'enabled',
@@ -319,6 +321,9 @@ async function load() {
 }
 
 async function editItem(item: Pick<AuthorityItem, 'id'>) {
+  // 点击后立即标记选中与加载状态，避免把尚未返回的空表单误认为数据库正文丢失。
+  selectedId.value = item.id
+  loadingRecordId.value = item.id
   try {
     const detail = await api.detail<
       AuthorityItem & {
@@ -331,7 +336,8 @@ async function editItem(item: Pick<AuthorityItem, 'id'>) {
         relations?: Record<string, string[]>
       }
     >(`/authority/${props.resource}/${item.id}`)
-    selectedId.value = item.id
+    // 快速切换记录时只允许最后一次点击的详情写入表单。
+    if (selectedId.value !== item.id) return
     for (const key of Object.keys(form)) {
       if (key !== 'translations' && detail[key] !== undefined && detail[key] !== null)
         (form as Record<string, unknown>)[key] = detail[key]
@@ -367,6 +373,8 @@ async function editItem(item: Pick<AuthorityItem, 'id'>) {
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Unable to load detail.'
+  } finally {
+    if (loadingRecordId.value === item.id) loadingRecordId.value = ''
   }
 }
 
@@ -623,12 +631,28 @@ onMounted(load)
       <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
       <div class="catalog-grid">
         <div class="record-list">
-          <button v-for="item in items" :key="item.id" type="button" @click="editItem(item)">
+          <button
+            v-for="item in items"
+            :key="item.id"
+            type="button"
+            :class="{
+              'record-list__item--selected': selectedId === item.id,
+              'record-list__item--loading': loadingRecordId === item.id,
+            }"
+            @click="editItem(item)"
+          >
             <strong>{{ authorityLabel(item) }}</strong
-            ><span>{{ item.status }}</span>
+            ><span>{{ loadingRecordId === item.id ? '正在读取…' : item.status }}</span>
           </button>
         </div>
-        <form class="editor-form" @submit.prevent="save">
+        <form
+          class="editor-form authority-editor-form"
+          :aria-busy="Boolean(loadingRecordId)"
+          @submit.prevent="save"
+        >
+          <p v-if="loadingRecordId" class="authority-editor-loading" role="status">
+            正在读取记录，正文返回后才可编辑…
+          </p>
           <label v-if="resource !== 'faqs'"
             >Slug <input v-model="form.slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
           /></label>
@@ -837,3 +861,32 @@ onMounted(load)
     </section>
   </main>
 </template>
+
+<style scoped>
+.record-list button.record-list__item--selected {
+  color: #103e63;
+  background: #e8f4fd;
+  border-color: #70afe0;
+}
+.record-list button.record-list__item--loading {
+  cursor: progress;
+}
+.authority-editor-form {
+  position: relative;
+}
+.authority-editor-loading {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  color: #0b5f9f;
+  background: #e7f5ff;
+  border: 1px solid #a8d5f2;
+  border-radius: 0.55rem;
+}
+.authority-editor-form[aria-busy='true'] > :not(.authority-editor-loading) {
+  pointer-events: none;
+  opacity: 0.42;
+}
+</style>

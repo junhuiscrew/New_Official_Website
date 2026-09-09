@@ -203,10 +203,10 @@ onMounted(loadDashboard)
   gap: 1.25rem;
 }
 .dashboard-hero {
-  min-height: 18rem;
-  padding: clamp(1.5rem, 4vw, 3rem);
+  min-height: 0;
+  padding: 1.25rem 1.4rem;
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(15rem, 0.55fr);
+  grid-template-columns: minmax(0, 1.7fr) minmax(14rem, 0.3fr);
   align-items: center;
   gap: 2rem;
   overflow: hidden;
@@ -216,17 +216,19 @@ onMounted(loadDashboard)
   box-shadow: 0 1.5rem 3.5rem rgb(7 24 43 / 18%);
 }
 .dashboard-hero h1 {
-  max-width: 18ch;
-  margin: 0.55rem 0 0.9rem;
+  max-width: 28ch;
+  margin: 0.35rem 0 0.55rem;
   color: #fff;
-  font-size: clamp(1.8rem, 3.7vw, 3.35rem);
-  line-height: 1.08;
-  letter-spacing: -0.055em;
+  font-size: clamp(1.45rem, 2.3vw, 2.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
 }
 .dashboard-hero p:not(.dashboard-eyebrow) {
   max-width: 49rem;
+  margin: 0;
   color: #bdd4e7;
-  line-height: 1.75;
+  font-size: 0.78rem;
+  line-height: 1.6;
 }
 .dashboard-eyebrow {
   margin: 0;
@@ -236,13 +238,13 @@ onMounted(loadDashboard)
   letter-spacing: 0.14em;
 }
 .dashboard-actions {
-  margin-top: 1.4rem;
+  margin-top: 0.8rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.7rem;
 }
 .dashboard-actions a {
-  padding: 0.75rem 1rem;
+  padding: 0.58rem 0.8rem;
   color: #08213a;
   background: #7ad2fb;
   border: 1px solid #7ad2fb;
@@ -257,7 +259,7 @@ onMounted(loadDashboard)
   border-color: #5982a3;
 }
 .dashboard-environment {
-  padding: 1.2rem;
+  padding: 0.85rem;
   background: rgb(4 20 38 / 52%);
   border: 1px solid rgb(117 193 237 / 27%);
   border-radius: 0.8rem;
@@ -269,21 +271,22 @@ onMounted(loadDashboard)
   letter-spacing: 0.13em;
 }
 .dashboard-environment > strong {
-  margin-block: 0.3rem 1.2rem;
+  margin-block: 0.2rem 0.6rem;
   display: block;
   color: #fff;
-  font-size: clamp(2rem, 4vw, 3.8rem);
-  letter-spacing: -0.06em;
+  font-size: clamp(1.45rem, 2.2vw, 2rem);
+  letter-spacing: -0.04em;
 }
 .dashboard-environment dl {
   margin: 0;
   display: grid;
-  gap: 0.6rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
 }
 .dashboard-environment dl > div {
-  padding-top: 0.6rem;
-  display: flex;
-  justify-content: space-between;
+  padding-top: 0.45rem;
+  display: grid;
+  gap: 0.1rem;
   border-top: 1px solid rgb(255 255 255 / 12%);
 }
 .dashboard-environment dt,

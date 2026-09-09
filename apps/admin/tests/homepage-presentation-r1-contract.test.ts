@@ -55,4 +55,14 @@ describe('Website Presentation R1 Admin contract', () => {
     expect(css).toContain('.admin-app:has(.admin-sidebar)')
     expect(css).toContain('grid-template-columns: var(--admin-sidebar-width) minmax(0, 1fr)')
   })
+
+  it('uses a compact module navigator, focused properties and a live preview pane', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/homepage.vue'), 'utf8')
+
+    expect(source).toContain('activeModuleKey')
+    expect(source).toContain('activeModule')
+    expect(source).toContain('homepage-preview-frame')
+    expect(source).toContain('module-navigator')
+    expect(source).toContain('module-properties')
+  })
 })

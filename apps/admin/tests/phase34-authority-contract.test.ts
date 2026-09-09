@@ -89,6 +89,18 @@ describe('phase 3.4 authority admin', () => {
     expect(itemAssignmentIndex).toBeGreaterThan(resetIndex)
   })
 
+  it('shows an explicit detail loading state instead of a misleading empty article form', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('loadingRecordId')
+    expect(source).toContain('正在读取记录')
+    expect(source).toContain(':aria-busy="Boolean(loadingRecordId)"')
+    expect(source).toContain("'record-list__item--selected'")
+  })
+
   it('whitelists editable SEO and GEO fields when reading and saving documents', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'app/components/authority/AuthorityCrud.vue'),

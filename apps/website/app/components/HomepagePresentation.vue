@@ -41,6 +41,14 @@ const aboutParagraphs = computed(() => {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
 })
+const companyFactChips = computed(() =>
+  [
+    { label: labels.value.home.foundedYear, value: props.home.company?.founded_year },
+    { label: labels.value.home.yearsExperience, value: props.home.company?.years_experience },
+    { label: labels.value.home.employees, value: props.home.company?.employee_count_range },
+    { label: labels.value.home.factoryArea, value: props.home.company?.factory_area_sqm },
+  ].filter((fact) => fact.value !== null && fact.value !== undefined && fact.value !== ''),
+)
 
 /** 输入固定模块键；输出当前语言的纯界面标题。 */
 function moduleTitle(key: HomepageModuleKey): string {
@@ -247,10 +255,85 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             </div>
           </div>
 
+          <div v-else-if="module.key === 'materials'" class="presentation-materials">
+            <a
+              v-for="(item, itemIndex) in cardsFor(module.key)"
+              :key="`${item.type}:${item.slug}`"
+              :href="publicHref(item.url)"
+            >
+              <span>{{ String(itemIndex + 1).padStart(2, '0') }}</span>
+              <PublicImage
+                v-if="item.media?.type === 'image'"
+                :media="{ ...item.media, loading: 'lazy' }"
+                :locale="locale"
+                sizes="(max-width: 40rem) 44vw, 18vw"
+              />
+              <div>
+                <h3>{{ item.name }}</h3>
+                <p v-if="item.summary">{{ item.summary }}</p>
+              </div>
+            </a>
+          </div>
+
+          <div v-else-if="module.key === 'special_applications'" class="presentation-applications">
+            <a
+              v-if="cardsFor(module.key)[0]"
+              class="presentation-applications__feature"
+              :href="publicHref(cardsFor(module.key)[0]!.url)"
+            >
+              <PublicImage
+                v-if="cardsFor(module.key)[0]!.media?.type === 'image'"
+                :media="{ ...cardsFor(module.key)[0]!.media!, loading: 'lazy' }"
+                :locale="locale"
+                sizes="(max-width: 48rem) 100vw, 58vw"
+              />
+              <div>
+                <p class="eyebrow">01 / FEATURED DEMO APPLICATION</p>
+                <h3>{{ cardsFor(module.key)[0]!.name }}</h3>
+                <p>{{ cardsFor(module.key)[0]!.summary }}</p>
+              </div>
+            </a>
+            <div class="presentation-applications__list">
+              <a
+                v-for="(item, itemIndex) in cardsFor(module.key).slice(1)"
+                :key="`${item.type}:${item.slug}`"
+                :href="publicHref(item.url)"
+              >
+                <span>{{ String(itemIndex + 2).padStart(2, '0') }}</span>
+                <div>
+                  <h3>{{ item.name }}</h3>
+                  <p v-if="item.summary">{{ item.summary }}</p>
+                </div>
+                <b aria-hidden="true">→</b>
+              </a>
+            </div>
+          </div>
+
+          <ol v-else-if="module.key === 'technologies'" class="presentation-technologies">
+            <li
+              v-for="(item, itemIndex) in cardsFor(module.key)"
+              :key="`${item.type}:${item.slug}`"
+            >
+              <a :href="publicHref(item.url)">
+                <span>{{ String(itemIndex + 1).padStart(2, '0') }}</span>
+                <div>
+                  <h3>{{ item.name }}</h3>
+                  <p v-if="item.summary">{{ item.summary }}</p>
+                </div>
+              </a>
+            </li>
+          </ol>
+
           <div v-else-if="module.key === 'why_junhui'" class="presentation-about">
             <div class="presentation-about__marker" aria-hidden="true">JH</div>
             <div>
               <p v-for="paragraph in aboutParagraphs" :key="paragraph">{{ paragraph }}</p>
+              <dl v-if="companyFactChips.length" class="presentation-about__facts">
+                <div v-for="fact in companyFactChips" :key="fact.label">
+                  <dt>{{ fact.label }}</dt>
+                  <dd>{{ fact.value }}</dd>
+                </div>
+              </dl>
               <a class="presentation-text-link" :href="publicHref(`/${locale}/about/`)">
                 {{ labels.navigation.about }} <span aria-hidden="true">→</span>
               </a>
@@ -643,6 +726,156 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   gap: var(--space-5);
 }
 
+.presentation-materials {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: #c8d8e5;
+  border: 1px solid #c8d8e5;
+}
+.presentation-materials > a {
+  position: relative;
+  min-width: 0;
+  padding: 1rem;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 0.8rem;
+  color: #173651;
+  background: #fff;
+  text-decoration: none;
+}
+.presentation-materials > a > span {
+  color: #147dc4;
+  font-family: var(--font-technical);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+.presentation-materials :deep(img) {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+.presentation-materials h3,
+.presentation-materials p {
+  margin: 0;
+}
+.presentation-materials p {
+  margin-top: 0.35rem;
+  color: #6a7a89;
+  font-size: 0.78rem;
+}
+
+.presentation-applications {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+  gap: 1.5rem;
+}
+.presentation-applications a {
+  color: inherit;
+  text-decoration: none;
+}
+.presentation-applications__feature {
+  position: relative;
+  min-height: 26rem;
+  overflow: hidden;
+  background: #071b31;
+}
+.presentation-applications__feature :deep(.public-image),
+.presentation-applications__feature :deep(img) {
+  width: 100%;
+  height: 100%;
+}
+.presentation-applications__feature :deep(img) {
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  opacity: 0.72;
+}
+.presentation-applications__feature::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 25%, rgb(3 20 37 / 92%));
+  content: '';
+}
+.presentation-applications__feature > div {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 1.5rem;
+  color: #fff;
+}
+.presentation-applications__feature h3 {
+  margin-block: 0.35rem;
+  color: #fff;
+  font-size: 1.6rem;
+}
+.presentation-applications__list {
+  display: grid;
+  align-content: start;
+  border-top: 1px solid #afc3d3;
+}
+.presentation-applications__list a {
+  padding-block: 0.85rem;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  border-bottom: 1px solid #afc3d3;
+}
+.presentation-applications__list span,
+.presentation-applications__list b {
+  color: #147dc4;
+  font-family: var(--font-technical);
+  font-size: 0.7rem;
+}
+.presentation-applications__list h3,
+.presentation-applications__list p {
+  margin: 0;
+}
+.presentation-applications__list p {
+  margin-top: 0.2rem;
+  color: #64778a;
+  font-size: 0.76rem;
+}
+
+.presentation-technologies {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  border-top: 1px solid rgb(151 193 227 / 42%);
+}
+.presentation-technologies li {
+  border-right: 1px solid rgb(151 193 227 / 32%);
+  border-bottom: 1px solid rgb(151 193 227 / 32%);
+}
+.presentation-technologies a {
+  min-height: 12rem;
+  padding: 1.25rem;
+  display: grid;
+  align-content: space-between;
+  gap: 1rem;
+  color: inherit;
+  text-decoration: none;
+}
+.presentation-technologies span {
+  color: #76bff4;
+  font-family: var(--font-technical);
+  font-size: 0.7rem;
+}
+.presentation-technologies h3,
+.presentation-technologies p {
+  margin: 0;
+}
+.presentation-technologies p {
+  margin-top: 0.4rem;
+  color: #9ebbd2;
+  font-size: 0.78rem;
+}
+
 .presentation-factory {
   display: grid;
   gap: var(--space-8);
@@ -775,6 +1008,28 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   color: var(--color-neutral-700);
   font-size: clamp(1rem, 1.5vw, 1.16rem);
 }
+.presentation-about__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #cbdbe7;
+  border: 1px solid #cbdbe7;
+}
+.presentation-about__facts > div {
+  padding: 0.8rem;
+  background: #fff;
+}
+.presentation-about__facts dt {
+  color: #718396;
+  font-size: 0.68rem;
+}
+.presentation-about__facts dd {
+  margin: 0.15rem 0 0;
+  color: #113b5b;
+  font-size: 1rem;
+  font-weight: 800;
+}
 
 .presentation-empty {
   min-height: 7rem;
@@ -864,6 +1119,8 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
 
   .presentation-products,
   .presentation-data-grid,
+  .presentation-materials,
+  .presentation-technologies,
   .presentation-equipment-rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -891,7 +1148,8 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
 
   .presentation-hero__grid,
   .presentation-core,
-  .presentation-about {
+  .presentation-about,
+  .presentation-applications {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -932,6 +1190,8 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
   .presentation-actions,
   .presentation-products,
   .presentation-data-grid,
+  .presentation-materials,
+  .presentation-technologies,
   .presentation-equipment-rail,
   .presentation-empty {
     grid-template-columns: minmax(0, 1fr);

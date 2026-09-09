@@ -5,6 +5,16 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 describe('catalog admin routes', () => {
+  it('replaces the phase placeholder with a searchable Chinese catalog workspace', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/index.vue'), 'utf8')
+
+    expect(source).toContain('catalogModules')
+    expect(source).toContain('moduleSearch')
+    expect(source).toContain('内容目录')
+    expect(source).toContain('result.value.total')
+    expect(source).not.toContain('Phase 3.3 最小模型与发布工作流验证入口')
+  })
+
   it('ships all Structured Core Admin pages', () => {
     const pages = [
       'index',
@@ -150,6 +160,20 @@ describe('catalog admin routes', () => {
     expect(source).toContain("selectedValueType === 'range'")
     expect(source).toContain("selectedValueType === 'boolean'")
     expect(source).toContain("selectedValueType === 'enum'")
+  })
+
+  it('renders readable product specification names, groups, units and type-specific values', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/catalog/products.vue'), 'utf8')
+
+    expect(source).toContain('SpecificationDefinitionItem')
+    expect(source).toContain('SpecificationGroupItem')
+    expect(source).toContain('readableDefinitionLabel')
+    expect(source).toContain('readableGroupLabel')
+    expect(source).toContain('default_unit')
+    expect(source).toContain('value_type')
+    expect(source).toContain('spec-value-card')
+    expect(source).toContain("definition.value_type === 'range'")
+    expect(source).toContain('buildSpecificationValuePayload')
   })
 
   it('supports specification dictionary maintenance and product value clearing', () => {

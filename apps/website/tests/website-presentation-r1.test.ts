@@ -156,4 +156,22 @@ describe('Website Presentation R1 shared renderer', () => {
     expect(nginx).toContain(`sub_filter '\"/_nuxt/' '\"/preview-assets/_nuxt/'`)
     expect(nginx).toContain('proxy_pass $website_preview_upstream')
   })
+
+  it('uses differentiated visual structures for key homepage content families', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/HomepagePresentation.vue'),
+      'utf8',
+    )
+    const about = readFileSync(resolve(process.cwd(), 'app/pages/[lang]/about.vue'), 'utf8')
+
+    expect(source).toContain('presentation-materials')
+    expect(source).toContain('presentation-applications')
+    expect(source).toContain('presentation-technologies')
+    expect(source).toContain('presentation-about__facts')
+    expect(about).toContain('/public/products/${locale.value}')
+    expect(about).toContain('about-page__product-rail')
+    expect(about).toContain('about-page__market-grid')
+    expect(about).toContain('about-page__advantages-grid')
+    expect(about).toContain('about-page__contact-panel')
+  })
 })

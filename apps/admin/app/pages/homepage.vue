@@ -95,6 +95,7 @@ const api = useAuthorityApi()
 const detail = ref<HomepageDetail | null>(null)
 const activeLocaleCode = ref('zh-CN')
 const editableModules = ref<ModuleConfig[]>([])
+const activeModuleKey = ref<ModuleKey>('hero')
 const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
@@ -109,6 +110,12 @@ const activeLanguage = computed(
 const previewUrl = computed(
   // 使用当前后台同源路径，确保主实例与 Demo 各自留在自己的认证边界内。
   () => `/preview/${activeLanguage.value?.locale.slug ?? 'zh-cn'}/`,
+)
+const activeModule = computed(
+  () => editableModules.value.find((module) => module.key === activeModuleKey.value) ?? null,
+)
+const activeModuleIndex = computed(() =>
+  editableModules.value.findIndex((module) => module.key === activeModuleKey.value),
 )
 const hasUnappliedChanges = computed(() => {
   const applied = activeLanguage.value?.layout.applied.modules ?? []
@@ -144,6 +151,9 @@ async function loadHomepage(): Promise<void> {
       activeLocaleCode.value = detail.value.languages[0]?.locale.code ?? 'zh-CN'
     }
     editableModules.value = cloneModules(activeLanguage.value?.layout.draft.modules ?? [])
+    if (!editableModules.value.some((module) => module.key === activeModuleKey.value)) {
+      activeModuleKey.value = editableModules.value[0]?.key ?? 'hero'
+    }
   } catch {
     detail.value = null
     errorMessage.value = '首页配置尚未建立，或当前账号无读取权限。'
@@ -323,79 +333,114 @@ onMounted(loadHomepage)
       </section>
 
       <section class="homepage-workspace">
-        <div class="module-list">
-          <article
+        <!-- 模块清单：只负责选择、排序和状态识别，不再把十四组表单纵向全部展开。 -->
+        <nav class="module-navigator" aria-label="首页模块清单">
+          <header>
+            <div>
+              <p class="admin-eyebrow">MODULES</p>
+              <h2>模块清单</h2>
+            </div>
+            <span>{{ editableModules.filter((module) => module.visible).length }} / 14 显示</span>
+          </header>
+          <div
             v-for="(module, index) in editableModules"
             :key="module.key"
-            class="module-editor"
-            :class="{ 'module-editor--hidden': !module.visible }"
+            :class="{
+              'module-navigator__item--active': activeModuleKey === module.key,
+              'module-navigator__item--hidden': !module.visible,
+            }"
           >
-            <header>
-              <span class="module-order">{{ String(index + 1).padStart(2, '0') }}</span>
-              <div>
-                <h2>{{ moduleLabels[module.key] }}</h2>
-                <p>{{ module.visible ? '普通首页显示' : '普通首页隐藏；完整预览仍显示位置' }}</p>
-              </div>
-              <div class="module-move">
-                <button
-                  type="button"
-                  :disabled="index === 0 || !canEdit"
-                  @click="moveModule(index, -1)"
-                >
-                  上移
-                </button>
-                <button
-                  type="button"
-                  :disabled="index === editableModules.length - 1 || !canEdit"
-                  @click="moveModule(index, 1)"
-                >
-                  下移
-                </button>
-              </div>
-            </header>
-
-            <div class="module-controls">
-              <label class="visibility-control">
-                <input v-model="module.visible" type="checkbox" :disabled="!canEdit" />
-                启用此模块
-              </label>
-              <label>
-                视觉样式
-                <select v-model="module.variant" :disabled="!canEdit">
-                  <option
-                    v-for="variant in variantOptions[module.key]"
-                    :key="variant"
-                    :value="variant"
-                  >
-                    {{ variant }}
-                  </option>
-                </select>
-              </label>
-            </div>
-
-            <fieldset
-              v-if="productReferenceModules.has(module.key)"
-              class="product-reference"
-              data-testid="homepage-product-reference"
+            <button
+              type="button"
+              class="module-navigator__identity"
+              @click="activeModuleKey = module.key"
             >
-              <legend>引用已发布产品（最多 3 款，不改变产品精选状态）</legend>
-              <label v-for="product in activeLanguage?.products ?? []" :key="product.slug">
-                <input
-                  type="checkbox"
-                  :checked="module.product_slugs.includes(product.slug)"
-                  :disabled="
-                    !canEdit ||
-                    (!module.product_slugs.includes(product.slug) &&
-                      module.product_slugs.length >= 3)
-                  "
-                  @change="toggleProduct(module, product.slug)"
-                />
-                <span>{{ product.name }}</span>
-                <small>{{ product.slug }}</small>
-              </label>
-            </fieldset>
-          </article>
-        </div>
+              <span class="module-order">{{ String(index + 1).padStart(2, '0') }}</span>
+              <span>
+                <strong>{{ moduleLabels[module.key] }}</strong>
+                <small>{{ module.visible ? module.variant : '已隐藏' }}</small>
+              </span>
+            </button>
+            <span class="module-navigator__move">
+              <button
+                type="button"
+                aria-label="上移"
+                :disabled="index === 0 || !canEdit"
+                @click.stop="moveModule(index, -1)"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                aria-label="下移"
+                :disabled="index === editableModules.length - 1 || !canEdit"
+                @click.stop="moveModule(index, 1)"
+              >
+                ↓
+              </button>
+            </span>
+          </div>
+        </nav>
+
+        <!-- 属性与预览：只编辑当前模块，并复用真实的服务端认证预览。 -->
+        <section v-if="activeModule" class="module-properties">
+          <header>
+            <div>
+              <p class="admin-eyebrow">PROPERTIES</p>
+              <h2>{{ moduleLabels[activeModule.key] }}</h2>
+            </div>
+            <span>位置 {{ String(activeModuleIndex + 1).padStart(2, '0') }}</span>
+          </header>
+
+          <div class="module-controls">
+            <label class="visibility-control">
+              <input v-model="activeModule.visible" type="checkbox" :disabled="!canEdit" />
+              在普通首页显示
+            </label>
+            <label>
+              视觉样式
+              <select v-model="activeModule.variant" :disabled="!canEdit">
+                <option
+                  v-for="variant in variantOptions[activeModule.key]"
+                  :key="variant"
+                  :value="variant"
+                >
+                  {{ variant }}
+                </option>
+              </select>
+            </label>
+          </div>
+
+          <fieldset
+            v-if="productReferenceModules.has(activeModule.key)"
+            class="product-reference"
+            data-testid="homepage-product-reference"
+          >
+            <legend>引用已发布产品（最多 3 款，不改变产品精选状态）</legend>
+            <label v-for="product in activeLanguage?.products ?? []" :key="product.slug">
+              <input
+                type="checkbox"
+                :checked="activeModule.product_slugs.includes(product.slug)"
+                :disabled="
+                  !canEdit ||
+                  (!activeModule.product_slugs.includes(product.slug) &&
+                    activeModule.product_slugs.length >= 3)
+                "
+                @change="toggleProduct(activeModule, product.slug)"
+              />
+              <span>{{ product.name }}</span>
+              <small>{{ product.slug }}</small>
+            </label>
+          </fieldset>
+
+          <div class="homepage-preview-frame">
+            <header>
+              <span>认证完整布局预览</span>
+              <button type="button" @click="openPreview">新窗口打开</button>
+            </header>
+            <iframe :src="previewUrl" title="首页完整布局预览" loading="lazy" />
+          </div>
+        </section>
 
         <aside class="homepage-actions">
           <p class="admin-eyebrow">当前语言操作</p>
@@ -444,7 +489,7 @@ onMounted(loadHomepage)
 }
 
 .homepage-admin__hero {
-  padding: clamp(1.5rem, 4vw, 3rem);
+  padding: 1.25rem 1.4rem;
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -460,8 +505,15 @@ onMounted(loadHomepage)
   color: #fff;
 }
 
+.homepage-admin__hero h1 {
+  margin-block: 0.25rem 0.35rem;
+  font-size: clamp(1.55rem, 2.4vw, 2.15rem);
+}
+
 .homepage-admin__hero p {
+  margin-block: 0;
   max-width: 52rem;
+  font-size: 0.78rem;
 }
 
 .homepage-admin__hero-actions {
@@ -543,79 +595,122 @@ onMounted(loadHomepage)
 .homepage-workspace {
   margin-top: 1.5rem;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem;
+  grid-template-columns: minmax(16rem, 0.42fr) minmax(26rem, 1fr) 17rem;
   align-items: start;
-  gap: 1.5rem;
-}
-
-.module-list {
-  display: grid;
   gap: 1rem;
 }
 
-.module-editor {
-  padding: 1.25rem;
+.module-navigator,
+.module-properties {
   display: grid;
-  gap: 1rem;
+  align-content: start;
   background: #fff;
   border: 1px solid #d8e1ea;
-  border-left: 4px solid #1881d5;
   border-radius: 0.75rem;
+  overflow: hidden;
 }
-
-.module-editor--hidden {
-  border-left-color: #9aa8b7;
-  background: #f6f8fa;
+.module-navigator > header,
+.module-properties > header {
+  padding: 1rem;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #f6f9fb;
+  border-bottom: 1px solid #e0e8ef;
 }
-
-.module-editor > header {
+.module-navigator h2,
+.module-properties h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.module-navigator > header > span,
+.module-properties > header > span {
+  color: #65778a;
+  font-size: 0.7rem;
+}
+.module-navigator > div {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1rem;
+  border-bottom: 1px solid #edf1f5;
 }
-
+.module-navigator > div:last-child {
+  border-bottom: 0;
+}
+.module-navigator > div.module-navigator__item--active {
+  background: #eaf5fd;
+  box-shadow: inset 3px 0 #1484ce;
+}
+.module-navigator > div.module-navigator__item--hidden {
+  background: #f7f8f9;
+  opacity: 0.72;
+}
+.module-navigator__identity {
+  min-width: 0;
+  padding: 0.62rem 0.45rem 0.62rem 0.8rem;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+.module-navigator__identity > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+.module-navigator__identity strong,
+.module-navigator__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.module-navigator__identity strong {
+  color: #173651;
+  font-size: 0.75rem;
+}
+.module-navigator__identity small {
+  color: #718599;
+  font-size: 0.64rem;
+}
 .module-order {
   color: #0a5da8;
   font-family: Consolas, monospace;
+  font-size: 0.72rem;
   font-weight: 800;
 }
-
-.module-editor h2 {
-  margin: 0;
-  font-size: 1.08rem;
-}
-
-.module-editor p {
-  margin: 0.2rem 0 0;
-  color: #65778a;
-  font-size: 0.84rem;
-}
-
-.module-move,
-.module-controls {
+.module-navigator__move {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+  padding-right: 0.45rem;
+  gap: 0.2rem;
 }
-
-.module-move button {
-  padding: 0.4rem 0.65rem;
+.module-navigator__move button {
+  width: 1.65rem;
+  min-height: 1.65rem;
+  padding: 0;
   color: #24415f;
   background: #edf3f8;
   border: 0;
-  border-radius: 0.35rem;
+  border-radius: 0.3rem;
 }
-
+.module-properties {
+  padding-bottom: 1rem;
+  gap: 1rem;
+}
 .module-controls {
-  padding-top: 1rem;
-  border-top: 1px solid #e6edf3;
+  padding-inline: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
 }
-
 .module-controls label {
-  min-width: 13rem;
   display: grid;
   gap: 0.35rem;
+  color: #40576d;
+  font-size: 0.72rem;
 }
 
 .visibility-control {
@@ -630,7 +725,7 @@ onMounted(loadHomepage)
 }
 
 .product-reference {
-  margin: 0;
+  margin: 0 1rem;
   padding: 1rem;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -659,6 +754,36 @@ onMounted(loadHomepage)
 .product-reference small {
   grid-column: 2;
   color: #65778a;
+}
+
+.homepage-preview-frame {
+  margin-inline: 1rem;
+  overflow: hidden;
+  background: #07182b;
+  border: 1px solid #b8c9d7;
+  border-radius: 0.65rem;
+}
+.homepage-preview-frame > header {
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #d8eafa;
+  font-size: 0.68rem;
+}
+.homepage-preview-frame button {
+  padding: 0.35rem 0.55rem;
+  color: #0a4f86;
+  background: #e9f6ff;
+  border: 0;
+  border-radius: 0.3rem;
+}
+.homepage-preview-frame iframe {
+  width: 100%;
+  height: 22rem;
+  display: block;
+  background: #fff;
+  border: 0;
 }
 
 .homepage-actions {
@@ -748,13 +873,9 @@ onMounted(loadHomepage)
     flex-wrap: wrap;
   }
 
-  .module-editor > header,
+  .module-controls,
   .product-reference {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .module-order {
-    display: none;
   }
 }
 </style>

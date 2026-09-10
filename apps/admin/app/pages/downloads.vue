@@ -1,7 +1,11 @@
 <!-- 页面用途：以文件名和双语字段表单维护公开下载资源，不要求编辑JSON或UUID。 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { ENTITY_STATUS_LABELS, labelFrom } from '~/utils/adminZhCn'
+import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  DOWNLOAD_RESOURCE_TYPE_LABELS,
+  ENTITY_STATUS_LABELS,
+  labelFrom,
+} from '~/utils/adminZhCn'
 
 interface LocaleItem {
   id: string
@@ -34,6 +38,7 @@ const translations = ref<TranslationDraft[]>([])
 const errorMessage = ref('')
 const loading = ref(true)
 const successMessage = ref('')
+const resourceTypeOptions = Object.entries(DOWNLOAD_RESOURCE_TYPE_LABELS)
 const form = reactive({
   slug: '',
   resource_type: 'document',
@@ -44,6 +49,13 @@ const form = reactive({
   requires_form: false,
   sort_order: 0,
 })
+
+const selectedItem = computed(() =>
+  items.value.find((item) => String(item.id) === editingId.value),
+)
+const editorTitle = computed(() =>
+  selectedItem.value ? displayTitle(selectedItem.value) : '新建资料',
+)
 
 function reset(): void {
   editingId.value = null
@@ -89,6 +101,7 @@ async function load(): Promise<void> {
 }
 
 async function save(): Promise<void> {
+  if (loading.value) return
   const body = {
     ...form,
     version_label: form.version_label || null,
@@ -188,12 +201,29 @@ onMounted(load)
           <span>{{ labelFrom(ENTITY_STATUS_LABELS, item.status) }}</span>
         </button>
       </section>
-      <form class="editor-form" @submit.prevent="save">
+      <form class="editor-form" :aria-busy="loading" @submit.prevent="save">
+        <div
+          class="downloads-editor-state"
+          :class="{ 'downloads-editor-state--loading': loading }"
+          role="status"
+        >
+          <strong v-if="loading">正在加载下载资料…</strong>
+          <strong v-else-if="editingId">正在编辑：{{ editorTitle }}</strong>
+          <strong v-else>新建资料</strong>
+          <span v-if="!loading && editingId">已从下载资源接口回读，可保存后再次刷新确认。</span>
+          <span v-else-if="!loading">请选择左侧已有记录，或填写新资料。</span>
+        </div>
         <fieldset>
           <legend>基本信息</legend>
           <div class="downloads-grid">
             <label>Slug（路径标识）<input v-model="form.slug" required /></label>
-            <label>资料类型<input v-model="form.resource_type" /></label>
+            <label
+              >资料类型<select v-model="form.resource_type">
+                <option v-for="[code, label] in resourceTypeOptions" :key="code" :value="code">
+                  {{ label }}
+                </option>
+              </select></label
+            >
             <label
               >公开文件<select v-model="form.media_asset_id" required>
                 <option value="" disabled>选择PDF或文档</option>
@@ -270,6 +300,38 @@ onMounted(load)
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
+}
+.downloads-editor-state {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  display: grid;
+  gap: 0.25rem;
+  color: #24455f;
+  background: #eef7fd;
+  border: 1px solid #c7e4f7;
+  border-radius: 0.6rem;
+}
+.downloads-editor-state span {
+  color: #647a8d;
+  font-size: 0.76rem;
+}
+.downloads-editor-state--loading {
+  color: #0b5f9f;
+  background: #f4f8fb;
+}
+.downloads-page .record-list > button {
+  color: #193650;
+  background: #fff;
+  border: 1px solid #dce5ed;
+}
+.downloads-page .record-list > button:hover,
+.downloads-page .record-list > button.active {
+  color: #073e6c;
+  background: #e7f4ff;
+  border-color: #75bce8;
+}
+.downloads-page .record-list > button small {
+  color: #667d91;
 }
 @media (max-width: 54rem) {
   .downloads-layout,

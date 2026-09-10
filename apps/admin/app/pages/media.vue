@@ -1,6 +1,7 @@
 <!-- 页面用途：公开媒体资源库，以可读文件名维护上传、预览和双语元数据。 -->
 <script setup lang="ts">
-import { labelFrom } from '~/utils/adminZhCn'
+import { computed } from 'vue'
+import { MEDIA_USAGE_ROLE_LABELS, labelFrom } from '~/utils/adminZhCn'
 
 useHead({
   title: '媒体资源库',
@@ -32,6 +33,10 @@ interface MediaTranslation {
 interface MediaDetail extends MediaItem {
   translations: MediaTranslation[]
 }
+interface MediaUsage {
+  location: string
+  role: string
+}
 
 const items = ref<MediaItem[]>([])
 const locales = ref<LocaleItem[]>([])
@@ -43,9 +48,23 @@ const message = ref('')
 const errorMessage = ref('')
 const loading = ref(true)
 const operationMode = ref<'metadata' | 'replace' | 'upload'>('metadata')
+const mediaSearch = ref('')
+const mediaTypeFilter = ref('')
+const usage = ref<MediaUsage[]>([])
+const loadingUsage = ref(false)
+const usageError = ref('')
 const translations = reactive({ alt_text: '', title: '', caption: '' })
 
 const selectedItem = computed(() => items.value.find((item) => item.id === selectedAsset.value))
+const filteredItems = computed(() => {
+  const keyword = mediaSearch.value.trim().toLocaleLowerCase('zh-CN')
+  return items.value.filter((item) => {
+    const matchesType = !mediaTypeFilter.value || item.type === mediaTypeFilter.value
+    const matchesSearch =
+      !keyword || item.filename.toLocaleLowerCase('zh-CN').includes(keyword)
+    return matchesType && matchesSearch
+  })
+})
 
 /** 读取当前媒体和语言的已保存元数据，避免选择后显示空白表单。 */
 async function loadTranslation(): Promise<void> {
@@ -63,6 +82,24 @@ async function loadTranslation(): Promise<void> {
   }
 }
 
+/** 读取媒体在公开内容中的实际引用位置；不返回私有 RFQ 附件关系。 */
+async function loadUsage(): Promise<void> {
+  if (!selectedAsset.value) {
+    usage.value = []
+    return
+  }
+  loadingUsage.value = true
+  usageError.value = ''
+  try {
+    usage.value = await api.detail<MediaUsage[]>(`/media/${selectedAsset.value}/usage`)
+  } catch {
+    usage.value = []
+    usageError.value = '暂时无法读取使用位置。'
+  } finally {
+    loadingUsage.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   errorMessage.value = ''
@@ -71,7 +108,7 @@ async function load() {
     locales.value = await api.detail<LocaleItem[]>('/locales')
     selectedAsset.value ||= items.value[0]?.id || ''
     selectedLocale.value ||= locales.value[0]?.id || ''
-    await loadTranslation()
+    await Promise.all([loadTranslation(), loadUsage()])
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '无法读取媒体资源。'
   } finally {
@@ -105,7 +142,10 @@ async function saveTranslation() {
   await loadTranslation()
   message.value = '已保存，并从媒体详情接口重新读取。'
 }
-watch([selectedAsset, selectedLocale], loadTranslation)
+watch(selectedAsset, async () => {
+  await Promise.all([loadTranslation(), loadUsage()])
+})
+watch(selectedLocale, loadTranslation)
 onMounted(load)
 </script>
 <template>
@@ -117,6 +157,20 @@ onMounted(load)
         <span>选择已有记录即可回填双语 Alt、标题与图注；文件本身不会被替换。</span>
       </div>
     </header>
+    <div class="media-filters" aria-label="媒体筛选">
+      <label
+        >搜索媒体<input v-model="mediaSearch" type="search" placeholder="按文件名搜索"
+      /></label>
+      <label
+        >媒体类型<select v-model="mediaTypeFilter">
+          <option value="">全部类型</option>
+          <option value="image">图片</option>
+          <option value="video">视频</option>
+          <option value="document">文档</option>
+        </select></label
+      >
+      <span>当前显示 {{ filteredItems.length }} / {{ items.length }} 项</span>
+    </div>
     <nav class="operation-tabs" aria-label="媒体操作类型">
       <button
         type="button"
@@ -209,10 +263,21 @@ onMounted(load)
         </label>
         <button type="submit" :disabled="loadingDetail">保存元数据</button>
         <p v-if="message" role="status">{{ message }}</p>
+        <section class="media-usage" aria-label="使用位置">
+          <h3>使用位置</h3>
+          <p v-if="loadingUsage" role="status">正在读取使用位置…</p>
+          <p v-else-if="usageError" class="error-message" role="alert">{{ usageError }}</p>
+          <p v-else-if="!usage.length">当前没有已登记的公开引用。</p>
+          <ul v-else>
+            <li v-for="item in usage" :key="`${item.location}-${item.role}`">
+              {{ item.location }} · {{ labelFrom(MEDIA_USAGE_ROLE_LABELS, item.role) }}
+            </li>
+          </ul>
+        </section>
       </form>
       <div class="media-library-grid">
         <button
-          v-for="item in items"
+          v-for="item in filteredItems"
           :key="item.id"
           type="button"
           :class="{ 'media-library-card--selected': item.id === selectedAsset }"
@@ -274,6 +339,27 @@ onMounted(load)
   display: block;
   margin-top: 0.45rem;
   font-size: 0.78rem;
+}
+.media-filters {
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  background: #fff;
+  border: 1px solid #dce4ec;
+  border-radius: 0.75rem;
+}
+.media-filters label {
+  min-width: 13rem;
+  display: grid;
+  gap: 0.3rem;
+  color: #40566c;
+  font-size: 0.74rem;
+}
+.media-filters > span {
+  color: #718293;
+  font-size: 0.74rem;
 }
 .media-page__heading form {
   display: flex;
@@ -353,6 +439,24 @@ onMounted(load)
   padding: 0.55rem 0.7rem;
   color: #0a5e9e;
   background: #eaf6ff;
+}
+.media-usage {
+  padding-top: 0.75rem;
+  border-top: 1px solid #e2e9ef;
+}
+.media-usage h3,
+.media-usage p {
+  margin: 0;
+}
+.media-usage h3 {
+  color: #2a4d69;
+  font-size: 0.82rem;
+}
+.media-usage ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1rem;
+  color: #5f7588;
+  font-size: 0.74rem;
 }
 .media-library-grid {
   display: grid;

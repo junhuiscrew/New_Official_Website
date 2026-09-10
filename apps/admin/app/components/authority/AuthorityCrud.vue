@@ -860,12 +860,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             @click="editItem(item)"
           >
             <span class="authority-record-list__heading">
-              <strong>{{ authorityLabel(item) }}</strong>
+              <span class="authority-record-list__primary">
+                <strong>{{ authorityLabel(item) }}</strong>
+                <small v-if="item.display_title_en && item.display_title_en !== item.display_title">
+                  {{ item.display_title_en }}
+                </small>
+              </span>
               <em>{{ labelFrom(ENTITY_STATUS_LABELS, item.status) }}</em>
             </span>
-            <small v-if="item.display_title_en && item.display_title_en !== item.display_title">
-              {{ item.display_title_en }}
-            </small>
             <span class="authority-record-list__meta">
               <code>{{ item.slug || `FAQ-${item.sort_order + 1}` }}</code>
               <span>{{ item.translation_count || 0 }}/{{ locales.length }} 种语言</span>
@@ -1100,7 +1102,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         : 5
                   "
                 />
-                <small>{{ field }}</small>
+                <details class="field-technical-code">
+                  <summary>技术字段</summary>
+                  <code>{{ field }}</code>
+                </details>
                 <section
                   v-if="field === 'body_markdown'"
                   class="markdown-preview"
@@ -1464,7 +1469,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               type="button"
               @click="publishContent"
             >
-              Publish answer</button
+              发布答案</button
             ><button
               v-if="resource !== 'faqs' && activeLifecycle.publication?.status === 'archived'"
               type="button"
@@ -1612,12 +1617,34 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 .authority-record-list > button {
   padding: 0.75rem;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.35rem;
   text-align: left;
 }
 .authority-record-list__heading strong {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.authority-record-list__heading {
+  min-width: 0;
+}
+.authority-record-list__primary {
+  min-width: 0;
+  width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 0.2rem;
+}
+.authority-record-list__primary small {
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .authority-record-list__heading em {
   padding: 0.18rem 0.45rem;
@@ -1638,6 +1665,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
   overflow: hidden;
   max-width: 65%;
   text-overflow: ellipsis;
+}
+.field-technical-code {
+  color: #8191a0;
+  font-size: 0.68rem;
+}
+.field-technical-code summary {
+  cursor: pointer;
+}
+.field-technical-code code {
+  color: #657889;
 }
 .authority-state,
 .authority-empty-editor {

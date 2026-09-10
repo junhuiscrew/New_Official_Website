@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { adminMeta } from '../admin-config'
 import {
+  HIDDEN_REASON_LABELS,
   IMPLEMENTATION_STATUS_LABELS,
   NAVIGATION_STATUS_LABELS,
   labelFrom,
@@ -51,6 +52,13 @@ const names: Record<string, string> = {
   search: '站内搜索',
   privacy: '隐私说明',
   contact: '联系我们',
+}
+
+/** 输入服务端隐藏原因代码；输出员工可读中文，不把未知代码直接放进主界面。 */
+function hiddenReasonLabel(value: string | null): string {
+  if (!value) return '—'
+  const mapped = labelFrom(HIDDEN_REASON_LABELS, value, '')
+  return HIDDEN_REASON_LABELS[value] ? mapped : '暂未配置中文说明'
 }
 
 useHead({
@@ -108,8 +116,8 @@ onMounted(loadOverview)
         <thead>
           <tr>
             <th>栏目 / 模块</th>
-            <th>实际记录</th>
-            <th>公开可见</th>
+            <th>实际记录数</th>
+            <th>公开可见数</th>
             <th>导航状态</th>
             <th>实现状态</th>
             <th>地址与原因</th>
@@ -117,11 +125,11 @@ onMounted(loadOverview)
         </thead>
         <tbody>
           <tr v-for="item in overview.items" :key="item.key">
-            <th scope="row">{{ names[item.key] || item.key }}</th>
-            <td>{{ item.actual_count }}</td>
+            <th scope="row">{{ names[item.key] || '暂未配置栏目名称' }}</th>
+            <td>{{ item.actual_count }} 项</td>
             <td>
               <span :class="item.public_count ? 'status status--ready' : 'status status--empty'">
-                {{ item.public_count }}
+                {{ item.public_count }} 项
               </span>
             </td>
             <td>
@@ -135,7 +143,7 @@ onMounted(loadOverview)
                 <a :href="`${runtimeConfig.public.websiteUrl}${item.frontend_url}`">前台</a>
                 <a v-if="item.admin_url" :href="item.admin_url">后台</a>
               </div>
-              <small v-if="item.hidden_reason">{{ item.hidden_reason }}</small>
+              <small v-if="item.hidden_reason">{{ hiddenReasonLabel(item.hidden_reason) }}</small>
             </td>
           </tr>
         </tbody>

@@ -139,6 +139,9 @@ export const NAVIGATION_STATUS_LABELS: Record<string, string> = {
   not_primary_navigation: '不属于主导航',
   not_in_primary_registry: '未登记到主导航',
   route_only: '仅路由可访问',
+  utility_navigation: '工具入口（不进入主导航）',
+  footer_when_published: '发布后显示在页脚',
+  footer_or_rfq_entry: '仅在页脚或询价入口出现',
 }
 
 export const IMPLEMENTATION_STATUS_LABELS: Record<string, string> = {
@@ -148,6 +151,40 @@ export const IMPLEMENTATION_STATUS_LABELS: Record<string, string> = {
   admin_only: '仅后台已接通',
   route_only: '仅路由已实现',
   missing: '尚未实现',
+  public_search_service: '站内搜索服务',
+  private_draft_current_empty: '当前私有草稿（未设置公开版本）',
+  contact_entry_only: '仅作为联系入口使用',
+}
+
+export const HIDDEN_REASON_LABELS: Record<string, string> = {
+  utility_navigation: '工具入口暂不进入主导航',
+  public_search_service: '站内搜索服务入口',
+  footer_when_published: '发布后显示在页脚',
+  private_draft_current_empty: '当前为私有草稿，暂未设置公开版本',
+  footer_or_rfq_entry: '仅在页脚或询价入口出现',
+  contact_entry_only: '仅作为联系入口使用',
+  正式政策未批准发布: '正式政策尚未批准发布',
+}
+
+export const DOWNLOAD_RESOURCE_TYPE_LABELS: Record<string, string> = {
+  document: '文档',
+  catalog: '产品目录',
+  datasheet: '数据表',
+  manual: '使用手册',
+  certificate: '证书文件',
+  video: '视频资料',
+  other: '其他资料',
+}
+
+export const MEDIA_USAGE_ROLE_LABELS: Record<string, string> = {
+  primary: '主图',
+  gallery: '图库',
+  video: '视频',
+  video_poster: '视频封面',
+  download: '下载资料',
+  cover: '封面',
+  hero: '首页主视觉',
+  profile: '公开头像',
 }
 
 /**

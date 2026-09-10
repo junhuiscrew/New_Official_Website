@@ -1,5 +1,6 @@
 <!-- 页面用途：以中文分组矩阵只读展示角色权限，原权限代码仅作为技术详情。 -->
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { ROLE_NAME_LABELS, permissionPresentation } from '~/utils/adminZhCn'
 
 interface RoleItem {
@@ -8,12 +9,30 @@ interface RoleItem {
   display_name: string
   permissions: string[]
 }
-const { apiBase } = useAuth()
+const { apiBase, currentUser } = useAuth()
+const roleSearch = ref('')
 const { data, error, status } = await useFetch<{ data: RoleItem[] }>('/rbac/roles', {
   baseURL: apiBase,
   credentials: 'include',
   server: false,
 })
+const filteredRoles = computed(() => {
+  const keyword = roleSearch.value.trim().toLocaleLowerCase('zh-CN')
+  if (!keyword) return data.value?.data || []
+  return (data.value?.data || []).filter((role) => {
+    const searchable = [
+      role.name,
+      role.display_name,
+      ROLE_NAME_LABELS[role.name],
+      ...role.permissions.flatMap((code) => {
+        const presentation = permissionPresentation(code)
+        return [code, presentation.resourceLabel, presentation.actionLabel]
+      }),
+    ]
+    return searchable.some((value) => value?.toLocaleLowerCase('zh-CN').includes(keyword))
+  })
+})
+const canManageRoles = computed(() => currentUser.value?.permissions.includes('role.manage') ?? false)
 
 /** 输入角色；输出按中文业务资源分组的权限矩阵。 */
 function groupedPermissions(role: RoleItem): Array<{
@@ -46,8 +65,21 @@ function groupedPermissions(role: RoleItem): Array<{
     <p v-else-if="error" class="error-message" role="alert">
       无法读取角色权限，请检查当前账号权限。
     </p>
-    <section v-else-if="data?.data?.length" class="role-grid" aria-label="权限分组">
-      <article v-for="role in data.data" :key="role.id">
+    <template v-else>
+      <section class="role-management" aria-label="角色权限管理能力">
+        <label>
+          搜索角色或权限
+          <input v-model="roleSearch" type="search" placeholder="输入中文名称、权限或系统代码" />
+        </label>
+        <p v-if="canManageRoles">
+          角色权限管理：当前账号具备管理权限，可通过既有接口修改；本轮不修改系统角色。
+        </p>
+        <p v-else>
+          角色权限管理：当前账号仅可查看，缺少 role.manage；修改入口不开放。
+        </p>
+      </section>
+      <section v-if="filteredRoles.length" class="role-grid" aria-label="权限分组">
+      <article v-for="role in filteredRoles" :key="role.id">
         <header>
           <h2>
             {{ ROLE_NAME_LABELS[role.name] || role.display_name || role.name }}
@@ -75,11 +107,12 @@ function groupedPermissions(role: RoleItem): Array<{
           </ul>
         </details>
       </article>
-    </section>
-    <section v-else class="empty-state">
-      <h2>暂无角色</h2>
-      <p>系统尚未返回可查看的角色。</p>
-    </section>
+      </section>
+      <section v-else class="empty-state">
+        <h2>{{ roleSearch ? '没有匹配的角色' : '暂无角色' }}</h2>
+        <p>{{ roleSearch ? '请更换搜索词。' : '系统尚未返回可查看的角色。' }}</p>
+      </section>
+    </template>
   </main>
 </template>
 
@@ -101,6 +134,26 @@ function groupedPermissions(role: RoleItem): Array<{
 }
 .roles-page > header span {
   color: #687b8e;
+}
+.role-management {
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.45rem;
+  background: #f3f8fc;
+  border: 1px solid #dce8f0;
+  border-radius: 0.75rem;
+}
+.role-management label {
+  max-width: 34rem;
+  display: grid;
+  gap: 0.3rem;
+  color: #3e5870;
+  font-size: 0.76rem;
+}
+.role-management p {
+  margin: 0;
+  color: #5e7487;
+  font-size: 0.75rem;
 }
 .role-grid {
   display: grid;

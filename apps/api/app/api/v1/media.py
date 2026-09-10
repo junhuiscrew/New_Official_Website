@@ -13,9 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
 from app.modules.audit.service import write_audit_log
+from app.modules.authority.models import AuthorExpert, CaseStudy, KnowledgeArticle
+from app.modules.catalog.models import Product, ProductCategory
+from app.modules.company.models import (
+    Certificate,
+    CompanyProfile,
+    Equipment,
+    Exhibition,
+    Honor,
+    ManufacturingCapability,
+    Patent,
+)
+from app.modules.demo.models import ContentMediaLink
 from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.localization.models import Locale
-from app.modules.media.models import MediaAsset, MediaAssetTranslation
+from app.modules.media.models import DownloadResource, MediaAsset, MediaAssetTranslation
 from app.modules.media.services import refresh_public_image_dimensions, validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 from app.modules.users.models import User
@@ -96,6 +108,111 @@ async def list_media(
         ).all()
     )
     return success_response([_public_dto(asset) for asset in assets])
+
+
+@router.get("/{asset_id}/usage", response_model=ApiResponse[list[dict[str, str]]])
+async def get_media_usage(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("media.read")),
+) -> ApiResponse[list[dict[str, str]]]:
+    """
+    读取公开媒体在后台内容中的实际引用位置。
+
+    输入：asset_id，媒体资产 UUID；session，数据库会话；_user，具备 media.read 的用户。
+    输出：ApiResponse[list[dict[str, str]]]，仅包含中文位置和用途，不返回实体 UUID、私有 RFQ 关系或对象存储凭据。
+    """
+    from app.core.exceptions.handlers import AppException
+
+    asset = await session.get(MediaAsset, asset_id)
+    if asset is None or asset.visibility != "public":
+        raise AppException(404, "media_not_found", "公开媒体不存在")
+
+    usage_rows: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_usage(location: str, role: str) -> None:
+        """追加去重后的公开引用位置，避免一项关系重复污染后台展示。"""
+        base_location = location.split("（", 1)[0]
+        key = (base_location, role)
+        if key not in seen:
+            seen.add(key)
+            usage_rows.append({"location": location, "role": role})
+
+    owner_labels = {
+        "company_profile": "企业资料",
+        "product_category": "产品分类",
+        "product": "产品",
+        "material": "材料",
+        "technology": "技术工艺",
+        "application": "应用场景",
+        "solution": "解决方案",
+        "case_study": "客户案例",
+        "knowledge_article": "知识文章",
+        "faq": "常见问题",
+        "author_expert": "作者与专家",
+        "manufacturing_capability": "制造能力",
+        "equipment": "设备",
+        "certificate": "证书",
+        "patent": "专利",
+        "exhibition": "展会",
+        "download_resource": "下载资料",
+    }
+    links = list(
+        (
+            await session.scalars(
+                select(ContentMediaLink).where(ContentMediaLink.media_asset_id == asset.id)
+            )
+        ).all()
+    )
+    for link in links:
+        add_usage(owner_labels.get(link.owner_type, "公开内容"), link.role)
+
+    download_count = len(
+        list(
+            (
+                await session.scalars(
+                    select(DownloadResource).where(DownloadResource.media_asset_id == asset.id)
+                )
+            ).all()
+        )
+    )
+    if download_count:
+        add_usage(f"下载资料（{download_count}条）", "download")
+
+    async def add_fk_usage(model: object, field_name: str, location: str, role: str) -> None:
+        """按公开实体的媒体外键补充引用位置，不读取实体正文或私有字段。"""
+        column = getattr(model, field_name)
+        count = len(
+            list(
+                (
+                    await session.scalars(
+                        select(model).where(column == asset.id)  # type: ignore[arg-type]
+                    )
+                ).all()
+            )
+        )
+        if count:
+            add_usage(f"{location}（{count}条）", role)
+
+    for model, field_name, location, role in (
+        (CompanyProfile, "logo_media_id", "企业 Logo", "primary"),
+        (CompanyProfile, "primary_factory_media_id", "企业工厂主图", "primary"),
+        (ProductCategory, "cover_media_id", "产品分类", "cover"),
+        (Product, "primary_media_id", "产品", "primary"),
+        (CaseStudy, "primary_media_id", "客户案例", "primary"),
+        (KnowledgeArticle, "primary_media_id", "知识文章", "primary"),
+        (AuthorExpert, "profile_media_id", "作者头像", "profile"),
+        (ManufacturingCapability, "primary_media_id", "制造能力", "primary"),
+        (Equipment, "primary_media_id", "设备", "primary"),
+        (Certificate, "public_file_media_id", "证书文件", "download"),
+        (Patent, "public_file_media_id", "专利文件", "download"),
+        (Honor, "primary_media_id", "荣誉", "primary"),
+        (Exhibition, "primary_media_id", "展会", "primary"),
+    ):
+        await add_fk_usage(model, field_name, location, role)
+
+    return success_response(usage_rows)
 
 
 @router.get("/{asset_id}", response_model=ApiResponse[dict[str, object]])

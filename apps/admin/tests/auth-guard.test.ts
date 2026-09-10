@@ -1,7 +1,11 @@
 // 测试用途：约束 Admin Route Guard 只承担 UX，按 API 返回权限决定路由。
 import { describe, expect, it } from 'vitest'
 
-import { decideAdminRouteAccess, shouldAttemptSessionRefresh } from '../app/auth-policy'
+import {
+  decideAdminRouteAccess,
+  shouldAttemptSessionRefresh,
+  shouldRetryAuthenticatedRequest,
+} from '../app/auth-policy'
 
 describe('admin route guard policy', () => {
   it('allows the login page without a session', () => {
@@ -30,5 +34,12 @@ describe('admin route guard policy', () => {
     expect(shouldAttemptSessionRefresh(401, false)).toBe(true)
     expect(shouldAttemptSessionRefresh(401, true)).toBe(false)
     expect(shouldAttemptSessionRefresh(403, false)).toBe(false)
+  })
+
+  it('retries an authenticated API request only once after a browser 401', () => {
+    expect(shouldRetryAuthenticatedRequest(401, false, false)).toBe(true)
+    expect(shouldRetryAuthenticatedRequest(401, true, false)).toBe(false)
+    expect(shouldRetryAuthenticatedRequest(401, false, true)).toBe(false)
+    expect(shouldRetryAuthenticatedRequest(403, false, false)).toBe(false)
   })
 })

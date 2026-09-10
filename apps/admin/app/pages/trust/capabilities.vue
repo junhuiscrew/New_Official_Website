@@ -1,6 +1,9 @@
 <!-- 页面用途：制造能力真实 CRUD。 -->
 <script setup lang="ts">
-useHead({ title: 'Capabilities', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+useHead({
+  title: '制造能力',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
 useAuthorityApi()
 </script>
-<template><TrustCrud title="Manufacturing Capabilities" resource="capabilities" /></template>
+<template><TrustCrud title="制造能力" resource="capabilities" /></template>

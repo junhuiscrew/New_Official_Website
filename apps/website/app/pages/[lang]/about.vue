@@ -23,6 +23,8 @@ const route = useRoute()
 const api = useApi()
 const locale = computed<LocaleSlug>(() => normalizeLocale(route.params.lang))
 const labels = computed(() => ui[locale.value])
+const runtimeConfig = useRuntimeConfig()
+const demoMode = computed(() => Boolean(runtimeConfig.public.demoMode))
 const requestKey = computed(() => `about:${locale.value}`)
 const { data: response, error } = await useAsyncData(requestKey, () =>
   api<Envelope<PublicCompanyProfileDto>>(`/public/company-profile/${locale.value}`),
@@ -46,10 +48,22 @@ const aboutProducts = computed(() => productResponse.value?.data.items ?? [])
 const companyFacts = computed(() =>
   [
     { label: labels.value.home.foundedYear, value: page.value.founded_year },
-    { label: labels.value.home.yearsExperience, value: page.value.years_experience },
-    { label: labels.value.home.employees, value: page.value.employee_count_range },
-    { label: labels.value.home.factoryArea, value: page.value.factory_area_sqm },
-    { label: labels.value.home.annualCapacity, value: page.value.annual_capacity_text },
+    {
+      label: labels.value.home.yearsExperience,
+      value: page.value.years_experience,
+    },
+    {
+      label: labels.value.home.employees,
+      value: page.value.employee_count_range,
+    },
+    {
+      label: labels.value.home.factoryArea,
+      value: page.value.factory_area_sqm,
+    },
+    {
+      label: labels.value.home.annualCapacity,
+      value: page.value.annual_capacity_text,
+    },
   ].filter((fact) => fact.value !== null && fact.value !== ''),
 )
 const hasContact = computed(() =>
@@ -79,7 +93,12 @@ useHead(() => ({
       href: alternate.url,
     })),
   ],
-  script: [{ type: 'application/ld+json', innerHTML: serializeJsonLd(page.value.schema) }],
+  script: [
+    {
+      type: 'application/ld+json',
+      innerHTML: serializeJsonLd(page.value.schema),
+    },
+  ],
 }))
 </script>
 
@@ -104,7 +123,7 @@ useHead(() => ({
 
     <article class="public-container about-page__content">
       <section v-if="page.full_intro || page.mission" class="about-page__overview">
-        <p class="about-page__section-index">01 / COMPANY PROFILE</p>
+        <p class="about-page__section-index">01 / {{ labels.presentation.companyProfileLabel }}</p>
         <h2>{{ labels.trust.companyOverview }}</h2>
         <p v-if="page.full_intro">{{ page.full_intro }}</p>
         <p v-if="page.mission">{{ page.mission }}</p>
@@ -127,7 +146,7 @@ useHead(() => ({
       </section>
 
       <section v-if="companyFacts.length || page.export_markets?.length" class="about-page__facts">
-        <p class="about-page__section-index">02 / VERIFIED DATA</p>
+        <p class="about-page__section-index">02 / {{ labels.presentation.verifiedDataLabel }}</p>
         <h2>{{ labels.trust.companyFacts }}</h2>
         <dl v-if="companyFacts.length">
           <div v-for="fact in companyFacts" :key="fact.label">
@@ -137,7 +156,7 @@ useHead(() => ({
         </dl>
         <div v-if="page.export_markets?.length" class="about-page__market-panel">
           <div>
-            <p>DEMO / MARKET DIRECTORY</p>
+            <p>{{ demoMode ? 'DEMO / ' : '' }}{{ labels.presentation.marketDirectoryLabel }}</p>
             <h3>{{ labels.home.exportMarkets }}</h3>
           </div>
           <ul class="about-page__market-grid">
@@ -150,7 +169,9 @@ useHead(() => ({
       </section>
 
       <section v-if="page.advantages?.length" class="about-page__advantages">
-        <p class="about-page__section-index">03 / WORKING PRINCIPLES</p>
+        <p class="about-page__section-index">
+          03 / {{ labels.presentation.workingPrinciplesLabel }}
+        </p>
         <h2>{{ labels.trust.advantages }}</h2>
         <ol class="about-page__advantages-grid">
           <li v-for="(advantage, index) in page.advantages" :key="advantage">
@@ -165,7 +186,7 @@ useHead(() => ({
       <section v-if="hasContact" class="about-page__contact">
         <div class="about-page__contact-panel">
           <div>
-            <p class="about-page__section-index">04 / CONTACT</p>
+            <p class="about-page__section-index">04 / {{ labels.presentation.contactLabel }}</p>
             <h2>{{ labels.trust.contact }}</h2>
             <p>{{ labels.home.contactSummary }}</p>
           </div>

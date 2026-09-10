@@ -22,12 +22,15 @@ const { data: response } = await useAsyncData(
 )
 const company = computed(() => (response.value?.success ? response.value.data : null))
 const demoMode = computed(() => Boolean(runtimeConfig.public.demoMode))
+const contactSummary = computed(() =>
+  demoMode.value ? labels.value.home.demoContactSummary : labels.value.home.contactSummary,
+)
 
 useHead(() => ({
   htmlAttrs: { lang: locale.value === 'zh-cn' ? 'zh-CN' : 'en' },
   title: `${labels.value.navigation.contact} · ${company.value?.company_name || 'Junhui'}`,
   meta: [
-    { name: 'description', content: labels.value.home.contactSummary },
+    { name: 'description', content: contactSummary.value },
     { name: 'robots', content: 'noindex, nofollow' },
   ],
 }))
@@ -37,42 +40,44 @@ useHead(() => ({
   <div class="contact-page">
     <section class="contact-hero">
       <div class="public-container">
-        <p>CONTACT / RFQ</p>
+        <p>{{ labels.presentation.contactRfqLabel }}</p>
         <h1>{{ labels.home.contactTitle }}</h1>
-        <span>{{ labels.home.contactSummary }}</span>
+        <span>{{ contactSummary }}</span>
       </div>
     </section>
     <section class="public-section">
       <div class="public-container contact-grid">
         <article class="contact-card contact-card--primary">
-          <p>01 / RFQ</p>
+          <p>01 / {{ labels.presentation.moduleNames.rfq_cta }}</p>
           <h2>{{ labels.cta.requestQuote }}</h2>
-          <span>{{ labels.home.rfqSummary }}</span>
-          <a :href="`/${locale}/request-a-quote/`">{{ labels.cta.requestQuote }} →</a>
+          <span>{{ demoMode ? labels.home.demoRfqSummary : labels.home.rfqSummary }}</span>
+          <a :href="`/${locale}/request-a-quote/`"
+            >{{ demoMode ? labels.home.demoRfqAction : labels.cta.requestQuote }} →</a
+          >
         </article>
         <article class="contact-card">
-          <p>02 / COMPANY</p>
+          <p>02 / {{ labels.presentation.companyLabel }}</p>
           <h2>{{ company?.company_name || 'Junhui' }}</h2>
           <dl>
             <div v-if="company?.email">
-              <dt>Email</dt>
+              <dt>{{ labels.form.email }}</dt>
               <dd>
                 <span v-if="demoMode">{{ company.email }} · DEMO</span
                 ><a v-else :href="`mailto:${company.email}`">{{ company.email }}</a>
               </dd>
             </div>
             <div v-if="company?.phone">
-              <dt>Phone</dt>
+              <dt>{{ labels.form.phone }}</dt>
               <dd>{{ company.phone }}</dd>
             </div>
             <div v-if="company?.address">
-              <dt>Address</dt>
+              <dt>{{ locale === 'zh-cn' ? '地址' : 'Address' }}</dt>
               <dd>{{ company.address }}</dd>
             </div>
           </dl>
         </article>
         <article class="contact-card">
-          <p>03 / RESOURCES</p>
+          <p>03 / {{ labels.presentation.resourcesLabel }}</p>
           <h2>{{ labels.navigation.downloads }}</h2>
           <span>{{ labels.trust.downloadsIntro }}</span>
           <a :href="`/${locale}/downloads/`">{{ labels.cta.download }} →</a>

@@ -1,6 +1,9 @@
 <!-- 页面用途：展会真实 CRUD 与统一发布入口。 -->
 <script setup lang="ts">
-useHead({ title: 'Exhibitions', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+useHead({
+  title: '展会',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
 useAuthorityApi()
 </script>
-<template><TrustCrud title="Exhibitions" resource="exhibitions" /></template>
+<template><TrustCrud title="展会" resource="exhibitions" /></template>

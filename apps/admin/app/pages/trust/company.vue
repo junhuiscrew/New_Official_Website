@@ -187,7 +187,7 @@ onMounted(load)
   <main class="admin-shell company-editor-page">
     <header class="page-heading">
       <div>
-        <p class="company-kicker">COMPANY PROFILE</p>
+        <p class="company-kicker">企业资料</p>
         <h1>公司资料</h1>
         <span>公司正文、公开联系信息和首页视觉的单一维护入口。</span>
       </div>
@@ -196,7 +196,9 @@ onMounted(load)
       </button>
     </header>
     <p v-if="message" class="company-message" role="status">{{ message }}</p>
-    <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="error-message" role="alert">
+      {{ errorMessage }}
+    </p>
 
     <section class="company-panel">
       <header>
@@ -244,7 +246,7 @@ onMounted(load)
       </header>
       <div class="company-grid">
         <label
-          >Logo<select v-model="form.logo_media_id">
+          >企业 Logo<select v-model="form.logo_media_id">
             <option value="">使用前端品牌资源</option>
             <option
               v-for="asset in media.filter((item) => item.type === 'image')"

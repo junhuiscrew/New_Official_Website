@@ -14,7 +14,11 @@ import type {
 import PublicImage from './PublicImage.vue'
 import PublicVideo from './PublicVideo.vue'
 
-const props = defineProps<{ locale: LocaleSlug; home: HomeDto; preview: boolean }>()
+const props = defineProps<{
+  locale: LocaleSlug
+  home: HomeDto
+  preview: boolean
+}>()
 const labels = computed(() => ui[props.locale])
 
 /** 公开首页只显示有内容且启用的模块；认证预览保留全部十四个位置。 */
@@ -43,10 +47,22 @@ const aboutParagraphs = computed(() => {
 })
 const companyFactChips = computed(() =>
   [
-    { label: labels.value.home.foundedYear, value: props.home.company?.founded_year },
-    { label: labels.value.home.yearsExperience, value: props.home.company?.years_experience },
-    { label: labels.value.home.employees, value: props.home.company?.employee_count_range },
-    { label: labels.value.home.factoryArea, value: props.home.company?.factory_area_sqm },
+    {
+      label: labels.value.home.foundedYear,
+      value: props.home.company?.founded_year,
+    },
+    {
+      label: labels.value.home.yearsExperience,
+      value: props.home.company?.years_experience,
+    },
+    {
+      label: labels.value.home.employees,
+      value: props.home.company?.employee_count_range,
+    },
+    {
+      label: labels.value.home.factoryArea,
+      value: props.home.company?.factory_area_sqm,
+    },
   ].filter((fact) => fact.value !== null && fact.value !== undefined && fact.value !== ''),
 )
 const companyAdvantages = computed(() =>
@@ -159,7 +175,10 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             <figure v-for="product in productsFor(module).slice(0, 3)" :key="product.slug">
               <PublicImage
                 v-if="product.media?.type === 'image'"
-                :media="{ ...product.media, loading: moduleIndex === 0 ? 'eager' : 'lazy' }"
+                :media="{
+                  ...product.media,
+                  loading: moduleIndex === 0 ? 'eager' : 'lazy',
+                }"
                 :locale="locale"
                 sizes="(max-width: 40rem) 46vw, 24vw"
               />
@@ -170,7 +189,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             class="presentation-empty presentation-empty--dark"
             data-testid="homepage-module-empty"
           >
-            <p>{{ module.missing_reason || labels.presentation.contentUnavailable }}</p>
+            <p>
+              {{ module.missing_reason || labels.presentation.contentUnavailable }}
+            </p>
             <a :href="adminHref(module.management_url)">{{ labels.presentation.manage }}</a>
           </div>
         </div>
@@ -186,10 +207,12 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
           <div>
             <p class="presentation-kicker">{{ moduleTitle(module.key) }}</p>
             <h2>{{ labels.home.rfqTitle }}</h2>
-            <p>{{ labels.home.rfqSummary }}</p>
+            <p>
+              {{ home.demo_mode ? labels.home.demoRfqSummary : labels.home.rfqSummary }}
+            </p>
           </div>
           <a class="button button--primary" :href="publicHref(`/${locale}/request-a-quote/`)">
-            {{ labels.cta.requestQuote }}
+            {{ home.demo_mode ? labels.home.demoRfqAction : labels.cta.requestQuote }}
           </a>
         </div>
       </section>
@@ -202,7 +225,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
       >
         <div class="public-container presentation-section__inner">
           <header class="presentation-heading">
-            <p class="presentation-index">{{ String(moduleIndex + 1).padStart(2, '0') }}</p>
+            <p class="presentation-index">
+              {{ String(moduleIndex + 1).padStart(2, '0') }}
+            </p>
             <div>
               <p class="presentation-kicker">{{ labels.presentation.badge }}</p>
               <h2>{{ moduleTitle(module.key) }}</h2>
@@ -215,7 +240,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             data-testid="homepage-module-empty"
           >
             <span aria-hidden="true">＋</span>
-            <p>{{ module.missing_reason || labels.presentation.contentUnavailable }}</p>
+            <p>
+              {{ module.missing_reason || labels.presentation.contentUnavailable }}
+            </p>
             <a :href="adminHref(module.management_url)">{{ labels.presentation.manage }}</a>
           </div>
 
@@ -245,13 +272,16 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
                   />
                 </a>
                 <div>
-                  <p v-if="product.category" class="eyebrow">{{ product.category.name }}</p>
+                  <p v-if="product.category" class="eyebrow">
+                    {{ product.category.name }}
+                  </p>
                   <h3>
                     <a :href="publicHref(product.url)">{{ product.name }}</a>
                   </h3>
                   <p v-if="product.summary">{{ product.summary }}</p>
                   <a class="presentation-text-link" :href="publicHref(product.url)">
-                    {{ labels.cta.viewDetails }} <span aria-hidden="true">→</span>
+                    {{ labels.cta.viewDetails }}
+                    <span aria-hidden="true">→</span>
                   </a>
                 </div>
               </article>
@@ -295,7 +325,7 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
                 sizes="(max-width: 48rem) 100vw, 58vw"
               />
               <div>
-                <p class="eyebrow">01 / FEATURED DEMO APPLICATION</p>
+                <p class="eyebrow">01 / {{ labels.presentation.featuredApplicationLabel }}</p>
                 <h3>{{ cardsFor(module.key)[0]!.name }}</h3>
                 <p>{{ cardsFor(module.key)[0]!.summary }}</p>
               </div>
@@ -334,7 +364,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
           <div v-else-if="module.key === 'why_junhui'" class="presentation-about">
             <div class="presentation-about__marker" aria-hidden="true">JH</div>
             <div>
-              <p v-for="paragraph in aboutParagraphs" :key="paragraph">{{ paragraph }}</p>
+              <p v-for="paragraph in aboutParagraphs" :key="paragraph">
+                {{ paragraph }}
+              </p>
               <ol v-if="companyAdvantages.length" class="presentation-about__advantages">
                 <li v-for="(advantage, advantageIndex) in companyAdvantages" :key="advantage">
                   <span>{{ String(advantageIndex + 1).padStart(2, '0') }}</span>
@@ -357,7 +389,10 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
             <div v-if="home.demo_videos?.length" class="presentation-video-grid">
               <article v-for="(video, videoIndex) in home.demo_videos" :key="video.media.src">
                 <div>
-                  <p class="eyebrow">DEMO VIDEO {{ String(videoIndex + 1).padStart(2, '0') }}</p>
+                  <p class="eyebrow">
+                    {{ labels.presentation.demoVideoLabel }}
+                    {{ String(videoIndex + 1).padStart(2, '0') }}
+                  </p>
                   <h3>{{ video.media.alt }}</h3>
                 </div>
                 <PublicVideo :media="video.media" :poster="video.poster" />
@@ -387,7 +422,9 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
           </div>
 
           <ul v-else-if="module.key === 'global_markets'" class="presentation-markets">
-            <li v-for="market in home.company?.export_markets ?? []" :key="market">{{ market }}</li>
+            <li v-for="market in home.company?.export_markets ?? []" :key="market">
+              {{ market }}
+            </li>
             <li v-if="home.demo_mode" class="presentation-markets__note">
               {{ labels.presentation.marketDisclaimer }}
             </li>
@@ -1212,6 +1249,16 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
 
   .presentation-hero {
     min-height: auto;
+  }
+
+  /* 手机续屏压缩模块间距，保留全部内容但减少无意义长滚动。 */
+  .presentation-section,
+  .presentation-rfq {
+    padding-block: 3.25rem;
+  }
+
+  .presentation-section__inner {
+    gap: 2rem;
   }
 
   .presentation-hero__grid,

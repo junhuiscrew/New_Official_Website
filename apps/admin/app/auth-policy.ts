@@ -31,6 +31,20 @@ export function shouldAttemptSessionRefresh(
   return !isServer && statusCode === 401
 }
 
+/**
+ * 判断受保护 API 请求是否可以在刷新会话后重试。
+ *
+ * 输入：statusCode，HTTP 状态码；alreadyRetried，是否已经重试；isServer，是否为 SSR。
+ * 输出：boolean，仅浏览器首次收到 401 时返回 true，避免递归刷新或 SSR 误轮换 Cookie。
+ */
+export function shouldRetryAuthenticatedRequest(
+  statusCode: number | undefined,
+  alreadyRetried: boolean,
+  isServer: boolean,
+): boolean {
+  return !alreadyRetried && shouldAttemptSessionRefresh(statusCode, isServer)
+}
+
 export function decideAdminRouteAccess(
   path: string,
   isAuthenticated: boolean,

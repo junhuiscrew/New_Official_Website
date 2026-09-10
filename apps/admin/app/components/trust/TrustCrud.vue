@@ -1,6 +1,12 @@
 <!-- 组件职责：以字段化表单维护能力、设备、证书、专利、荣誉和展会，隐藏内部UUID与JSON表示。 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  ENTITY_STATUS_LABELS,
+  PUBLICATION_STATUS_LABELS,
+  TRANSLATION_STATUS_LABELS,
+  labelFrom,
+} from '~/utils/adminZhCn'
 
 interface TrustItem {
   id: string
@@ -116,7 +122,11 @@ const translationFieldMap: Record<string, FieldDefinition[]> = {
     { key: 'name', label: '名称', required: true },
     { key: 'summary', label: '摘要' },
     { key: 'description', label: '说明' },
-    { key: 'public_specs_json', label: '公开规格（每行“名称=值”）', kind: 'key-value' },
+    {
+      key: 'public_specs_json',
+      label: '公开规格（每行“名称=值”）',
+      kind: 'key-value',
+    },
   ],
   certificates: [
     { key: 'name', label: '证书名称', required: true },
@@ -286,6 +296,21 @@ function localeName(localeId: string): string {
   return locales.value.find((locale) => locale.id === localeId)?.native_name || '未知语言'
 }
 
+/** 输入Trust记录；输出优先中文、其次英文的可读名称，slug仅作兜底。 */
+function itemTitle(item: TrustItem): string {
+  const translation =
+    item.translations?.find((row) => {
+      const locale = locales.value.find((entry) => entry.id === row.locale_id)
+      return locale?.code === 'zh-CN'
+    }) ||
+    item.translations?.find((row) => {
+      const locale = locales.value.find((entry) => entry.id === row.locale_id)
+      return locale?.code === 'en'
+    }) ||
+    item.translations?.[0]
+  return String(translation?.name || translation?.title || item.slug)
+}
+
 async function reviewTranslation(item: TrustItem, localeId: string): Promise<void> {
   await api.archive(`/trust/${props.resource}/${item.id}/translations/${localeId}/review`)
   await load()
@@ -312,13 +337,15 @@ onMounted(load)
   <main class="admin-shell trust-editor-page">
     <header class="page-heading">
       <div>
-        <p class="trust-kicker">TRUST &amp; CAPABILITY</p>
+        <p class="trust-kicker">企业资料与制造能力</p>
         <h1>{{ title }}</h1>
         <span>字段、媒体与双语正文均保存到现有CMS实体。</span>
       </div>
       <button type="button" @click="resetForm">新建记录</button>
     </header>
-    <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="error-message" role="alert">
+      {{ errorMessage }}
+    </p>
 
     <div class="trust-editor-layout">
       <aside class="record-list">
@@ -329,8 +356,9 @@ onMounted(load)
           :class="{ active: editingId === item.id }"
           @click="edit(item)"
         >
-          <strong>{{ item.slug }}</strong
-          ><span>{{ item.status }}</span>
+          <strong>{{ itemTitle(item) }}</strong>
+          <small>{{ item.slug }}</small>
+          <span>{{ labelFrom(ENTITY_STATUS_LABELS, item.status) }}</span>
         </button>
       </aside>
 
@@ -344,7 +372,7 @@ onMounted(load)
             </div>
           </header>
           <div class="trust-form-grid">
-            <label>Slug<input v-model="slug" required pattern="[a-z0-9-]+" /></label>
+            <label>Slug（路径标识）<input v-model="slug" required pattern="[a-z0-9-]+" /></label>
             <label
               >状态<select v-model="status">
                 <option value="enabled">启用</option>
@@ -452,19 +480,26 @@ onMounted(load)
 
     <section class="trust-lifecycle">
       <header>
-        <p class="trust-kicker">CONTENT LIFECYCLE</p>
+        <p class="trust-kicker">内容生命周期</p>
         <h2>翻译与发布状态</h2>
       </header>
       <article v-for="item in items" :key="`lifecycle-${item.id}`">
-        <strong>{{ item.slug }}</strong>
+        <strong>{{ itemTitle(item) }}</strong>
         <div
           v-for="translationStatus in item.translation_statuses || []"
           :key="translationStatus.locale_id"
         >
           <span
-            >{{ localeName(translationStatus.locale_id) }} · {{ translationStatus.status
+            >{{ localeName(translationStatus.locale_id) }} ·
+            {{ labelFrom(TRANSLATION_STATUS_LABELS, translationStatus.status)
             }}<template v-if="hasIndependentRoute">
-              · {{ publicationStatus(item, translationStatus.locale_id) }}</template
+              ·
+              {{
+                labelFrom(
+                  PUBLICATION_STATUS_LABELS,
+                  publicationStatus(item, translationStatus.locale_id),
+                )
+              }}</template
             ></span
           >
           <button

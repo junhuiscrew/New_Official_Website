@@ -1,6 +1,9 @@
 <!-- 页面用途：证书真实 CRUD；禁止创建虚假证书。 -->
 <script setup lang="ts">
-useHead({ title: 'Certificates', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+useHead({
+  title: '证书',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
 useAuthorityApi()
 </script>
-<template><TrustCrud title="Certificates" resource="certificates" /></template>
+<template><TrustCrud title="证书" resource="certificates" /></template>

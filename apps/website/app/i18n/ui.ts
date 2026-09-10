@@ -103,8 +103,13 @@ const zhCn = {
     exportMarkets: '出口市场',
     rfqTitle: '讨论您的项目需求',
     rfqSummary: '提交应用、材料或问题信息，我们将据此了解您的询价需求。',
+    demoRfqSummary:
+      '可先查看并填写询价信息；当前演示站未发布正式隐私说明，因此不会创建或发送询盘。',
+    demoRfqAction: '查看询价说明',
     contactTitle: '从需求开始沟通',
-    contactSummary: '通过询价表单说明产品、材料、尺寸或当前问题。演示环境不会发送真实邮件。',
+    contactSummary: '通过询价表单说明产品、材料、尺寸或当前问题。',
+    demoContactSummary:
+      '可查看并填写产品、材料、尺寸或当前问题；演示站不会创建询盘或发送真实邮件。',
   },
   presentation: {
     badge: '骏辉产品与制造',
@@ -114,6 +119,16 @@ const zhCn = {
     manage: '前往对应后台',
     viewAll: '查看全部',
     marketDisclaimer: '演示区域布局，不代表骏辉实际出口记录。',
+    featuredApplicationLabel: '重点演示应用',
+    demoVideoLabel: '演示视频',
+    companyProfileLabel: '企业资料',
+    verifiedDataLabel: '已确认资料',
+    marketDirectoryLabel: '演示市场目录',
+    workingPrinciplesLabel: '工作原则',
+    contactLabel: '联系信息',
+    contactRfqLabel: '联系与询价',
+    companyLabel: '企业资料',
+    resourcesLabel: '资料资源',
     moduleNames: {
       hero: '首页主视觉',
       core_product_families: '核心产品系列',
@@ -459,9 +474,14 @@ const en: UiDictionary<typeof zhCn> = {
     exportMarkets: 'Export Markets',
     rfqTitle: 'Discuss Your Project Requirements',
     rfqSummary: 'Share your application, material, or problem so we can understand your request.',
+    demoRfqSummary:
+      'You may review and fill in the request form. The demo has no published Privacy Notice, so it will not create or send an inquiry.',
+    demoRfqAction: 'View inquiry notice',
     contactTitle: 'Start with your requirements',
     contactSummary:
-      'Use the RFQ form to describe products, materials, dimensions or current issues. The demo environment does not send real email.',
+      'Use the RFQ form to describe products, materials, dimensions or current issues.',
+    demoContactSummary:
+      'You may review and fill in product, material, dimension, or problem details. The demo will not create an inquiry or send real email.',
   },
   presentation: {
     badge: 'Junhui Products & Manufacturing',
@@ -472,6 +492,16 @@ const en: UiDictionary<typeof zhCn> = {
     manage: 'Open the relevant admin area',
     viewAll: 'View all',
     marketDisclaimer: 'Illustrative demo regions; not a record of Junhui exports.',
+    featuredApplicationLabel: 'Featured demo application',
+    demoVideoLabel: 'Demo video',
+    companyProfileLabel: 'Company profile',
+    verifiedDataLabel: 'Verified data',
+    marketDirectoryLabel: 'Demo market directory',
+    workingPrinciplesLabel: 'Working principles',
+    contactLabel: 'Contact',
+    contactRfqLabel: 'Contact and RFQ',
+    companyLabel: 'Company',
+    resourcesLabel: 'Resources',
     moduleNames: {
       hero: 'Homepage Hero',
       core_product_families: 'Core Product Families',

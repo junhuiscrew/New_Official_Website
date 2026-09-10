@@ -45,7 +45,7 @@ const canInitialize = computed(() => currentUser.value?.permissions.includes('co
 const canUpdate = computed(() => currentUser.value?.permissions.includes('seo.update'))
 
 useHead({
-  title: `Products SEO · ${adminMeta.title}`,
+  title: `产品总列表 SEO · ${adminMeta.title}`,
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
@@ -144,8 +144,8 @@ onMounted(loadPage)
 <template>
   <main class="admin-shell">
     <header>
-      <p>Fixed SitePage · products</p>
-      <h1>Products 总列表 SEO</h1>
+      <p>固定页面 · products</p>
+      <h1>产品总列表 SEO</h1>
       <p>只维护双语 SEO title 与 description；发布权限由既有 CMS 生命周期单独控制。</p>
     </header>
 

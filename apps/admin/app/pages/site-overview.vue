@@ -1,6 +1,11 @@
 <!-- 页面用途：只读展示全站栏目真实前后台地址、内容数量、导航状态和隐藏原因。 -->
 <script setup lang="ts">
 import { adminMeta } from '../admin-config'
+import {
+  IMPLEMENTATION_STATUS_LABELS,
+  NAVIGATION_STATUS_LABELS,
+  labelFrom,
+} from '../utils/adminZhCn'
 
 interface OverviewItem {
   key: string
@@ -19,35 +24,37 @@ interface SiteOverview {
 }
 
 const api = useAuthorityApi()
+const runtimeConfig = useRuntimeConfig()
 const localeCode = ref('zh-CN')
 const overview = ref<SiteOverview | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
 
+// Technologies 与 Contact 保留独立核对项，但主界面统一显示中文名称。
 const names: Record<string, string> = {
-  hero: 'Hero',
-  core_product_families: 'Core Product Families',
-  materials: 'Materials',
-  special_applications: 'Special Applications',
-  technologies: 'Technologies',
-  manufacturing_capability: 'Manufacturing Capability',
-  why_junhui: 'Why Junhui',
-  factory_equipment: 'Factory & Equipment',
-  solutions: 'Solutions',
-  case_studies: 'Case Studies',
-  technical_knowledge: 'Technical Knowledge',
-  certificates_patents: 'Certificates / Patents',
-  global_markets: 'Global Markets',
-  rfq_cta: 'RFQ CTA',
-  products: 'Products',
-  about: 'About',
-  search: 'Search',
-  privacy: 'Privacy',
-  contact: 'Contact',
+  hero: '首页主视觉',
+  core_product_families: '核心产品系列',
+  materials: '材料',
+  special_applications: '特殊应用',
+  technologies: '技术工艺',
+  manufacturing_capability: '制造能力',
+  why_junhui: '为什么选择骏辉',
+  factory_equipment: '工厂与设备',
+  solutions: '解决方案',
+  case_studies: '客户案例',
+  technical_knowledge: '技术知识',
+  certificates_patents: '证书与专利',
+  global_markets: '全球市场',
+  rfq_cta: '询价入口',
+  products: '产品总列表',
+  about: '关于骏辉',
+  search: '站内搜索',
+  privacy: '隐私说明',
+  contact: '联系我们',
 }
 
 useHead({
-  title: `Site Overview · ${adminMeta.title}`,
+  title: `网站总览 · ${adminMeta.title}`,
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
@@ -75,8 +82,8 @@ onMounted(loadOverview)
   <main class="overview-page">
     <header class="overview-heading">
       <div>
-        <p>Website Presentation V1.0 · R1</p>
-        <h1>全站模块总览</h1>
+        <p>官网内容与入口状态</p>
+        <h1>网站总览</h1>
         <p>“已有模型”“后台入口”和“前台已有内容”分别统计，空栏目不再被笼统归为隐藏。</p>
       </div>
       <div>
@@ -92,7 +99,9 @@ onMounted(loadOverview)
     </header>
 
     <p v-if="loading" class="overview-message" role="status">正在核对实际 API…</p>
-    <p v-else-if="errorMessage" class="overview-message" role="alert">{{ errorMessage }}</p>
+    <p v-else-if="errorMessage" class="overview-message" role="alert">
+      {{ errorMessage }}
+    </p>
 
     <section v-else-if="overview" class="overview-table-wrap">
       <table>
@@ -115,11 +124,15 @@ onMounted(loadOverview)
                 {{ item.public_count }}
               </span>
             </td>
-            <td>{{ item.navigation_status }}</td>
-            <td>{{ item.implementation }}</td>
+            <td>
+              {{ labelFrom(NAVIGATION_STATUS_LABELS, item.navigation_status) }}
+            </td>
+            <td>
+              {{ labelFrom(IMPLEMENTATION_STATUS_LABELS, item.implementation) }}
+            </td>
             <td>
               <div class="overview-links">
-                <a :href="`https://junhuiscrewbarrel.com${item.frontend_url}`">前台</a>
+                <a :href="`${runtimeConfig.public.websiteUrl}${item.frontend_url}`">前台</a>
                 <a v-if="item.admin_url" :href="item.admin_url">后台</a>
               </div>
               <small v-if="item.hidden_reason">{{ item.hidden_reason }}</small>

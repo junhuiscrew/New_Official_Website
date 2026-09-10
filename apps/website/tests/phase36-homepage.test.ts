@@ -12,6 +12,8 @@ import ProductCard from '../app/components/ProductCard.vue'
 import type { HomeDto, PublicCardDto } from '../app/types/public'
 
 vi.stubGlobal('useHead', vi.fn())
+// RfqCta 使用公开运行配置区分 Demo 提示；基础首页测试保持非 Demo 环境。
+vi.stubGlobal('useRuntimeConfig', () => ({ public: { demoMode: false } }))
 
 /**
  * 构造只包含 Public API 白名单字段的 canonical 卡片。
@@ -142,7 +144,9 @@ function populatedHome(locale: HomeDto['locale'] = 'en'): HomeDto {
       description: locale === 'en' ? 'API home description' : '接口首页描述',
       canonical: `https://junhuiscrewbarrel.com/${locale}/`,
       robots: 'index, follow',
-      hreflang: { [locale === 'en' ? 'en' : 'zh-CN']: `https://junhuiscrewbarrel.com/${locale}/` },
+      hreflang: {
+        [locale === 'en' ? 'en' : 'zh-CN']: `https://junhuiscrewbarrel.com/${locale}/`,
+      },
     },
     schema: [],
   }
@@ -155,7 +159,9 @@ enableAutoUnmount(afterEach)
 
 describe('Phase 3.6 final homepage composition', () => {
   it('renders one H1, exactly two hero CTAs, and the approved section order', () => {
-    const wrapper = mount(HomePage, { props: { locale: 'en', home: populatedHome() } })
+    const wrapper = mount(HomePage, {
+      props: { locale: 'en', home: populatedHome() },
+    })
 
     expect(wrapper.findAll('h1')).toHaveLength(1)
     expect(wrapper.findAll('[data-testid="hero-cta"]')).toHaveLength(2)
@@ -192,7 +198,9 @@ describe('Phase 3.6 final homepage composition', () => {
       knowledge: [],
       trust_summary: null,
     }
-    const wrapper = mount(HomePage, { props: { locale: 'en', home: emptyHome } })
+    const wrapper = mount(HomePage, {
+      props: { locale: 'en', home: emptyHome },
+    })
 
     expect(
       wrapper.findAll('[data-home-section]').map((node) => node.attributes('data-home-section')),
@@ -208,7 +216,9 @@ describe('Phase 3.6 final homepage composition', () => {
   })
 
   it('uses DTO company and trust facts without replacing them with invented claims', () => {
-    const wrapper = mount(HomePage, { props: { locale: 'en', home: populatedHome() } })
+    const wrapper = mount(HomePage, {
+      props: { locale: 'en', home: populatedHome() },
+    })
 
     expect(wrapper.get('h1').text()).toBe('API Company Name')
     expect(wrapper.get('.page-hero__content > p').text()).toBe('API supplied introduction.')
@@ -222,7 +232,9 @@ describe('Phase 3.6 final homepage composition', () => {
   })
 
   it('renders English and Chinese UI without crossing locale labels', () => {
-    const english = mount(HomePage, { props: { locale: 'en', home: populatedHome('en') } })
+    const english = mount(HomePage, {
+      props: { locale: 'en', home: populatedHome('en') },
+    })
     expect(english.text()).toContain('Product Categories')
     expect(english.text()).toContain('Request a Quote')
     expect(english.text()).not.toContain('获取报价')
@@ -238,7 +250,9 @@ describe('Phase 3.6 final homepage composition', () => {
 
 describe('Phase 3.6 homepage cards and media', () => {
   it('prioritizes the DTO hero image and keeps below-fold card images lazy', () => {
-    const wrapper = mount(HomePage, { props: { locale: 'en', home: populatedHome() } })
+    const wrapper = mount(HomePage, {
+      props: { locale: 'en', home: populatedHome() },
+    })
     const hero = wrapper.get('[data-testid="hero-media"]')
     expect(hero.attributes('src')).toBe('/api/v1/public/media/factory-hero')
     expect(hero.attributes('loading')).toBe('eager')
@@ -280,9 +294,15 @@ describe('Phase 3.6 homepage cards and media', () => {
       name: 'Anonymous case',
     })
 
-    const productWrapper = mount(ProductCard, { props: { item: product, locale: 'en' } })
-    const articleWrapper = mount(ArticleCard, { props: { item: article, locale: 'en' } })
-    const caseWrapper = mount(CaseCard, { props: { item: caseStudy, locale: 'en' } })
+    const productWrapper = mount(ProductCard, {
+      props: { item: product, locale: 'en' },
+    })
+    const articleWrapper = mount(ArticleCard, {
+      props: { item: article, locale: 'en' },
+    })
+    const caseWrapper = mount(CaseCard, {
+      props: { item: caseStudy, locale: 'en' },
+    })
 
     expect(productWrapper.get('[data-testid="card-primary-link"]').attributes('href')).toBe(
       product.url,
@@ -423,7 +443,10 @@ describe('Phase 3.6 homepage SSR and metadata contract', () => {
       }
     )()
     expect(head.title).toBe('API SEO Title')
-    expect(head.meta).toContainEqual({ name: 'robots', content: 'index, follow' })
+    expect(head.meta).toContainEqual({
+      name: 'robots',
+      content: 'index, follow',
+    })
     expect(head.link).toContainEqual({
       rel: 'canonical',
       href: 'https://junhuiscrewbarrel.com/en/',

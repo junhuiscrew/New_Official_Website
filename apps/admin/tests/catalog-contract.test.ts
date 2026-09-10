@@ -119,6 +119,13 @@ describe('catalog admin routes', () => {
     }
   })
 
+  it('explicitly imports the nested shared entity editor on all four catalog routes', () => {
+    for (const name of ['materials', 'technologies', 'applications', 'solutions']) {
+      const source = readFileSync(resolve(process.cwd(), `app/pages/catalog/${name}.vue`), 'utf8')
+      expect(source).toContain("import EntityCrud from '~/components/catalog/EntityCrud.vue'")
+    }
+  })
+
   it('builds exact API payloads for all five specification value types', async () => {
     const utilityPath = resolve(process.cwd(), 'app/utils/specificationValue.ts')
     expect(existsSync(utilityPath)).toBe(true)
@@ -137,8 +144,12 @@ describe('catalog admin routes', () => {
       enum_value: 'A4-80',
     }
 
-    expect(buildSpecificationValuePayload('text', base)).toMatchObject({ value_text: '316L' })
-    expect(buildSpecificationValuePayload('number', base)).toMatchObject({ value_number: 12.5 })
+    expect(buildSpecificationValuePayload('text', base)).toMatchObject({
+      value_text: '316L',
+    })
+    expect(buildSpecificationValuePayload('number', base)).toMatchObject({
+      value_number: 12.5,
+    })
     expect(buildSpecificationValuePayload('range', base)).toMatchObject({
       value_min: 10,
       value_max: 15,
@@ -146,7 +157,9 @@ describe('catalog admin routes', () => {
     expect(buildSpecificationValuePayload('boolean', base)).toMatchObject({
       value_boolean: false,
     })
-    expect(buildSpecificationValuePayload('enum', base)).toMatchObject({ enum_value: 'A4-80' })
+    expect(buildSpecificationValuePayload('enum', base)).toMatchObject({
+      enum_value: 'A4-80',
+    })
   })
 
   it('renders a dedicated input contract for every specification value type', () => {

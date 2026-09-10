@@ -3,6 +3,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import { adminMeta } from '../admin-config'
+import { RFQ_STATUS_LABELS, labelFrom } from '../utils/adminZhCn'
 
 interface ListResult {
   items?: unknown[]
@@ -10,7 +11,11 @@ interface ListResult {
 }
 
 interface OverviewResult {
-  items: Array<{ key: string; public_count: number; navigation_status: string }>
+  items: Array<{
+    key: string
+    public_count: number
+    navigation_status: string
+  }>
 }
 
 const api = useAuthorityApi()
@@ -69,7 +74,7 @@ onMounted(loadDashboard)
     <!-- 欢迎区：明确当前是持久、隔离且不索引的演示内容环境。 -->
     <section class="dashboard-hero">
       <div>
-        <p class="dashboard-eyebrow">DEMO R2 · CONTENT OPERATIONS</p>
+        <p class="dashboard-eyebrow">DEMO R2 · 内容运营</p>
         <h1>内容与视觉，保持在同一条发布链路</h1>
         <p>
           这里展示独立演示库的真实状态。内容、媒体、关系与首页排序均通过现有 API
@@ -81,20 +86,20 @@ onMounted(loadDashboard)
         </div>
       </div>
       <div class="dashboard-environment">
-        <span>LOCAL / HTTPS</span>
+        <span>本机 / HTTPS</span>
         <strong>DEMO R2</strong>
         <dl>
           <div>
             <dt>索引</dt>
-            <dd>NOINDEX</dd>
+            <dd>禁止索引</dd>
           </div>
           <div>
             <dt>数据</dt>
-            <dd>ISOLATED</dd>
+            <dd>独立库</dd>
           </div>
           <div>
             <dt>邮件</dt>
-            <dd>DISABLED</dd>
+            <dd>已禁用</dd>
           </div>
         </dl>
       </div>
@@ -136,7 +141,7 @@ onMounted(loadDashboard)
       <article class="dashboard-panel dashboard-panel--wide">
         <header>
           <div>
-            <p class="dashboard-eyebrow">PUBLISHING FLOW</p>
+            <p class="dashboard-eyebrow">发布流程</p>
             <h2>今日内容工作流</h2>
           </div>
           <span>{{ loadedAt ? '已连接实时 API' : '正在连接' }}</span>
@@ -163,7 +168,7 @@ onMounted(loadDashboard)
       <article class="dashboard-panel">
         <header>
           <div>
-            <p class="dashboard-eyebrow">QUICK ACCESS</p>
+            <p class="dashboard-eyebrow">常用操作</p>
             <h2>常用入口</h2>
           </div>
         </header>
@@ -179,7 +184,7 @@ onMounted(loadDashboard)
     <section class="dashboard-panel dashboard-rfqs">
       <header>
         <div>
-          <p class="dashboard-eyebrow">DEMO INQUIRIES</p>
+          <p class="dashboard-eyebrow">演示询盘</p>
           <h2>最近演示询盘</h2>
         </div>
         <NuxtLink to="/rfqs">查看全部</NuxtLink>
@@ -188,10 +193,12 @@ onMounted(loadDashboard)
         <NuxtLink v-for="item in recentRfqs" :key="item.id" :to="`/rfqs/${item.id}`">
           <strong>{{ item.company_name }}</strong>
           <span>{{ item.public_reference }}</span>
-          <small>{{ item.status }}</small>
+          <small>{{ labelFrom(RFQ_STATUS_LABELS, item.status) }}</small>
         </NuxtLink>
       </div>
-      <p v-else class="dashboard-empty">{{ loading ? '正在读取…' : '当前没有可显示的询盘。' }}</p>
+      <p v-else class="dashboard-empty">
+        {{ loading ? '正在读取…' : '当前没有可显示的询盘。' }}
+      </p>
     </section>
   </main>
 </template>
@@ -465,7 +472,6 @@ onMounted(loadDashboard)
   background: #e7f7f1;
   border-radius: 99rem;
   font-weight: 800;
-  text-transform: uppercase;
 }
 .dashboard-empty {
   color: #718297;

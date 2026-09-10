@@ -5,7 +5,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // 认证刷新留在浏览器执行，避免 SSR 内部请求产生无法透传的 Set-Cookie。
   if (import.meta.server) return
   const { currentUser, loadCurrentUser } = useAuth()
-  if (to.path !== '/login' && !currentUser.value) {
+  // 每次进入受保护页面都向服务端确认会话，避免内存中的旧用户掩盖已过期访问 Cookie。
+  if (to.path !== '/login' || currentUser.value) {
     try {
       await loadCurrentUser()
     } catch {

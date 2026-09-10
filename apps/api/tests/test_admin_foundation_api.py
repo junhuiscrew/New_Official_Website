@@ -250,3 +250,170 @@ async def test_role_assignment_respects_actor_permission_ceiling(
     assert response.json()["error"]["code"] == "role_permission_ceiling"
     assert role_update.status_code == 403
     assert role_update.json()["error"]["code"] == "permission_grant_ceiling"
+
+
+async def test_authority_lists_include_bilingual_readable_title_projection(
+    admin_api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证 Authority 列表直接返回中英文可读标题，后台无需用 slug 或 UUID 猜测。"""
+    from app.modules.authority.models import (
+        FAQ,
+        CaseStudy,
+        CaseStudyTranslation,
+        FAQTranslation,
+    )
+    from app.modules.localization.models import Locale
+
+    async with admin_api_session_factory() as session, session.begin():
+        zh_locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        en_locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        assert zh_locale is not None and en_locale is not None
+        case = CaseStudy(slug="readable-case", status="enabled")
+        faq = FAQ(status="enabled")
+        session.add_all([case, faq])
+        await session.flush()
+        session.add_all(
+            [
+                CaseStudyTranslation(
+                    case_study_id=case.id,
+                    locale_id=zh_locale.id,
+                    title="中文案例标题",
+                ),
+                CaseStudyTranslation(
+                    case_study_id=case.id,
+                    locale_id=en_locale.id,
+                    title="English case title",
+                ),
+                FAQTranslation(
+                    faq_id=faq.id,
+                    locale_id=zh_locale.id,
+                    question="中文常见问题？",
+                    answer="中文答案。",
+                ),
+                FAQTranslation(
+                    faq_id=faq.id,
+                    locale_id=en_locale.id,
+                    question="English FAQ?",
+                    answer="English answer.",
+                ),
+            ]
+        )
+
+    async with _admin_client(admin_api_session_factory) as client:
+        cases = await client.get("/api/v1/authority/cases")
+        faqs = await client.get("/api/v1/authority/faqs")
+
+    assert cases.status_code == 200
+    assert faqs.status_code == 200
+    case_item = next(item for item in cases.json()["data"]["items"] if item["slug"] == "readable-case")
+    faq_item = faqs.json()["data"]["items"][0]
+    assert "display_title" in faq_item, faqs.json()["data"]
+    assert faq_item["display_title"] == "中文常见问题？"
+    assert case_item["display_title"] == "中文案例标题"
+    assert case_item["display_title_en"] == "English case title"
+    assert faq_item["display_title_en"] == "English FAQ?"
+    assert case_item["translation_count"] == 2
+
+
+async def test_catalog_lists_include_chinese_first_readable_name_projection(
+    admin_api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证 Catalog 列表提供中文优先名称，关系选择器无需显示 slug 或 UUID。"""
+    from app.api.v1.catalog import _list_entities
+    from app.core.pagination import PaginationParams
+    from app.modules.catalog.models import Application, ApplicationTranslation
+    from app.modules.localization.models import Locale
+
+    async with admin_api_session_factory() as session, session.begin():
+        zh_locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        en_locale = await session.scalar(select(Locale).where(Locale.code == "en"))
+        assert zh_locale is not None and en_locale is not None
+        application = Application(slug="readable-application", status="enabled")
+        session.add(application)
+        await session.flush()
+        session.add_all(
+            [
+                ApplicationTranslation(
+                    application_id=application.id,
+                    locale_id=zh_locale.id,
+                    name="中文应用名称",
+                ),
+                ApplicationTranslation(
+                    application_id=application.id,
+                    locale_id=en_locale.id,
+                    name="English application name",
+                ),
+            ]
+        )
+
+    async with admin_api_session_factory() as session:
+        direct_result = await _list_entities(session, Application, PaginationParams())
+    direct_item = next(
+        item for item in direct_result["items"] if item["slug"] == "readable-application"
+    )
+    assert direct_item["display_name"] == "中文应用名称"
+
+    async with _admin_client(admin_api_session_factory) as client:
+        response = await client.get("/api/v1/catalog/applications")
+
+    assert response.status_code == 200
+    item = next(
+        item
+        for item in response.json()["data"]["items"]
+        if item["slug"] == "readable-application"
+    )
+    assert "display_name" in item, response.json()["data"]
+    assert item["display_name"] == "中文应用名称"
+    assert item["display_name_en"] == "English application name"
+    assert item["translation_count"] == 2
+
+
+async def test_rfq_list_supports_server_side_search_status_and_pagination(
+    admin_api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证询盘列表的搜索、状态过滤和分页由服务端执行并返回真实总数。"""
+    from app.modules.rfq.models import RFQ
+
+    async with admin_api_session_factory() as session, session.begin():
+        session.add_all(
+            [
+                RFQ(
+                    public_reference="CN-UX-001",
+                    status="new",
+                    company_name="华东演示制造",
+                    contact_name="张工",
+                    email="zhang@example.com",
+                    consent_privacy=True,
+                ),
+                RFQ(
+                    public_reference="CN-UX-002",
+                    status="in_progress",
+                    company_name="华南演示制造",
+                    contact_name="李工",
+                    email="li@example.com",
+                    consent_privacy=True,
+                ),
+                RFQ(
+                    public_reference="CN-UX-003",
+                    status="new",
+                    company_name="海外演示制造",
+                    contact_name="Lee",
+                    email="lee@example.com",
+                    consent_privacy=True,
+                ),
+            ]
+        )
+
+    async with _admin_client(admin_api_session_factory) as client:
+        response = await client.get(
+            "/api/v1/rfqs",
+            params={"q": "演示制造", "status": "new", "page": 1, "page_size": 1},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["page"] == 1, payload
+    assert payload["page_size"] == 1, payload
+    assert payload["total"] == 2
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["status"] == "new"

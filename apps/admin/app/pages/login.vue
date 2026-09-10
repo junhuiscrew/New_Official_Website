@@ -23,7 +23,7 @@ async function submitLogin() {
 <template>
   <main class="admin-shell">
     <form aria-labelledby="login-title" @submit.prevent="submitLogin">
-      <p>JUNHUI · CONTENT OPERATIONS</p>
+      <p>JUNHUI · 内容运营</p>
       <h1 id="login-title">登录管理后台</h1>
       <span>使用后台应用账号访问独立 Demo R2 内容与媒体。</span>
       <label>邮箱 <input v-model="email" type="email" autocomplete="username" required /></label>
@@ -32,7 +32,9 @@ async function submitLogin() {
         <input v-model="password" type="password" autocomplete="current-password" required />
       </label>
       <p v-if="errorMessage" role="alert">{{ errorMessage }}</p>
-      <button type="submit" :disabled="pending">{{ pending ? '正在登录…' : '安全登录' }}</button>
+      <button type="submit" :disabled="pending">
+        {{ pending ? '正在登录…' : '安全登录' }}
+      </button>
     </form>
   </main>
 </template>

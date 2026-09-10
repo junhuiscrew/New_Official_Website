@@ -2,6 +2,12 @@
 <script setup lang="ts">
 import { adminMeta } from '../admin-config'
 import {
+  ENTITY_STATUS_LABELS,
+  PUBLICATION_STATUS_LABELS,
+  TRANSLATION_STATUS_LABELS,
+  labelFrom,
+} from '../utils/adminZhCn'
+import {
   canEditPrivacy,
   canPublishDraft,
   canReviewPrivacy,
@@ -64,7 +70,7 @@ const canPublish = computed(
 const activeTranslation = computed(() => translationDrafts[activeLocale.value])
 
 useHead({
-  title: `Privacy · ${adminMeta.title}`,
+  title: `隐私说明管理 · ${adminMeta.title}`,
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
@@ -195,7 +201,9 @@ async function createDraft(): Promise<void> {
   message.value = ''
   errorMessage.value = ''
   try {
-    const created = await api.create<PrivacyState>('/privacy/drafts', { clone_current: true })
+    const created = await api.create<PrivacyState>('/privacy/drafts', {
+      clone_current: true,
+    })
     await loadPrivacy()
     message.value = created.draft?.cloned_from_version_label
       ? `已从 ${created.draft.cloned_from_version_label} 克隆新草稿。`
@@ -344,52 +352,54 @@ onMounted(loadPrivacy)
     <!-- 页面标题区：主标题保持全页唯一 H1。 -->
     <header class="privacy-heading">
       <div>
-        <p class="eyebrow">Compliance content</p>
-        <h1>Privacy 管理</h1>
+        <p class="eyebrow">合规内容</p>
+        <h1>隐私说明管理</h1>
         <p>维护固定双语政策版本；所有审核与发布操作都必须由用户明确触发。</p>
       </div>
       <button type="button" :disabled="loading" @click="loadPrivacy">刷新实际状态</button>
     </header>
 
     <p v-if="message" class="success-message" role="status">{{ message }}</p>
-    <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
-    <p v-if="loading" role="status">正在读取 Privacy 实际状态…</p>
+    <p v-if="errorMessage" class="error-message" role="alert">
+      {{ errorMessage }}
+    </p>
+    <p v-if="loading" role="status">正在读取隐私说明实际状态…</p>
 
     <!-- 未初始化状态：只有满足后端当前编辑组合权限的用户能执行初始化。 -->
     <section v-else-if="!initialized" class="privacy-empty" aria-labelledby="privacy-empty-title">
-      <h2 id="privacy-empty-title">Privacy 页面尚未初始化</h2>
+      <h2 id="privacy-empty-title">隐私说明页面尚未初始化</h2>
       <p>初始化只建立固定页面身份与生命周期骨架，不会写入或发布正文。</p>
       <button v-if="canEdit" type="button" :disabled="lifecycleBusy" @click="initializePrivacy">
-        初始化 Privacy 页面
+        初始化隐私说明页面
       </button>
     </section>
 
     <template v-else-if="privacyState">
       <!-- 页面与 current 摘要：只展示 API 返回值，不硬编码版本或经营期限。 -->
-      <section class="privacy-summary" aria-label="Privacy page summary">
+      <section class="privacy-summary" aria-label="隐私说明页面摘要">
         <div>
           <span>页面状态</span>
-          <strong>{{ privacyState.page.status }}</strong>
+          <strong>{{ labelFrom(ENTITY_STATUS_LABELS, privacyState.page.status) }}</strong>
         </div>
         <div>
-          <span>Current</span>
-          <strong>{{ current?.version_label ?? '暂无 current' }}</strong>
+          <span>当前生效版本</span>
+          <strong>{{ current?.version_label ?? '暂无生效版本' }}</strong>
         </div>
         <div>
-          <span>Draft</span>
-          <strong>{{ draft?.version_label ?? '暂无 draft' }}</strong>
+          <span>工作草稿</span>
+          <strong>{{ draft?.version_label ?? '暂无工作草稿' }}</strong>
         </div>
       </section>
 
       <section v-if="current" class="version-panel" aria-labelledby="current-version-title">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Current</p>
+            <p class="eyebrow">当前生效版本</p>
             <h2 id="current-version-title">{{ current.version_label }}</h2>
           </div>
           <dl class="version-meta">
             <div>
-              <dt>Revision</dt>
+              <dt>修订号</dt>
               <dd>{{ current.revision }}</dd>
             </div>
             <div>
@@ -401,12 +411,27 @@ onMounted(loadPrivacy)
         <div class="language-status-grid">
           <article v-for="locale in PRIVACY_LOCALES" :key="locale.code">
             <h3>{{ locale.label }}</h3>
-            <p>Translation：{{ current.translations[locale.code].translation_status }}</p>
-            <p>Publication：{{ current.translations[locale.code].publication_status }}</p>
             <p>
-              Route：{{ current.translations[locale.code].canonical_path }} ·
-              {{ current.translations[locale.code].route_active ? 'active' : 'inactive' }} ·
-              {{ current.translations[locale.code].route_indexable ? 'indexable' : 'noindex' }}
+              翻译状态：{{
+                labelFrom(
+                  TRANSLATION_STATUS_LABELS,
+                  current.translations[locale.code].translation_status,
+                )
+              }}
+            </p>
+            <p>
+              发布状态：{{
+                labelFrom(
+                  PUBLICATION_STATUS_LABELS,
+                  current.translations[locale.code].publication_status,
+                )
+              }}
+            </p>
+            <p>
+              页面路由：{{ current.translations[locale.code].canonical_path }} ·
+              {{ current.translations[locale.code].route_active ? '已启用' : '未启用' }}
+              ·
+              {{ current.translations[locale.code].route_indexable ? '可索引' : '不可索引' }}
             </p>
           </article>
         </div>
@@ -416,7 +441,9 @@ onMounted(loadPrivacy)
       <!-- 无草稿或不可变草稿时，满足编辑组合权限的用户可显式创建下一版。 -->
       <section v-if="!draft" class="privacy-empty" aria-labelledby="privacy-no-draft-title">
         <h2 id="privacy-no-draft-title">当前没有工作草稿</h2>
-        <p>{{ current ? '可从 current 克隆一个新版本。' : '可创建一个空白双语版本。' }}</p>
+        <p>
+          {{ current ? '可从当前生效版本克隆一个新版本。' : '可创建一个空白双语版本。' }}
+        </p>
         <button v-if="canEdit" type="button" :disabled="lifecycleBusy" @click="createDraft">
           创建/克隆草稿
         </button>
@@ -425,7 +452,7 @@ onMounted(loadPrivacy)
       <section v-else class="version-panel draft-panel" aria-labelledby="draft-version-title">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Working draft <span class="not-approved">NOT APPROVED</span></p>
+            <p class="eyebrow">工作草稿 <span class="not-approved">尚未批准</span></p>
             <h2 id="draft-version-title">{{ draft.version_label }}</h2>
             <p v-if="draft.cloned_from_version_label">
               克隆自 {{ draft.cloned_from_version_label }}
@@ -433,7 +460,7 @@ onMounted(loadPrivacy)
           </div>
           <dl class="version-meta">
             <div>
-              <dt>Revision</dt>
+              <dt>修订号</dt>
               <dd>{{ draft.revision }}</dd>
             </div>
             <div>
@@ -453,12 +480,27 @@ onMounted(loadPrivacy)
         <div class="language-status-grid">
           <article v-for="locale in PRIVACY_LOCALES" :key="locale.code">
             <h3>{{ locale.label }}</h3>
-            <p>Translation：{{ draft.translations[locale.code].translation_status }}</p>
-            <p>Publication：{{ draft.translations[locale.code].publication_status }}</p>
             <p>
-              Route：{{ draft.translations[locale.code].canonical_path }} ·
-              {{ draft.translations[locale.code].route_active ? 'active' : 'inactive' }} ·
-              {{ draft.translations[locale.code].route_indexable ? 'indexable' : 'noindex' }}
+              翻译状态：{{
+                labelFrom(
+                  TRANSLATION_STATUS_LABELS,
+                  draft.translations[locale.code].translation_status,
+                )
+              }}
+            </p>
+            <p>
+              发布状态：{{
+                labelFrom(
+                  PUBLICATION_STATUS_LABELS,
+                  draft.translations[locale.code].publication_status,
+                )
+              }}
+            </p>
+            <p>
+              页面路由：{{ draft.translations[locale.code].canonical_path }} ·
+              {{ draft.translations[locale.code].route_active ? '已启用' : '未启用' }}
+              ·
+              {{ draft.translations[locale.code].route_indexable ? '可索引' : '不可索引' }}
             </p>
             <button
               v-if="canReview && canReviewLocale(locale.code)"
@@ -486,7 +528,7 @@ onMounted(loadPrivacy)
             <small>未修改则保留服务端原始 ISO；修改后按本地时区精确到秒保存，毫秒归零。</small>
           </label>
 
-          <div class="tab-list" role="group" aria-label="Privacy languages">
+          <div class="tab-list" role="group" aria-label="隐私说明语言">
             <button
               v-for="locale in PRIVACY_LOCALES"
               :key="locale.code"
@@ -524,8 +566,10 @@ onMounted(loadPrivacy)
               </label>
             </div>
             <section class="preview-card" :aria-label="`${activeLocale} 安全预览`">
-              <p class="preview-label">后台安全预览 · NOT APPROVED</p>
-              <p class="preview-title">{{ activeTranslation.title || '未填写标题' }}</p>
+              <p class="preview-label">后台安全预览 · 尚未批准</p>
+              <p class="preview-title">
+                {{ activeTranslation.title || '未填写标题' }}
+              </p>
               <SafeMarkdownPreview :markdown="activeTranslation.body_markdown" />
             </section>
           </div>
@@ -534,7 +578,7 @@ onMounted(loadPrivacy)
             <button type="submit" :disabled="saving || !canEditDraft">
               {{ saving ? '保存并回读中…' : '保存双语草稿' }}
             </button>
-            <span v-if="!canEdit">当前账号不具备 Privacy 编辑组合权限。</span>
+            <span v-if="!canEdit">当前账号不具备隐私说明编辑组合权限。</span>
           </div>
         </form>
 
@@ -563,16 +607,18 @@ onMounted(loadPrivacy)
       <section v-if="canReadHistory" class="version-panel" aria-labelledby="privacy-history-title">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Authorized history</p>
+            <p class="eyebrow">授权可见历史</p>
             <h2 id="privacy-history-title">版本历史</h2>
           </div>
           <span>{{ history.length }} 个版本</span>
         </div>
-        <p v-if="historyError" class="error-message" role="alert">{{ historyError }}</p>
+        <p v-if="historyError" class="error-message" role="alert">
+          {{ historyError }}
+        </p>
         <ol v-else-if="history.length" class="history-list">
           <li v-for="version in history" :key="version.version_label">
             <strong>{{ version.version_label }}</strong>
-            <span>revision {{ version.revision }}</span>
+            <span>修订号 {{ version.revision }}</span>
             <span>{{ version.effective_at ?? '未设置生效时间' }}</span>
             <span>
               zh-CN {{ version.translations['zh-CN'].translation_status }} / en

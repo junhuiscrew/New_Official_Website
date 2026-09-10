@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.exceptions.handlers import AppException
+from app.core.pagination import PaginationParams
 from app.core.request_context import get_client_context
 from app.core.responses import ApiResponse, success_response
 from app.modules.audit.models import AuditLog
@@ -82,10 +84,60 @@ async def upload_public_rfq_file(public_reference: str, request: Request, file: 
 
 
 @router.get("", response_model=ApiResponse[dict[str, object]])
-async def list_rfqs(session: AsyncSession = Depends(get_session), _user: User = Depends(require_permission("rfq.read"))) -> ApiResponse[dict[str, object]]:
-    """销售读取询盘列表。"""
-    rows = list((await session.scalars(select(RFQ).order_by(RFQ.created_at.desc()))).all())
-    return success_response({"items": [_dto(row) for row in rows], "total": len(rows)})
+async def list_rfqs(
+    pagination: PaginationParams = Depends(),
+    q: str | None = Query(default=None, max_length=200),
+    status_filter: str | None = Query(default=None, alias="status", max_length=32),
+    assigned_to: uuid.UUID | None = Query(default=None),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    _user: User = Depends(require_permission("rfq.read")),
+) -> ApiResponse[dict[str, object]]:
+    """
+    按搜索、状态、负责人和日期范围分页读取询盘。
+
+    输入：分页参数与可选筛选条件；日期按带时区 ISO 时间解释。
+    输出：dict，包含当前页 items、page、page_size 和筛选后的 total。
+    """
+    statement = select(RFQ)
+    if q and (search_text := q.strip()):
+        pattern = f"%{search_text}%"
+        statement = statement.where(
+            or_(
+                RFQ.public_reference.ilike(pattern),
+                RFQ.company_name.ilike(pattern),
+                RFQ.contact_name.ilike(pattern),
+                RFQ.email.ilike(pattern),
+            )
+        )
+    if status_filter:
+        statement = statement.where(RFQ.status == status_filter)
+    if assigned_to:
+        statement = statement.where(RFQ.assigned_to == assigned_to)
+    if created_from:
+        statement = statement.where(RFQ.created_at >= created_from)
+    if created_to:
+        statement = statement.where(RFQ.created_at <= created_to)
+
+    total = await session.scalar(select(func.count()).select_from(statement.subquery()))
+    rows = list(
+        (
+            await session.scalars(
+                statement.order_by(RFQ.created_at.desc(), RFQ.id)
+                .offset(pagination.offset)
+                .limit(pagination.page_size)
+            )
+        ).all()
+    )
+    return success_response(
+        {
+            "items": [_dto(row) for row in rows],
+            "page": pagination.page,
+            "page_size": pagination.page_size,
+            "total": total or 0,
+        }
+    )
 
 
 @router.get("/{rfq_id}", response_model=ApiResponse[dict[str, object]])

@@ -65,8 +65,8 @@ function updateExtraField(locale: LocaleOption, field: string, value: string) {
 
 <template>
   <fieldset class="translation-fields">
-    <legend>Translations</legend>
-    <div class="tab-list" role="tablist" aria-label="Translation locale">
+    <legend>中英文内容</legend>
+    <div class="tab-list" role="tablist" aria-label="内容语言">
       <button
         v-for="locale in supportedLocales"
         :key="locale.id"
@@ -79,14 +79,14 @@ function updateExtraField(locale: LocaleOption, field: string, value: string) {
     </div>
     <div v-for="locale in supportedLocales" v-show="activeCode === locale.code" :key="locale.id">
       <label>
-        Name
+        名称
         <input
           :value="translationFor(locale).name"
           @input="updateTranslation(locale, 'name', ($event.target as HTMLInputElement).value)"
         />
       </label>
       <label>
-        Description
+        正文说明
         <textarea
           :value="translationFor(locale).fields[props.bodyField] || ''"
           @input="

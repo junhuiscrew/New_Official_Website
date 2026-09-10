@@ -13,8 +13,20 @@ const props = defineProps<{
   sourceSlug?: string
 }>()
 const labels = computed(() => ui[props.locale])
+const runtimeConfig = useRuntimeConfig()
+const demoMode = computed(() => Boolean(runtimeConfig.public.demoMode))
+const summary = computed(() =>
+  demoMode.value ? labels.value.home.demoRfqSummary : labels.value.home.rfqSummary,
+)
+const actionLabel = computed(() =>
+  demoMode.value ? labels.value.home.demoRfqAction : labels.value.cta.requestQuote,
+)
 const href = computed(() =>
-  rfqUrl({ locale: props.locale, type: props.sourceType, slug: props.sourceSlug }),
+  rfqUrl({
+    locale: props.locale,
+    type: props.sourceType,
+    slug: props.sourceSlug,
+  }),
 )
 const telemetry = useTelemetry()
 </script>
@@ -25,7 +37,7 @@ const telemetry = useTelemetry()
       <div>
         <p class="eyebrow">{{ labels.cta.requestQuote }}</p>
         <h2 id="homepage-rfq-title">{{ labels.home.rfqTitle }}</h2>
-        <p>{{ labels.home.rfqSummary }}</p>
+        <p>{{ summary }}</p>
       </div>
       <a
         :href="href"
@@ -37,7 +49,7 @@ const telemetry = useTelemetry()
           })
         "
       >
-        {{ labels.cta.requestQuote }}
+        {{ actionLabel }}
       </a>
     </div>
   </section>

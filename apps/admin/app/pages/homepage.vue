@@ -132,13 +132,16 @@ const hasUnappliedChanges = computed(() => {
 })
 
 useHead({
-  title: `Homepage Presentation · ${adminMeta.title}`,
+  title: `首页模块编辑器 · ${adminMeta.title}`,
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
 
 /** 输入服务端草稿；输出完全独立的表单数组，避免未保存操作污染回读对象。 */
 function cloneModules(modules: ModuleConfig[]): ModuleConfig[] {
-  return modules.map((module) => ({ ...module, product_slugs: [...module.product_slugs] }))
+  return modules.map((module) => ({
+    ...module,
+    product_slugs: [...module.product_slugs],
+  }))
 }
 
 /** 读取双语首页详情，并把当前语言的最新草稿装入编辑器。 */
@@ -277,7 +280,7 @@ onMounted(loadHomepage)
   <main class="homepage-admin" data-testid="homepage-module-editor">
     <header class="homepage-admin__hero">
       <div>
-        <p class="admin-eyebrow">Website Presentation V1.0 · R1</p>
+        <p class="admin-eyebrow">官网呈现 V1.0 · R1</p>
         <h1>首页模块编辑器</h1>
         <p>调整双语首页的顺序、显隐、有限样式与现有产品引用；正文仍由原业务模块维护。</p>
       </div>
@@ -337,7 +340,7 @@ onMounted(loadHomepage)
         <nav class="module-navigator" aria-label="首页模块清单">
           <header>
             <div>
-              <p class="admin-eyebrow">MODULES</p>
+              <p class="admin-eyebrow">首页模块</p>
               <h2>模块清单</h2>
             </div>
             <span>{{ editableModules.filter((module) => module.visible).length }} / 14 显示</span>
@@ -386,7 +389,7 @@ onMounted(loadHomepage)
         <section v-if="activeModule" class="module-properties">
           <header>
             <div>
-              <p class="admin-eyebrow">PROPERTIES</p>
+              <p class="admin-eyebrow">模块属性</p>
               <h2>{{ moduleLabels[activeModule.key] }}</h2>
             </div>
             <span>位置 {{ String(activeModuleIndex + 1).padStart(2, '0') }}</span>
@@ -473,8 +476,12 @@ onMounted(loadHomepage)
           >
             从应用版恢复草稿
           </button>
-          <p v-if="message" class="admin-message" role="status">{{ message }}</p>
-          <p v-if="errorMessage" class="admin-error" role="alert">{{ errorMessage }}</p>
+          <p v-if="message" class="admin-message" role="status">
+            {{ message }}
+          </p>
+          <p v-if="errorMessage" class="admin-error" role="alert">
+            {{ errorMessage }}
+          </p>
         </aside>
       </section>
     </template>

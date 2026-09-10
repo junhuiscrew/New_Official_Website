@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import func, inspect, select
+from sqlalchemy import case, func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,6 +83,7 @@ from app.modules.catalog.services import (
 from app.modules.content.enums import PublicationStatus, TranslationState
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.publication import transition_publication
+from app.modules.localization.models import Locale
 from app.modules.users.models import User
 from app.modules.users.service import collect_authorization
 
@@ -100,6 +101,20 @@ _CATALOG_LIFECYCLE_MODELS: dict[str, tuple[str, type]] = {
     "technologies": ("technology", Technology),
     "applications": ("application", Application),
     "solutions": ("solution", Solution),
+}
+
+_CATALOG_NAME_PROJECTIONS: dict[str, tuple[type, str]] = {
+    ProductCategory.__tablename__: (ProductCategoryTranslation, "category_id"),
+    Product.__tablename__: (ProductTranslation, "product_id"),
+    Material.__tablename__: (MaterialTranslation, "material_id"),
+    Technology.__tablename__: (TechnologyTranslation, "technology_id"),
+    Application.__tablename__: (ApplicationTranslation, "application_id"),
+    Solution.__tablename__: (SolutionTranslation, "solution_id"),
+    SpecificationGroup.__tablename__: (SpecificationGroupTranslation, "group_id"),
+    SpecificationDefinition.__tablename__: (
+        SpecificationDefinitionTranslation,
+        "definition_id",
+    ),
 }
 _PUBLICATION_PERMISSION_ACTIONS: dict[PublicationStatus, str] = {
     PublicationStatus.REVIEW: "review",
@@ -308,10 +323,61 @@ def _serialize(entity: Any) -> dict[str, Any]:
 
 
 async def _list_entities(session: AsyncSession, model: type, pagination: PaginationParams) -> dict[str, Any]:
-    """执行稳定排序分页查询，避免默认预加载全部关联。"""
+    """
+    分页读取目录实体，并批量补充中文优先的可读名称。
+
+    输入：session、目录主模型和分页参数。
+    输出：dict，包含列表、分页信息及中英文名称投影。
+    """
     total = await session.scalar(select(func.count()).select_from(model))
     rows = list((await session.scalars(select(model).order_by(model.sort_order, model.id).offset(pagination.offset).limit(pagination.page_size))).all())
-    return {"items": [_serialize(row) for row in rows], "page": pagination.page, "page_size": pagination.page_size, "total": total or 0}
+    items = [
+        {
+            **_serialize(row),
+            "display_name": None,
+            "display_name_en": None,
+            "translation_count": 0,
+        }
+        for row in rows
+    ]
+    projection = _CATALOG_NAME_PROJECTIONS.get(model.__tablename__)
+    if projection and rows:
+        translation_model, owner_field = projection
+        # 一次查询当前页全部翻译，避免后台列表逐条请求详情；显示顺序不改变 Locale 原始代码。
+        translation_rows = (
+            await session.execute(
+                select(translation_model, Locale.code)
+                .join(Locale, Locale.id == translation_model.locale_id)
+                .where(getattr(translation_model, owner_field).in_([row.id for row in rows]))
+                .order_by(
+                    case(
+                        (Locale.code == "zh-CN", 0),
+                        (Locale.code == "en", 1),
+                        else_=2,
+                    ),
+                    Locale.sort_order,
+                    translation_model.id,
+                )
+            )
+        ).all()
+        names: dict[uuid.UUID, dict[str, Any]] = {}
+        for translation, locale_code in translation_rows:
+            owner_id = getattr(translation, owner_field)
+            entry = names.setdefault(
+                owner_id,
+                {"first": translation.name, "zh-CN": None, "en": None, "count": 0},
+            )
+            entry["count"] += 1
+            if locale_code in {"zh-CN", "en"}:
+                entry[locale_code] = translation.name
+        for item, row in zip(items, rows, strict=True):
+            entry = names.get(row.id, {})
+            item.update(
+                display_name=entry.get("zh-CN") or entry.get("en") or entry.get("first"),
+                display_name_en=entry.get("en"),
+                translation_count=entry.get("count", 0),
+            )
+    return {"items": items, "page": pagination.page, "page_size": pagination.page_size, "total": total or 0}
 
 
 async def _lifecycle_detail(

@@ -1,5 +1,10 @@
-<!-- 页面用途：Users 基础查看页；创建、编辑能力以 API 服务端权限为准。 -->
+<!-- 页面用途：后台用户基础查看页；中文界面不改变邮箱、角色代码和权限。 -->
 <script setup lang="ts">
+useHead({
+  title: '后台用户',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
+
 interface UserItem {
   id: string
   email: string
@@ -20,15 +25,16 @@ const { data, error } = await useFetch<{ data: UserItem[] }>('/users', {
 <template>
   <main class="admin-shell">
     <section aria-labelledby="users-title">
-      <h1 id="users-title">Users</h1>
-      <p v-if="error">Unable to load users.</p>
+      <h1 id="users-title">后台用户</h1>
+      <p>中文员工可查看账号状态；角色和权限仍由服务端控制。</p>
+      <p v-if="error">无法读取后台用户。</p>
       <table v-else>
         <thead>
           <tr>
-            <th>Email</th>
-            <th>Name</th>
-            <th>Roles</th>
-            <th>Status</th>
+            <th>邮箱</th>
+            <th>姓名</th>
+            <th>角色</th>
+            <th>状态</th>
           </tr>
         </thead>
         <tbody>
@@ -36,7 +42,7 @@ const { data, error } = await useFetch<{ data: UserItem[] }>('/users', {
             <td>{{ user.email }}</td>
             <td>{{ user.display_name || '—' }}</td>
             <td>{{ user.roles.join(', ') || '—' }}</td>
-            <td>{{ user.is_active ? 'Active' : 'Disabled' }}</td>
+            <td>{{ user.is_active ? '正常' : '已停用' }}</td>
           </tr>
         </tbody>
       </table>

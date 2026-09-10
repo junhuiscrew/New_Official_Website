@@ -16,7 +16,10 @@ describe('Privacy P1 Admin contract', () => {
     expect(source).toContain('useAuthorityApi')
     expect(source).toContain("api.detail<PrivacyState>('/privacy')")
     expect(source).toContain("api.create<PrivacyState>('/privacy/initialize', {})")
-    expect(source).toContain("api.create<PrivacyState>('/privacy/drafts', { clone_current: true })")
+    // 格式化器可能把对象参数拆成多行；契约只要求固定端点和 clone_current=true 同时存在。
+    expect(source).toMatch(
+      /api\.create<PrivacyState>\('\/privacy\/drafts',\s*\{\s*clone_current:\s*true,?\s*\}\)/,
+    )
     expect(source).toContain("api.replace<PrivacyState>('/privacy/draft'")
     expect(source).toContain('/privacy/draft/review/${locale}')
     expect(source).toContain('expected_version_label: activeDraft.version_label')
@@ -43,10 +46,10 @@ describe('Privacy P1 Admin contract', () => {
 
     const source = readFileSync(pagePath, 'utf8')
     expect(source).toContain('canEditPrivacy(permissions.value)')
-    expect(source).toContain('初始化 Privacy 页面')
+    expect(source).toContain('初始化隐私说明页面')
     expect(source).toContain('创建/克隆草稿')
     expect(source).toContain('已审核或已发布版本不能直接编辑，请创建新草稿')
-    expect(source).toContain('NOT APPROVED')
+    expect(source).toContain('尚未批准')
     expect(source).toContain('created.draft?.cloned_from_version_label')
   })
 

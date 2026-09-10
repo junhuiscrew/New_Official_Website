@@ -20,6 +20,9 @@ interface FetchFailure {
   response?: { status?: number }
 }
 
+// 浏览器多个并发请求同时遇到过期访问 Cookie 时只允许轮换一次 refresh credential。
+let clientRefreshPromise: Promise<AdminUser> | null = null
+
 export function useAuth() {
   const currentUser = useState<AdminUser | null>('admin-current-user', () => null)
   const config = useRuntimeConfig()
@@ -47,7 +50,7 @@ export function useAuth() {
     }
   }
 
-  async function refreshCurrentUser(): Promise<AdminUser> {
+  async function performSessionRefresh(): Promise<AdminUser> {
     // Refresh 凭据只由 HttpOnly Cookie 携带，客户端仅读取非敏感 CSRF Cookie。
     const csrfToken = useCookie<string | null>('junhui_csrf')
     const response = await $fetch<ApiEnvelope<AdminUser>>('/auth/refresh', {
@@ -56,8 +59,26 @@ export function useAuth() {
       credentials: 'include',
       headers: { 'X-CSRF-Token': csrfToken.value || '' },
     })
+    // 服务端轮换访问、刷新和 CSRF Cookie 后，同步客户端可读的 CSRF ref。
+    if (import.meta.client) refreshCookie('junhui_csrf')
     currentUser.value = response.data
     return response.data
+  }
+
+  /**
+   * 原子恢复浏览器登录会话。
+   *
+   * 输入：无，凭据只来自安全 Cookie。
+   * 输出：Promise<AdminUser>，返回刷新后的当前用户；并发调用共享同一个刷新请求。
+   */
+  async function refreshCurrentUser(): Promise<AdminUser> {
+    if (import.meta.server) return performSessionRefresh()
+    if (!clientRefreshPromise) {
+      clientRefreshPromise = performSessionRefresh().finally(() => {
+        clientRefreshPromise = null
+      })
+    }
+    return clientRefreshPromise
   }
 
   async function login(email: string, password: string): Promise<AdminUser> {
@@ -82,5 +103,12 @@ export function useAuth() {
     currentUser.value = null
   }
 
-  return { currentUser, apiBase, loadCurrentUser, refreshCurrentUser, login, logout }
+  return {
+    currentUser,
+    apiBase,
+    loadCurrentUser,
+    refreshCurrentUser,
+    login,
+    logout,
+  }
 }

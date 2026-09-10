@@ -1,6 +1,9 @@
 <!-- 页面用途：荣誉真实 CRUD；只录入可验证事实。 -->
 <script setup lang="ts">
-useHead({ title: 'Honors', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+useHead({
+  title: '荣誉',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
 useAuthorityApi()
 </script>
-<template><TrustCrud title="Honors" resource="honors" /></template>
+<template><TrustCrud title="荣誉" resource="honors" /></template>

@@ -1,4 +1,4 @@
-<!-- 组件职责：编辑 GEO 声明，并只读展示后端根据真实正文构造的事实来源。 -->
+<!-- 组件职责：使用中文操作界面编辑 GEO 声明，并只读展示后端构造的事实来源。 -->
 <script setup lang="ts">
 export interface GeoDraft {
   direct_answer: string
@@ -20,7 +20,10 @@ const props = defineProps<{
   serverVisibleSourceText: string
   reviewers: ReviewerOption[]
 }>()
-const emit = defineEmits<{ 'update:modelValue': [value: GeoDraft]; save: [] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: GeoDraft]
+  save: []
+}>()
 
 function updateText(field: keyof GeoDraft, value: string) {
   emit('update:modelValue', { ...props.modelValue, [field]: value })
@@ -44,35 +47,35 @@ function updateLines(
   <fieldset class="sub-editor">
     <legend>GEO</legend>
     <label
-      >Direct answer
+      >直接回答
       <textarea
         :value="modelValue.direct_answer"
         @input="updateText('direct_answer', ($event.target as HTMLTextAreaElement).value)"
       />
     </label>
     <label
-      >Target questions (one per line)
+      >目标问题（每行一项）
       <textarea
         :value="modelValue.target_questions_json.join('\n')"
         @input="updateLines('target_questions_json', ($event.target as HTMLTextAreaElement).value)"
       />
     </label>
     <label
-      >Key facts (one per line)
+      >关键事实（每行一项）
       <textarea
         :value="modelValue.key_facts_json.join('\n')"
         @input="updateLines('key_facts_json', ($event.target as HTMLTextAreaElement).value)"
       />
     </label>
     <label
-      >Evidence (one per line)
+      >依据（每行一项）
       <textarea
         :value="modelValue.evidence_json.join('\n')"
         @input="updateLines('evidence_json', ($event.target as HTMLTextAreaElement).value)"
       />
     </label>
     <label
-      >Related questions (one per line)
+      >相关问题（每行一项）
       <textarea
         :value="modelValue.related_questions_json.join('\n')"
         @input="updateLines('related_questions_json', ($event.target as HTMLTextAreaElement).value)"
@@ -91,17 +94,17 @@ function updateLines(
       </select></label
     >
     <label
-      >Last reviewed
+      >最近复核时间
       <input
         type="datetime-local"
         :value="modelValue.last_reviewed_at"
         @input="updateText('last_reviewed_at', ($event.target as HTMLInputElement).value)"
     /></label>
     <label
-      >Server-visible source content
+      >服务端可见事实来源
       <textarea :value="serverVisibleSourceText" readonly />
     </label>
     <p>该预览由后端真实 Product / Case / Knowledge / Expert 内容构造，不能在此编辑。</p>
-    <button type="button" @click="$emit('save')">Validate and save GEO</button>
+    <button type="button" @click="$emit('save')">校验并保存 GEO</button>
   </fieldset>
 </template>

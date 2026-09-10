@@ -3,6 +3,12 @@
 import TranslationFields from '~/components/catalog/TranslationFields.vue'
 import type { CatalogTranslationDraft } from '~/composables/useCatalogApi'
 import {
+  ENTITY_STATUS_LABELS,
+  PUBLICATION_STATUS_LABELS,
+  TRANSLATION_STATUS_LABELS,
+  labelFrom,
+} from '~/utils/adminZhCn'
+import {
   buildSpecificationValuePayload,
   type SpecificationValueDraft,
   type SpecificationValueType,
@@ -12,6 +18,8 @@ interface NamedItem {
   id: string
   slug?: string
   code?: string | null
+  display_name?: string
+  display_name_en?: string
   status: string
   primary_media_id?: string | null
   category_id?: string
@@ -87,7 +95,10 @@ interface ProductDetail extends NamedItem {
   }
 }
 
-useHead({ title: 'Catalog Products', meta: [{ name: 'robots', content: 'noindex, nofollow' }] })
+useHead({
+  title: '产品与型号',
+  meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+})
 const api = useCatalogApi()
 const products = ref<ProductDetail[]>([])
 const categories = ref<NamedItem[]>([])
@@ -213,6 +224,7 @@ function resetSpecificationDraft(): void {
  * 输出：string，优先中文、其次英文，最后回退 slug/code；绝不显示 UUID。
  */
 function readableItemLabel(item: NamedItem): string {
+  if (item.display_name) return item.display_name
   const translation =
     item.translations?.find((row) =>
       String(
@@ -249,7 +261,9 @@ function readableItemLabel(item: NamedItem): string {
 function searchableItemValues(item: NamedItem): string[] {
   const translationValues =
     item.translations?.flatMap((row) => [row.name, row.title, row.question]) || []
-  return [...translationValues, item.slug, item.code].filter(Boolean).map(String)
+  return [item.display_name, item.display_name_en, ...translationValues, item.slug, item.code]
+    .filter(Boolean)
+    .map(String)
 }
 
 /** 输入媒体ID；输出可在同源后台显示的缩略图地址。 */
@@ -361,7 +375,7 @@ async function load() {
     locales.value = localeResult
     media.value = mediaResult
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to load products.'
+    errorMessage.value = error instanceof Error ? error.message : '无法读取产品。'
   }
 }
 
@@ -421,7 +435,7 @@ async function editProduct(item: ProductDetail) {
       },
     }))
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to load product detail.'
+    errorMessage.value = error instanceof Error ? error.message : '无法读取产品详情。'
   }
 }
 
@@ -464,7 +478,7 @@ async function saveProduct() {
     resetForm()
     await load()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to save product.'
+    errorMessage.value = error instanceof Error ? error.message : '无法保存产品。'
   }
 }
 
@@ -498,7 +512,7 @@ async function reviewTranslation(localeId: string) {
     })
     await reloadSelectedProduct()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to review translation.'
+    errorMessage.value = error instanceof Error ? error.message : '无法审核翻译。'
   }
 }
 
@@ -512,7 +526,7 @@ async function transitionPublication(localeId: string, targetStatus: 'published'
     )
     await reloadSelectedProduct()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'Unable to change publication.'
+    errorMessage.value = error instanceof Error ? error.message : '无法变更发布状态。'
   }
 }
 
@@ -527,7 +541,9 @@ async function addModel() {
 }
 
 async function retireModel(model: ProductModelItem) {
-  await api.update(`/catalog/product-models/${model.id}`, { status: 'retired' })
+  await api.update(`/catalog/product-models/${model.id}`, {
+    status: 'retired',
+  })
   await editProduct({ id: selectedId.value } as ProductDetail)
 }
 
@@ -589,12 +605,14 @@ onMounted(load)
     <section>
       <header class="page-heading">
         <div>
-          <h1>Products &amp; Models</h1>
-          <p>Structured product editing and publication foundation.</p>
+          <h1>产品与型号</h1>
+          <p>维护产品基本信息、双语正文、规格、关系和发布状态。</p>
         </div>
-        <button type="button" @click="resetForm">New</button>
+        <button type="button" @click="resetForm">新建产品</button>
       </header>
-      <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+      <p v-if="errorMessage" class="error-message" role="alert">
+        {{ errorMessage }}
+      </p>
       <nav v-if="selectedId" class="product-section-nav" aria-label="产品编辑分区">
         <a href="#product-basic">基础信息</a>
         <a href="#product-content">双语正文</a>
@@ -608,26 +626,26 @@ onMounted(load)
         <aside class="product-browser" aria-label="产品记录浏览器">
           <div class="product-browser__filters">
             <label>
-              <span>Search products</span>
-              <input v-model="productSearch" type="search" placeholder="Name, slug or code" />
+              <span>搜索产品</span>
+              <input v-model="productSearch" type="search" placeholder="名称、Slug 或产品代码" />
             </label>
             <div>
               <label>
-                <span>Category</span>
+                <span>产品分类</span>
                 <select v-model="selectedCategoryFilter">
-                  <option value="">All categories</option>
+                  <option value="">全部分类</option>
                   <option v-for="item in categories" :key="item.id" :value="item.id">
                     {{ readableItemLabel(item) }}
                   </option>
                 </select>
               </label>
               <label>
-                <span>Status</span>
+                <span>状态</span>
                 <select v-model="selectedStatusFilter">
-                  <option value="">All statuses</option>
-                  <option value="enabled">Enabled</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="retired">Retired</option>
+                  <option value="">全部状态</option>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">停用</option>
+                  <option value="retired">已退役</option>
                 </select>
               </label>
             </div>
@@ -651,52 +669,56 @@ onMounted(load)
               <span v-else class="product-media-thumb product-media-thumb--empty">PR</span>
               <span class="product-record-list__identity">
                 <strong>{{ readableItemLabel(item) }}</strong>
-                <small>{{ item.slug }} · {{ item.code || 'No code' }}</small>
+                <small>{{ item.slug }} · {{ item.code || '未填写产品代码' }}</small>
               </span>
-              <span class="product-record-list__status">{{ item.status }}</span>
+              <span class="product-record-list__status">{{
+                labelFrom(ENTITY_STATUS_LABELS, item.status)
+              }}</span>
             </button>
-            <p v-if="!pagedProducts.length" class="product-browser__empty">No matching products.</p>
+            <p v-if="!pagedProducts.length" class="product-browser__empty">
+              没有符合筛选条件的产品。
+            </p>
           </div>
           <nav
             v-if="productPages > 1"
             class="product-browser__pagination"
-            aria-label="Product list pagination"
+            aria-label="产品列表分页"
           >
             <button type="button" :disabled="productPage <= 1" @click="productPage -= 1">
-              Previous
+              上一页
             </button>
             <span>{{ productPage }} / {{ productPages }}</span>
             <button type="button" :disabled="productPage >= productPages" @click="productPage += 1">
-              Next
+              下一页
             </button>
           </nav>
         </aside>
         <form id="product-basic" class="editor-form" @submit.prevent="saveProduct">
           <label
-            >Category
+            >产品分类
             <select v-model="form.category_id" required>
-              <option value="" disabled>Select</option>
+              <option value="" disabled>请选择分类</option>
               <option v-for="item in categories" :key="item.id" :value="item.id">
                 {{ readableItemLabel(item) }} · {{ item.slug }}
               </option>
             </select></label
           >
-          <label>Code <input v-model="form.code" /></label
-          ><label>Slug <input v-model="form.slug" required /></label>
+          <label>产品代码 <input v-model="form.code" /></label
+          ><label>Slug（路径标识） <input v-model="form.slug" required /></label>
           <label
-            >Status
+            >状态
             <select v-model="form.status">
-              <option>enabled</option>
-              <option>disabled</option>
-              <option>retired</option>
+              <option value="enabled">启用</option>
+              <option value="disabled">停用</option>
+              <option value="retired">已退役</option>
             </select></label
           >
-          <label>Sort order <input v-model.number="form.sort_order" type="number" /></label
-          ><label><input v-model="form.featured" type="checkbox" /> Featured</label>
+          <label>排序 <input v-model.number="form.sort_order" type="number" /></label
+          ><label><input v-model="form.featured" type="checkbox" /> 首页推荐</label>
           <label id="product-media"
-            >Primary media
+            >产品主图
             <select v-model="form.primary_media_id">
-              <option value="">No primary media</option>
+              <option value="">不使用主图</option>
               <option v-for="item in media" :key="item.id" :value="item.id">
                 {{ item.type }} · {{ item.filename }}
               </option>
@@ -707,30 +729,47 @@ onMounted(load)
             v-model="form.translations"
             :locales="locales"
             :extra-fields="[
-              { key: 'short_description', label: 'Short description', rows: 2 },
-              { key: 'highlights_jsonb', label: 'Highlights · one item per line', rows: 5 },
+              { key: 'short_description', label: '简短说明', rows: 2 },
+              {
+                key: 'highlights_jsonb',
+                label: '产品亮点（每行一项）',
+                rows: 5,
+              },
             ]"
           />
           <div class="form-actions">
-            <button type="submit">{{ selectedId ? 'Save changes' : 'Create product' }}</button
+            <button type="submit">
+              {{ selectedId ? '保存更改' : '创建产品' }}</button
             ><button v-if="selectedId" type="button" class="danger" @click="archiveProduct">
-              Archive
+              归档
             </button>
           </div>
         </form>
       </div>
       <section v-if="selectedId" id="product-publication" class="sub-editor">
-        <h2>Translation review &amp; publication</h2>
+        <h2>翻译审核与发布</h2>
         <div v-for="locale in locales" :key="locale.id" class="lifecycle-row">
           <p>
             <strong>{{ locale.native_name }}</strong>
-            · translation {{ lifecycleStatus(translationStatuses, locale.id, 'missing') }} ·
-            publication {{ lifecycleStatus(publications, locale.id, 'draft') }}
-            · route
+            · 翻译
+            {{
+              labelFrom(
+                TRANSLATION_STATUS_LABELS,
+                lifecycleStatus(translationStatuses, locale.id, 'missing'),
+              )
+            }}
+            · 发布
+            {{
+              labelFrom(
+                PUBLICATION_STATUS_LABELS,
+                lifecycleStatus(publications, locale.id, 'draft'),
+              )
+            }}
+            · 路由
             {{
               routeStatus(locale.id)?.active && routeStatus(locale.id)?.indexable
-                ? 'public'
-                : 'inactive/noindex'
+                ? '公开可见'
+                : '未启用 / 不索引'
             }}
           </p>
           <div class="form-actions">
@@ -743,14 +782,14 @@ onMounted(load)
               type="button"
               @click="reviewTranslation(locale.id)"
             >
-              Mark human reviewed
+              标记为人工审核
             </button>
             <button
               v-if="lifecycleStatus(publications, locale.id, 'draft') === 'review'"
               type="button"
               @click="transitionPublication(locale.id, 'published')"
             >
-              Publish
+              发布
             </button>
             <button
               v-if="lifecycleStatus(publications, locale.id, 'draft') === 'published'"
@@ -758,41 +797,36 @@ onMounted(load)
               class="danger"
               @click="transitionPublication(locale.id, 'archived')"
             >
-              Archive publication
+              撤回发布
             </button>
           </div>
         </div>
       </section>
       <section v-if="selectedId" id="product-models" class="sub-editor">
-        <h2>Product Models</h2>
+        <h2>产品型号</h2>
         <div class="inline-form">
-          <input v-model="modelCode" placeholder="Model code" /><button
+          <input v-model="modelCode" placeholder="型号代码" /><button
             type="button"
             @click="addModel"
           >
-            Add model
+            添加型号
           </button>
         </div>
         <ul>
           <li v-for="model in form.models" :key="model.id">
-            {{ model.model_code }} — {{ model.status }}
-            <button type="button" @click="retireModel(model)">Retire</button>
+            {{ model.model_code }} —
+            {{ labelFrom(ENTITY_STATUS_LABELS, model.status) }}
+            <button type="button" @click="retireModel(model)">退役</button>
           </li>
         </ul>
       </section>
       <section v-if="selectedId" id="product-relations" class="sub-editor">
-        <h2>Relations</h2>
-        <p class="sub-editor__intro">
-          Search by a readable name or slug, then select one or more linked records.
-        </p>
+        <h2>内容关系</h2>
+        <p class="sub-editor__intro">按可读名称或 Slug 搜索，再选择一个或多个关联内容。</p>
         <div class="relation-picker-grid">
           <label>
-            <span>Materials</span>
-            <input
-              v-model="relationSearch.material_ids"
-              type="search"
-              placeholder="Filter materials"
-            />
+            <span>材料</span>
+            <input v-model="relationSearch.material_ids" type="search" placeholder="筛选材料" />
             <select v-model="form.material_ids" multiple>
               <option
                 v-for="item in filteredRelationOptions('material_ids', materials)"
@@ -804,11 +838,11 @@ onMounted(load)
             </select>
           </label>
           <label>
-            <span>Technologies</span>
+            <span>技术工艺</span>
             <input
               v-model="relationSearch.technology_ids"
               type="search"
-              placeholder="Filter technologies"
+              placeholder="筛选技术工艺"
             />
             <select v-model="form.technology_ids" multiple>
               <option
@@ -821,11 +855,11 @@ onMounted(load)
             </select>
           </label>
           <label>
-            <span>Applications</span>
+            <span>应用场景</span>
             <input
               v-model="relationSearch.application_ids"
               type="search"
-              placeholder="Filter applications"
+              placeholder="筛选应用场景"
             />
             <select v-model="form.application_ids" multiple>
               <option
@@ -838,12 +872,8 @@ onMounted(load)
             </select>
           </label>
           <label>
-            <span>Solutions</span>
-            <input
-              v-model="relationSearch.solution_ids"
-              type="search"
-              placeholder="Filter solutions"
-            />
+            <span>解决方案</span>
+            <input v-model="relationSearch.solution_ids" type="search" placeholder="筛选解决方案" />
             <select v-model="form.solution_ids" multiple>
               <option
                 v-for="item in filteredRelationOptions('solution_ids', solutions)"
@@ -855,7 +885,7 @@ onMounted(load)
             </select>
           </label>
         </div>
-        <button type="button" @click="saveRelations">Save relations</button>
+        <button type="button" @click="saveRelations">保存关系</button>
       </section>
       <section
         v-if="selectedId"
@@ -864,7 +894,7 @@ onMounted(load)
       >
         <header class="specification-editor__heading">
           <div>
-            <p>STRUCTURED PARAMETERS</p>
+            <p>结构化参数</p>
             <h2>产品规格与参数</h2>
           </div>
           <span>{{ form.specifications.length }} 项已保存参数</span>
@@ -925,7 +955,9 @@ onMounted(load)
                 </div>
                 <div>
                   <dt>单位</dt>
-                  <dd>{{ value.unit_override || definition.default_unit || '无' }}</dd>
+                  <dd>
+                    {{ value.unit_override || definition.default_unit || '无' }}
+                  </dd>
                 </div>
                 <div>
                   <dt>当前值</dt>
@@ -942,7 +974,8 @@ onMounted(load)
                 <label>最大值 <input v-model.number="value.value_max" type="number" /></label>
               </div>
               <label v-else-if="definition.value_type === 'boolean'" class="spec-boolean-input">
-                <input v-model="value.value_boolean" type="checkbox" /> 当前为“是”
+                <input v-model="value.value_boolean" type="checkbox" />
+                当前为“是”
               </label>
               <label v-else-if="definition.value_type === 'enum'">
                 枚举值 <input v-model="value.enum_value" />

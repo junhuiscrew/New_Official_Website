@@ -7,7 +7,7 @@ import { ADMIN_ROBOTS } from '../app/auth-policy'
 describe('admin placeholder contract', () => {
   it('keeps the administration shell out of search indexes', () => {
     expect(adminMeta.robots).toBe('noindex, nofollow')
-    expect(adminMeta.title).toContain('Admin')
+    expect(adminMeta.title).toBe('骏辉全球官网后台')
     expect(ADMIN_ROBOTS).toBe('noindex, nofollow')
   })
 })

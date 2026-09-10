@@ -3,8 +3,8 @@
   <main class="admin-shell">
     <section aria-labelledby="forbidden-title">
       <h1 id="forbidden-title">403 Forbidden</h1>
-      <p>Your account does not have permission to access this module.</p>
-      <NuxtLink to="/">Return to overview</NuxtLink>
+      <p>当前账号没有访问此模块的权限。</p>
+      <NuxtLink to="/">返回工作台</NuxtLink>
     </section>
   </main>
 </template>

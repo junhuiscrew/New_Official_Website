@@ -125,7 +125,7 @@ onMounted(loadCounts)
   <main class="admin-shell catalog-hub">
     <header class="catalog-hub__hero">
       <div>
-        <p>STRUCTURED CONTENT</p>
+        <p>结构化内容</p>
         <h1>内容目录</h1>
         <span>从一个入口查找产品、分类、材料、工艺、应用、方案和规格字典。</span>
       </div>

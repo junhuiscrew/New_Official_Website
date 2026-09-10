@@ -25,7 +25,12 @@ const navGroups: AdminNavGroup[] = [
     label: '演示资源',
     items: [
       { label: '工作台', to: '/', mark: 'OV' },
-      { label: '演示媒体', to: '/demo-media', permission: 'media.read', mark: 'AV' },
+      {
+        label: '演示素材',
+        to: '/demo-media',
+        permission: 'media.read',
+        mark: 'AV',
+      },
     ],
   },
   {
@@ -43,26 +48,56 @@ const navGroups: AdminNavGroup[] = [
         ],
         mark: 'PD',
       },
-      { label: '案例研究', to: '/cases', permission: 'case.read', mark: 'CS' },
-      { label: '知识文章', to: '/knowledge', permission: 'knowledge.read', mark: 'KN' },
+      { label: '客户案例', to: '/cases', permission: 'case.read', mark: 'CS' },
+      {
+        label: '知识文章',
+        to: '/knowledge',
+        permission: 'knowledge.read',
+        mark: 'KN',
+      },
       { label: '常见问题', to: '/faqs', permission: 'faq.read', mark: 'FQ' },
-      { label: '作者与专家', to: '/experts', permission: 'expert.read', mark: 'AU' },
-      { label: '信任与能力', to: '/trust', permission: 'content.read', mark: 'TR' },
-      { label: '下载资料', to: '/downloads', permission: 'download.read', mark: 'DL' },
+      {
+        label: '作者与专家',
+        to: '/experts',
+        permission: 'expert.read',
+        mark: 'AU',
+      },
+      {
+        label: '企业资料与制造能力',
+        to: '/trust',
+        permission: 'content.read',
+        mark: 'TR',
+      },
+      {
+        label: '下载资料',
+        to: '/downloads',
+        permission: 'download.read',
+        mark: 'DL',
+      },
     ],
   },
   {
     label: '增长与运营',
     items: [
-      { label: '媒体资源库', to: '/media', permission: 'media.read', mark: 'ME' },
+      {
+        label: '媒体资源库',
+        to: '/media',
+        permission: 'media.read',
+        mark: 'ME',
+      },
       { label: '询盘中心', to: '/rfqs', permission: 'rfq.read', mark: 'RF' },
     ],
   },
   {
     label: '系统',
     items: [
-      { label: '语言管理', to: '/locales', permission: 'locale.read', mark: 'LA' },
-      { label: '用户', to: '/users', permission: 'user.read', mark: 'US' },
+      {
+        label: '网站语言',
+        to: '/locales',
+        permission: 'locale.read',
+        mark: 'LA',
+      },
+      { label: '用户管理', to: '/users', permission: 'user.read', mark: 'US' },
       { label: '角色权限', to: '/roles', permission: 'role.read', mark: 'RB' },
     ],
   },
@@ -89,8 +124,8 @@ const visibleGroups = computed(() =>
 const pageTitle = computed(() => {
   const fixedTitles: Record<string, string> = {
     '/homepage': '首页编排',
-    '/site-overview': '全站模块',
-    '/site-pages/products': 'Products SEO',
+    '/site-overview': '网站总览',
+    '/site-pages/products': '产品总列表 SEO',
     '/privacy': '隐私版本',
   }
   const matching = navGroups.flatMap((group) => group.items).find((item) => item.to === route.path)
@@ -104,7 +139,7 @@ async function handleLogout(): Promise<void> {
 </script>
 
 <template>
-  <div :class="['admin-app', { 'admin-app--authenticated': currentUser }]">
+  <div class="admin-app">
     <!-- 认证侧栏：只展示当前账号实际拥有读取权限的业务入口。 -->
     <ClientOnly>
       <aside v-if="currentUser" :class="['admin-sidebar', { 'admin-sidebar--open': sidebarOpen }]">
@@ -112,7 +147,7 @@ async function handleLogout(): Promise<void> {
           <span class="admin-brand__mark">JH</span>
           <span>
             <strong>JUNHUI</strong>
-            <small>Content Operations</small>
+            <small>内容运营后台</small>
           </span>
         </div>
         <div v-if="runtimeConfig.public.demoMode" class="admin-demo-status">
@@ -123,7 +158,7 @@ async function handleLogout(): Promise<void> {
             <h2>总览</h2>
             <NuxtLink to="/site-overview" @click="sidebarOpen = false">
               <span aria-hidden="true">MO</span>
-              全站模块
+              网站总览
             </NuxtLink>
             <NuxtLink to="/homepage" @click="sidebarOpen = false">
               <span aria-hidden="true">HP</span>
@@ -156,7 +191,7 @@ async function handleLogout(): Promise<void> {
               @click="sidebarOpen = false"
             >
               <span aria-hidden="true">SE</span>
-              Products SEO
+              产品总列表 SEO
             </NuxtLink>
             <NuxtLink
               v-if="currentUser.permissions.includes('privacy.read')"
@@ -171,7 +206,7 @@ async function handleLogout(): Promise<void> {
         <div class="admin-sidebar__footer">
           <span class="admin-avatar">{{ (currentUser.display_name || currentUser.email)[0] }}</span>
           <span>
-            <strong>{{ currentUser.display_name || 'Demo Administrator' }}</strong>
+            <strong>{{ currentUser.display_name || '演示管理员' }}</strong>
             <small>{{ currentUser.email }}</small>
           </span>
           <button type="button" title="退出登录" @click="handleLogout">↗</button>
@@ -192,7 +227,7 @@ async function handleLogout(): Promise<void> {
             ☰
           </button>
           <div>
-            <p>JUNHUI / DEMO CONTENT SYSTEM</p>
+            <p>JUNHUI / 演示内容系统</p>
             <h1>{{ pageTitle }}</h1>
           </div>
           <a

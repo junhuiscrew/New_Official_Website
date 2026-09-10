@@ -40,7 +40,11 @@ const slotLabels: Record<string, { title: string; note: string }> = {
 const orderedSlots = ['hero', 'video_1', 'poster_1', 'video_2', 'poster_2']
 
 /** 输入固定槽位；输出存在性有保证的可读标签和校验规则。 */
-function slotMeta(slot: string): { title: string; note: string; required: boolean } {
+function slotMeta(slot: string): {
+  title: string
+  note: string
+  required: boolean
+} {
   return {
     title: slotLabels[slot]?.title || slot,
     note: slotLabels[slot]?.note || '',
@@ -114,7 +118,7 @@ onMounted(load)
   <main class="admin-shell demo-media-page">
     <header class="demo-media-heading">
       <div>
-        <p>DEMO R2 · PRESENTATION MEDIA</p>
+        <p>DEMO R2 · 展示媒体</p>
         <h1>首页媒体与视频槽位</h1>
         <span>选择项来自真实媒体库；文件ID只在请求内部使用，不需要人工复制。</span>
       </div>
@@ -127,7 +131,9 @@ onMounted(load)
     </header>
 
     <p v-if="message" class="demo-media-message" role="status">{{ message }}</p>
-    <p v-if="errorMessage" class="error-message" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="error-message" role="alert">
+      {{ errorMessage }}
+    </p>
     <p v-if="loading" class="demo-media-loading">正在读取媒体库与当前配置…</p>
 
     <section v-else-if="state" class="demo-media-grid">
@@ -177,7 +183,10 @@ onMounted(load)
           </div>
           <div v-else>
             <dt>尺寸</dt>
-            <dd>{{ selectedAsset(slot)?.width }} × {{ selectedAsset(slot)?.height }}</dd>
+            <dd>
+              {{ selectedAsset(slot)?.width }} ×
+              {{ selectedAsset(slot)?.height }}
+            </dd>
           </div>
         </dl>
       </article>

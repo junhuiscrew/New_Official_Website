@@ -77,6 +77,7 @@ from app.modules.content.enums import PublicationStatus
 from app.modules.content.models import ContentPublication, ContentRoute, TranslationStatus
 from app.modules.content.services.publication import transition_publication
 from app.modules.discovery.models import GeoDocument, SeoDocument, SourceCitation
+from app.modules.localization.models import Locale
 from app.modules.users.models import User
 from app.modules.users.service import collect_authorization
 
@@ -225,6 +226,58 @@ async def _detail(session: AsyncSession, config: dict[str, Any], entity: Any) ->
     return result
 
 
+async def _list_items_with_title_projection(
+    session: AsyncSession,
+    config: dict[str, Any],
+    entities: list[Any],
+) -> list[dict[str, Any]]:
+    """
+    为 Admin 列表补充中英文可读标题，不返回正文或私密客户字段之外的新数据。
+
+    输入：
+        session: AsyncSession，当前数据库会话。
+        config: dict[str, Any]，Authority 实体白名单配置。
+        entities: list[Any]，当前分页已经读取的主实体。
+
+    输出：
+        list[dict[str, Any]]，主实体列加中文标题、英文标题和翻译数量。
+    """
+    if not entities:
+        return []
+
+    translation_model = config["translation"]
+    owner_column = getattr(translation_model, config["owner_field"])
+    title_column_name = next(
+        name for name in ("title", "question", "name") if hasattr(translation_model, name)
+    )
+    title_column = getattr(translation_model, title_column_name)
+    translation_rows = (
+        await session.execute(
+            select(owner_column, Locale.code, title_column)
+            .join(Locale, Locale.id == translation_model.locale_id)
+            .where(owner_column.in_([entity.id for entity in entities]))
+        )
+    ).all()
+
+    titles_by_owner: dict[uuid.UUID, dict[str, str]] = {}
+    for owner_id, locale_code, title in translation_rows:
+        if title:
+            titles_by_owner.setdefault(owner_id, {})[locale_code] = str(title)
+
+    items: list[dict[str, Any]] = []
+    for entity in entities:
+        titles = titles_by_owner.get(entity.id, {})
+        fallback = next(iter(titles.values()), getattr(entity, "slug", "") or "未命名内容")
+        item = _serialize(entity)
+        item.update(
+            display_title=titles.get("zh-CN") or titles.get("en") or fallback,
+            display_title_en=titles.get("en") or titles.get("zh-CN") or fallback,
+            translation_count=len(titles),
+        )
+        items.append(item)
+    return items
+
+
 @router.get("/{entity_type}", response_model=ApiResponse[dict[str, Any]])
 async def list_authority_entities(
     entity_type: str,
@@ -239,7 +292,8 @@ async def list_authority_entities(
     total = await session.scalar(select(func.count()).select_from(model))
     order = getattr(model, "sort_order", model.id)
     rows = list((await session.scalars(select(model).order_by(order, model.id).offset(pagination.offset).limit(pagination.page_size))).all())
-    return success_response({"items": [_serialize(item) for item in rows], "page": pagination.page, "page_size": pagination.page_size, "total": total or 0})
+    items = await _list_items_with_title_projection(session, config, rows)
+    return success_response({"items": items, "page": pagination.page, "page_size": pagination.page_size, "total": total or 0})
 
 
 @router.get("/{entity_type}/{entity_id}", response_model=ApiResponse[dict[str, Any]])

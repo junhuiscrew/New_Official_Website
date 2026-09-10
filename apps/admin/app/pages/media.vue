@@ -1,7 +1,7 @@
 <!-- 页面用途：公开媒体资源库，以可读文件名维护上传、预览和双语元数据。 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { MEDIA_USAGE_ROLE_LABELS, labelFrom } from '~/utils/adminZhCn'
+import { MEDIA_USAGE_ROLE_LABELS, labelFrom, localeOperationLabel } from '~/utils/adminZhCn'
 
 useHead({
   title: '媒体资源库',
@@ -35,7 +35,9 @@ interface MediaDetail extends MediaItem {
 }
 interface MediaUsage {
   location: string
+  content_name: string
   role: string
+  admin_url: string
 }
 
 const items = ref<MediaItem[]>([])
@@ -60,8 +62,7 @@ const filteredItems = computed(() => {
   const keyword = mediaSearch.value.trim().toLocaleLowerCase('zh-CN')
   return items.value.filter((item) => {
     const matchesType = !mediaTypeFilter.value || item.type === mediaTypeFilter.value
-    const matchesSearch =
-      !keyword || item.filename.toLocaleLowerCase('zh-CN').includes(keyword)
+    const matchesSearch = !keyword || item.filename.toLocaleLowerCase('zh-CN').includes(keyword)
     return matchesType && matchesSearch
   })
 })
@@ -246,7 +247,7 @@ onMounted(load)
           >语言
           <select v-model="selectedLocale">
             <option v-for="locale in locales" :key="locale.id" :value="locale.id">
-              {{ locale.native_name }}
+              {{ localeOperationLabel(locale.code, locale.native_name) }}
             </option>
           </select></label
         >
@@ -267,10 +268,19 @@ onMounted(load)
           <h3>使用位置</h3>
           <p v-if="loadingUsage" role="status">正在读取使用位置…</p>
           <p v-else-if="usageError" class="error-message" role="alert">{{ usageError }}</p>
-          <p v-else-if="!usage.length">当前没有已登记的公开引用。</p>
+          <p v-else-if="!usage.length">当前没有可查看的公开使用位置。</p>
           <ul v-else>
-            <li v-for="item in usage" :key="`${item.location}-${item.role}`">
-              {{ item.location }} · {{ labelFrom(MEDIA_USAGE_ROLE_LABELS, item.role) }}
+            <li
+              v-for="item in usage"
+              :key="`${item.location}-${item.content_name}-${item.role}-${item.admin_url}`"
+            >
+              <div>
+                <strong>{{ item.content_name }}</strong>
+                <span
+                  >{{ item.location }} · {{ labelFrom(MEDIA_USAGE_ROLE_LABELS, item.role) }}</span
+                >
+              </div>
+              <NuxtLink :to="item.admin_url">打开维护位置</NuxtLink>
             </li>
           </ul>
         </section>
@@ -457,6 +467,27 @@ onMounted(load)
   padding-left: 1rem;
   color: #5f7588;
   font-size: 0.74rem;
+}
+.media-usage li {
+  margin-block: 0.45rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.media-usage li > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.media-usage li strong,
+.media-usage li span {
+  overflow-wrap: anywhere;
+}
+.media-usage li a {
+  flex: none;
+  color: #0b67aa;
+  font-weight: 700;
 }
 .media-library-grid {
   display: grid;

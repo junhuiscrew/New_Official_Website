@@ -27,6 +27,7 @@ def _serialize_role(role: Role) -> RoleData:
         name=role.name,
         display_name=role.display_name,
         description=role.description,
+        is_system=role.is_system,
         permissions=sorted(link.permission.code for link in role.permission_links),
     )
 
@@ -68,9 +69,12 @@ async def put_role_permissions(
 ) -> ApiResponse[RoleData]:
     """按明确管理员请求替换角色权限并记录 permission.change。"""
     ip, user_agent = get_client_context(request)
-    role = await session.get(Role, role_id)
+    role = await _load_role(session, role_id)
     if role is None:
         raise AppException(404, "role_not_found", "角色不存在")
+    before_permission_codes = sorted(
+        link.permission.code for link in role.permission_links
+    )
     permissions = list(
         (
             await session.scalars(
@@ -95,7 +99,10 @@ async def put_role_permissions(
         target_id=str(role.id),
         ip=ip,
         user_agent=user_agent,
-        metadata={"permission_codes": sorted(payload.permission_codes)},
+        metadata={
+            "before_permission_codes": before_permission_codes,
+            "after_permission_codes": sorted(payload.permission_codes),
+        },
     )
     await session.commit()
     stored = await _load_role(session, role.id)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
@@ -13,27 +15,325 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
 from app.modules.audit.service import write_audit_log
-from app.modules.authority.models import AuthorExpert, CaseStudy, KnowledgeArticle
-from app.modules.catalog.models import Product, ProductCategory
+from app.modules.authority.models import (
+    FAQ,
+    AuthorExpert,
+    AuthorExpertTranslation,
+    CaseStudy,
+    CaseStudyTranslation,
+    FAQTranslation,
+    KnowledgeArticle,
+    KnowledgeArticleTranslation,
+)
+from app.modules.catalog.models import (
+    Application,
+    ApplicationTranslation,
+    Material,
+    MaterialTranslation,
+    Product,
+    ProductCategory,
+    ProductCategoryTranslation,
+    ProductTranslation,
+    Solution,
+    SolutionTranslation,
+    Technology,
+    TechnologyTranslation,
+)
 from app.modules.company.models import (
     Certificate,
+    CertificateTranslation,
     CompanyProfile,
+    CompanyProfileTranslation,
     Equipment,
+    EquipmentTranslation,
     Exhibition,
+    ExhibitionTranslation,
     Honor,
+    HonorTranslation,
     ManufacturingCapability,
+    ManufacturingCapabilityTranslation,
     Patent,
+    PatentTranslation,
 )
 from app.modules.demo.models import ContentMediaLink
 from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.localization.models import Locale
-from app.modules.media.models import DownloadResource, MediaAsset, MediaAssetTranslation
+from app.modules.media.models import (
+    DownloadResource,
+    DownloadResourceTranslation,
+    MediaAsset,
+    MediaAssetTranslation,
+)
 from app.modules.media.services import refresh_public_image_dimensions, validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 from app.modules.users.models import User
+from app.modules.users.service import collect_authorization
 
 router = APIRouter(prefix="/media", tags=["media"])
 public_router = APIRouter(prefix="/public/media", tags=["public-media"])
+
+
+@dataclass(frozen=True)
+class _MediaOwnerSpec:
+    """
+    描述一种可公开维护内容的媒体引用解析规则。
+
+    输入：ORM 主实体/翻译模型、翻译外键、名称字段、权限和后台入口。
+    输出：不可变配置，供使用位置接口按白名单解析，避免动态访问任意 owner。
+    """
+
+    model: type[Any]
+    translation_model: type[Any]
+    translation_owner_field: str
+    name_field: str
+    permission: str
+    location: str
+    admin_url: str
+    fallback_field: str | None = "slug"
+    public_flag_field: str | None = None
+
+
+_MEDIA_OWNER_SPECS: dict[str, _MediaOwnerSpec] = {
+    "company_profile": _MediaOwnerSpec(
+        CompanyProfile,
+        CompanyProfileTranslation,
+        "company_profile_id",
+        "company_name",
+        "company.read",
+        "企业资料",
+        "/trust/company",
+        fallback_field=None,
+    ),
+    "product_category": _MediaOwnerSpec(
+        ProductCategory,
+        ProductCategoryTranslation,
+        "category_id",
+        "name",
+        "catalog.read",
+        "产品分类",
+        "/catalog/categories",
+    ),
+    "product": _MediaOwnerSpec(
+        Product,
+        ProductTranslation,
+        "product_id",
+        "name",
+        "catalog.read",
+        "产品",
+        "/catalog/products",
+    ),
+    "material": _MediaOwnerSpec(
+        Material,
+        MaterialTranslation,
+        "material_id",
+        "name",
+        "material.read",
+        "材料",
+        "/catalog/materials",
+    ),
+    "technology": _MediaOwnerSpec(
+        Technology,
+        TechnologyTranslation,
+        "technology_id",
+        "name",
+        "technology.read",
+        "技术工艺",
+        "/catalog/technologies",
+    ),
+    "application": _MediaOwnerSpec(
+        Application,
+        ApplicationTranslation,
+        "application_id",
+        "name",
+        "application.read",
+        "应用场景",
+        "/catalog/applications",
+    ),
+    "solution": _MediaOwnerSpec(
+        Solution,
+        SolutionTranslation,
+        "solution_id",
+        "name",
+        "solution.read",
+        "解决方案",
+        "/catalog/solutions",
+    ),
+    "case_study": _MediaOwnerSpec(
+        CaseStudy,
+        CaseStudyTranslation,
+        "case_study_id",
+        "title",
+        "case.read",
+        "客户案例",
+        "/cases",
+    ),
+    "knowledge_article": _MediaOwnerSpec(
+        KnowledgeArticle,
+        KnowledgeArticleTranslation,
+        "article_id",
+        "title",
+        "knowledge.read",
+        "知识文章",
+        "/knowledge",
+    ),
+    "faq": _MediaOwnerSpec(
+        FAQ,
+        FAQTranslation,
+        "faq_id",
+        "question",
+        "faq.read",
+        "常见问题",
+        "/faqs",
+        fallback_field=None,
+    ),
+    "author_expert": _MediaOwnerSpec(
+        AuthorExpert,
+        AuthorExpertTranslation,
+        "author_expert_id",
+        "name",
+        "expert.read",
+        "作者与专家",
+        "/experts",
+        fallback_field=None,
+        public_flag_field="public_profile_enabled",
+    ),
+    "manufacturing_capability": _MediaOwnerSpec(
+        ManufacturingCapability,
+        ManufacturingCapabilityTranslation,
+        "capability_id",
+        "name",
+        "capability.read",
+        "制造能力",
+        "/trust/capabilities",
+    ),
+    "equipment": _MediaOwnerSpec(
+        Equipment,
+        EquipmentTranslation,
+        "equipment_id",
+        "name",
+        "equipment.read",
+        "设备",
+        "/trust/equipment",
+    ),
+    "certificate": _MediaOwnerSpec(
+        Certificate,
+        CertificateTranslation,
+        "certificate_id",
+        "name",
+        "certificate.read",
+        "证书",
+        "/trust/certificates",
+    ),
+    "patent": _MediaOwnerSpec(
+        Patent,
+        PatentTranslation,
+        "patent_id",
+        "title",
+        "patent.read",
+        "专利",
+        "/trust/patents",
+    ),
+    "honor": _MediaOwnerSpec(
+        Honor,
+        HonorTranslation,
+        "honor_id",
+        "title",
+        "honor.read",
+        "荣誉",
+        "/trust/honors",
+    ),
+    "exhibition": _MediaOwnerSpec(
+        Exhibition,
+        ExhibitionTranslation,
+        "exhibition_id",
+        "title",
+        "exhibition.read",
+        "展会",
+        "/trust/exhibitions",
+        fallback_field="event_name",
+    ),
+    "download_resource": _MediaOwnerSpec(
+        DownloadResource,
+        DownloadResourceTranslation,
+        "download_resource_id",
+        "title",
+        "download.read",
+        "下载资料",
+        "/downloads",
+    ),
+}
+
+_MEDIA_DIRECT_REFERENCES: tuple[tuple[str, str, str], ...] = (
+    ("company_profile", "logo_media_id", "logo"),
+    ("company_profile", "primary_factory_media_id", "factory_primary"),
+    ("product_category", "cover_media_id", "cover"),
+    ("product", "primary_media_id", "primary"),
+    ("case_study", "primary_media_id", "primary"),
+    ("knowledge_article", "primary_media_id", "primary"),
+    ("author_expert", "profile_media_id", "profile"),
+    ("manufacturing_capability", "primary_media_id", "primary"),
+    ("equipment", "primary_media_id", "primary"),
+    ("certificate", "primary_media_id", "primary"),
+    ("certificate", "public_file_media_id", "download"),
+    ("patent", "primary_media_id", "primary"),
+    ("patent", "public_file_media_id", "download"),
+    ("honor", "primary_media_id", "primary"),
+    ("exhibition", "primary_media_id", "primary"),
+    ("download_resource", "media_asset_id", "download"),
+)
+
+
+async def _media_usage_row(
+    session: AsyncSession,
+    *,
+    owner_type: str,
+    owner_id: uuid.UUID,
+    role: str,
+    locale_priority: dict[uuid.UUID, int],
+) -> dict[str, str] | None:
+    """
+    将一条白名单 owner 引用解析为员工可读的维护位置。
+
+    输入：数据库会话、owner 类型/ID、媒体用途和语言优先级。
+    输出：可读位置、内容名称、用途和后台入口；不可见、无权或未知 owner 返回 None。
+    """
+    spec = _MEDIA_OWNER_SPECS.get(owner_type)
+    if spec is None:
+        return None
+    entity = await session.get(spec.model, owner_id)
+    if entity is None or getattr(entity, "status", "disabled") != "enabled":
+        return None
+    if spec.public_flag_field and not bool(getattr(entity, spec.public_flag_field, False)):
+        return None
+
+    translation_owner_column = getattr(spec.translation_model, spec.translation_owner_field)
+    translations = list(
+        (
+            await session.scalars(
+                select(spec.translation_model).where(translation_owner_column == owner_id)
+            )
+        ).all()
+    )
+    translations.sort(key=lambda item: locale_priority.get(item.locale_id, 100))
+    content_name = next(
+        (
+            str(value).strip()
+            for item in translations
+            if (value := getattr(item, spec.name_field, None)) and str(value).strip()
+        ),
+        "",
+    )
+    if not content_name and spec.fallback_field:
+        content_name = str(getattr(entity, spec.fallback_field, "") or "").strip()
+    if not content_name:
+        content_name = f"未填写{spec.location}名称"
+
+    return {
+        "location": spec.location,
+        "content_name": content_name,
+        "role": role,
+        "admin_url": spec.admin_url,
+    }
 
 
 def _public_dto(asset: MediaAsset) -> dict[str, object]:
@@ -114,13 +414,13 @@ async def list_media(
 async def get_media_usage(
     asset_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
-    _user: User = Depends(require_permission("media.read")),
+    user: User = Depends(require_permission("media.read")),
 ) -> ApiResponse[list[dict[str, str]]]:
     """
     读取公开媒体在后台内容中的实际引用位置。
 
-    输入：asset_id，媒体资产 UUID；session，数据库会话；_user，具备 media.read 的用户。
-    输出：ApiResponse[list[dict[str, str]]]，仅包含中文位置和用途，不返回实体 UUID、私有 RFQ 关系或对象存储凭据。
+    输入：asset_id，媒体资产 UUID；session，数据库会话；user，具备 media.read 的用户。
+    输出：ApiResponse[list[dict[str, str]]]，返回授权范围内的具体名称、用途和后台入口，不返回实体 UUID、私有 RFQ 关系或对象存储凭据。
     """
     from app.core.exceptions.handlers import AppException
 
@@ -128,36 +428,11 @@ async def get_media_usage(
     if asset is None or asset.visibility != "public":
         raise AppException(404, "media_not_found", "公开媒体不存在")
 
-    usage_rows: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
+    _actor_roles, actor_permissions = collect_authorization(user)
+    permission_set = set(actor_permissions)
+    usage_keys: set[tuple[str, uuid.UUID, str]] = set()
 
-    def add_usage(location: str, role: str) -> None:
-        """追加去重后的公开引用位置，避免一项关系重复污染后台展示。"""
-        base_location = location.split("（", 1)[0]
-        key = (base_location, role)
-        if key not in seen:
-            seen.add(key)
-            usage_rows.append({"location": location, "role": role})
-
-    owner_labels = {
-        "company_profile": "企业资料",
-        "product_category": "产品分类",
-        "product": "产品",
-        "material": "材料",
-        "technology": "技术工艺",
-        "application": "应用场景",
-        "solution": "解决方案",
-        "case_study": "客户案例",
-        "knowledge_article": "知识文章",
-        "faq": "常见问题",
-        "author_expert": "作者与专家",
-        "manufacturing_capability": "制造能力",
-        "equipment": "设备",
-        "certificate": "证书",
-        "patent": "专利",
-        "exhibition": "展会",
-        "download_resource": "下载资料",
-    }
+    # 关系表和主实体外键都可能登记同一个引用；以 owner 身份和用途去除真重复。
     links = list(
         (
             await session.scalars(
@@ -166,52 +441,40 @@ async def get_media_usage(
         ).all()
     )
     for link in links:
-        add_usage(owner_labels.get(link.owner_type, "公开内容"), link.role)
+        spec = _MEDIA_OWNER_SPECS.get(link.owner_type)
+        if spec is not None and spec.permission in permission_set:
+            usage_keys.add((link.owner_type, link.owner_id, link.role))
 
-    download_count = len(
-        list(
-            (
-                await session.scalars(
-                    select(DownloadResource).where(DownloadResource.media_asset_id == asset.id)
-                )
-            ).all()
+    for owner_type, field_name, role in _MEDIA_DIRECT_REFERENCES:
+        spec = _MEDIA_OWNER_SPECS[owner_type]
+        if spec.permission not in permission_set:
+            continue
+        media_column = getattr(spec.model, field_name)
+        owners = list(
+            (await session.scalars(select(spec.model).where(media_column == asset.id))).all()
         )
-    )
-    if download_count:
-        add_usage(f"下载资料（{download_count}条）", "download")
+        usage_keys.update((owner_type, owner.id, role) for owner in owners)
 
-    async def add_fk_usage(model: object, field_name: str, location: str, role: str) -> None:
-        """按公开实体的媒体外键补充引用位置，不读取实体正文或私有字段。"""
-        column = getattr(model, field_name)
-        count = len(
-            list(
-                (
-                    await session.scalars(
-                        select(model).where(column == asset.id)  # type: ignore[arg-type]
-                    )
-                ).all()
+    locales = list((await session.scalars(select(Locale))).all())
+    locale_priority = {
+        locale.id: 0 if locale.code == "zh-CN" else 1 if locale.code == "en" else 2
+        for locale in locales
+    }
+    usage_rows = [
+        row
+        for owner_type, owner_id, role in usage_keys
+        if (
+            row := await _media_usage_row(
+                session,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                role=role,
+                locale_priority=locale_priority,
             )
         )
-        if count:
-            add_usage(f"{location}（{count}条）", role)
-
-    for model, field_name, location, role in (
-        (CompanyProfile, "logo_media_id", "企业 Logo", "primary"),
-        (CompanyProfile, "primary_factory_media_id", "企业工厂主图", "primary"),
-        (ProductCategory, "cover_media_id", "产品分类", "cover"),
-        (Product, "primary_media_id", "产品", "primary"),
-        (CaseStudy, "primary_media_id", "客户案例", "primary"),
-        (KnowledgeArticle, "primary_media_id", "知识文章", "primary"),
-        (AuthorExpert, "profile_media_id", "作者头像", "profile"),
-        (ManufacturingCapability, "primary_media_id", "制造能力", "primary"),
-        (Equipment, "primary_media_id", "设备", "primary"),
-        (Certificate, "public_file_media_id", "证书文件", "download"),
-        (Patent, "public_file_media_id", "专利文件", "download"),
-        (Honor, "primary_media_id", "荣誉", "primary"),
-        (Exhibition, "primary_media_id", "展会", "primary"),
-    ):
-        await add_fk_usage(model, field_name, location, role)
-
+        is not None
+    ]
+    usage_rows.sort(key=lambda row: (row["location"], row["content_name"], row["role"]))
     return success_response(usage_rows)
 
 

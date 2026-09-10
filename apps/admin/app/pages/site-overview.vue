@@ -6,6 +6,7 @@ import {
   IMPLEMENTATION_STATUS_LABELS,
   NAVIGATION_STATUS_LABELS,
   labelFrom,
+  localeOperationLabel,
 } from '../utils/adminZhCn'
 
 interface OverviewItem {
@@ -99,7 +100,7 @@ onMounted(loadOverview)
           语言
           <select v-model="localeCode">
             <option value="zh-CN">简体中文</option>
-            <option value="en">English</option>
+            <option value="en">{{ localeOperationLabel('en', 'English') }}</option>
           </select>
         </label>
         <NuxtLink to="/homepage">首页模块编辑器</NuxtLink>

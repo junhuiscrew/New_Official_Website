@@ -43,17 +43,39 @@ describe('中文后台 R1 有限收尾', () => {
     }
   })
 
-  it('媒体库提供搜索、类型筛选和服务端引用位置回读', () => {
+  it('媒体库提供搜索、类型筛选和可维护的具体引用位置', () => {
     const content = source('pages/media.vue')
-    for (const token of ['mediaSearch', 'mediaTypeFilter', '/usage', '使用位置']) {
+    for (const token of [
+      'mediaSearch',
+      'mediaTypeFilter',
+      '/usage',
+      'content_name',
+      'admin_url',
+      '打开维护位置',
+    ]) {
       expect(content).toContain(token)
     }
   })
 
-  it('角色页提供搜索和既有 role.manage 能力说明', () => {
+  it('角色页提供中文权限编辑、变更确认、保存与 fresh GET 回读', () => {
     const content = source('pages/roles.vue')
-    for (const token of ['roleSearch', 'filteredRoles', 'role.manage', '角色权限管理']) {
+    for (const token of [
+      'roleSearch',
+      'filteredRoles',
+      'role.manage',
+      '查看变更并确认',
+      '确认保存权限',
+      'beforePermissions',
+      'fresh GET',
+      'is_system',
+    ]) {
       expect(content).toContain(token)
+    }
+  })
+
+  it('目标运营页面将英语语言操作标签显示为中文', () => {
+    for (const page of ['pages/downloads.vue', 'pages/media.vue', 'pages/site-overview.vue']) {
+      expect(source(page)).toContain('localeOperationLabel')
     }
   })
 

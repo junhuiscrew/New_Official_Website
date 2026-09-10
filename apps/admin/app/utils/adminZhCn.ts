@@ -178,6 +178,8 @@ export const DOWNLOAD_RESOURCE_TYPE_LABELS: Record<string, string> = {
 
 export const MEDIA_USAGE_ROLE_LABELS: Record<string, string> = {
   primary: '主图',
+  logo: '企业 Logo',
+  factory_primary: '工厂主图',
   gallery: '图库',
   video: '视频',
   video_poster: '视频封面',
@@ -185,6 +187,18 @@ export const MEDIA_USAGE_ROLE_LABELS: Record<string, string> = {
   cover: '封面',
   hero: '首页主视觉',
   profile: '公开头像',
+}
+
+/**
+ * 将语言代码转换为中文后台的操作标签，业务正文和接口代码保持原值。
+ *
+ * 输入：code，接口语言代码；nativeName，接口原生语言名称。
+ * 输出：string，员工操作界面使用的简体中文标签。
+ */
+export function localeOperationLabel(code: string, nativeName?: string): string {
+  if (code === 'zh-CN') return '简体中文'
+  if (code === 'en') return '英语'
+  return nativeName || code || '未知语言'
 }
 
 /**

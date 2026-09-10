@@ -78,7 +78,8 @@ describe('中文后台运营化 R1', () => {
         '角色权限',
         '权限分组',
         '技术详情',
-        "status === 'idle' || status === 'pending'",
+        'v-if="loading"',
+        'onMounted(() => loadRoles(false))',
       ],
     }
 

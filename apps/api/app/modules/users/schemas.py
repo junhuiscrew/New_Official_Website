@@ -43,6 +43,7 @@ class RoleData(BaseModel):
     name: str
     display_name: str
     description: str | None
+    is_system: bool
     permissions: list[str]
 
 

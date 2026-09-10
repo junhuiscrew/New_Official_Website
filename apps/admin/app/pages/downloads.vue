@@ -5,6 +5,7 @@ import {
   DOWNLOAD_RESOURCE_TYPE_LABELS,
   ENTITY_STATUS_LABELS,
   labelFrom,
+  localeOperationLabel,
 } from '~/utils/adminZhCn'
 
 interface LocaleItem {
@@ -50,9 +51,7 @@ const form = reactive({
   sort_order: 0,
 })
 
-const selectedItem = computed(() =>
-  items.value.find((item) => String(item.id) === editingId.value),
-)
+const selectedItem = computed(() => items.value.find((item) => String(item.id) === editingId.value))
 const editorTitle = computed(() =>
   selectedItem.value ? displayTitle(selectedItem.value) : '新建资料',
 )
@@ -71,7 +70,7 @@ function reset(): void {
   })
   translations.value = locales.value.map((locale) => ({
     locale_id: locale.id,
-    native_name: locale.native_name,
+    native_name: localeOperationLabel(locale.code, locale.native_name),
     title: '',
     summary: '',
   }))
@@ -150,7 +149,7 @@ function edit(item: Record<string, unknown>): void {
     const translation = source.find((row) => row.locale_id === locale.id) || {}
     return {
       locale_id: locale.id,
-      native_name: locale.native_name,
+      native_name: localeOperationLabel(locale.code, locale.native_name),
       title: String(translation.title || ''),
       summary: String(translation.summary || ''),
     }

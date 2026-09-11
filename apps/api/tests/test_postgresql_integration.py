@@ -770,6 +770,65 @@ async def test_postgresql_products_site_page_initialization_is_concurrent_and_re
     await engine.dispose()
 
 
+async def test_postgresql_fixed_utility_site_pages_initialize_with_distinct_identity() -> None:
+    """
+    验证 Contact 与 RFQ 在真实 PostgreSQL 中使用独立锁、真实 UUID 和固定路径。
+
+    输入：TEST_DATABASE_URL 环境变量，必须指向独立临时 PostgreSQL。
+    输出：None；并发初始化、页面身份或双语 Route 不一致时失败。
+    """
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    await seed_database(factory)
+
+    async def initialize(system_key: str) -> uuid.UUID:
+        """
+        初始化指定测试固定页。
+
+        输入：system_key: str，contact 或 request-a-quote。
+        输出：uuid.UUID，初始化后真实页面 ID。
+        """
+        async with factory() as session, session.begin():
+            page = await initialize_products_site_page(
+                session,
+                system_key=system_key,
+                actor_id=None,
+            )
+            return page.id
+
+    contact_first, contact_second, rfq_first, rfq_second = await asyncio.gather(
+        initialize("contact"),
+        initialize("contact"),
+        initialize("request-a-quote"),
+        initialize("request-a-quote"),
+    )
+    assert contact_first == contact_second
+    assert rfq_first == rfq_second
+    assert contact_first != rfq_first
+
+    async with factory() as session:
+        routes = list(
+            (
+                await session.scalars(
+                    select(ContentRoute)
+                    .where(
+                        ContentRoute.owner_type == "site_page",
+                        ContentRoute.owner_id.in_({contact_first, rfq_first}),
+                    )
+                    .order_by(ContentRoute.path)
+                )
+            ).all()
+        )
+    assert {route.path for route in routes} == {
+        "/zh-cn/contact/",
+        "/en/contact/",
+        "/zh-cn/request-a-quote/",
+        "/en/request-a-quote/",
+    }
+    assert all(not route.active and not route.indexable for route in routes)
+    await engine.dispose()
+
+
 async def test_postgresql_public_search_matches_cjk_substrings_without_relaxing_gates() -> None:
     """
     验证真实 PostgreSQL 对中文标题和正文做字面子串补充匹配，并继续执行公开门禁。

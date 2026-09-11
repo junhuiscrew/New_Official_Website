@@ -29,7 +29,10 @@ from app.modules.discovery.public_delivery import (
     get_public_knowledge,
     get_public_product,
 )
-from app.modules.discovery.services import resolve_redirect
+from app.modules.discovery.services import (
+    get_public_fixed_site_page_metadata,
+    resolve_redirect,
+)
 from app.modules.media.services import list_public_downloads
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
 
@@ -480,6 +483,30 @@ async def public_page_metadata(
     输出：ApiResponse[dict[str, Any]]，包含 SEO、Breadcrumb 与 Schema。
     """
     return success_response(await get_public_page_metadata(session, resource, locale_slug))
+
+
+@router.get(
+    "/site-pages/{system_key}/{locale_slug}",
+    response_model=ApiResponse[dict[str, Any]],
+)
+async def public_fixed_site_page_metadata(
+    system_key: str,
+    locale_slug: str,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[dict[str, Any]]:
+    """
+    返回白名单 Contact/RFQ 固定页的严格已发布 SEO 元数据。
+
+    输入：固定页面键、语言 slug 与数据库 session。
+    输出：ApiResponse，canonical 只由服务端正式域名和固定 Route 生成。
+    """
+    return success_response(
+        await get_public_fixed_site_page_metadata(
+            session,
+            system_key=system_key,
+            locale_slug=locale_slug,
+        )
+    )
 
 
 @router.get("/trust/{resource}/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])

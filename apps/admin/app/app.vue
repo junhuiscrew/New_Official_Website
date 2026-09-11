@@ -126,6 +126,8 @@ const pageTitle = computed(() => {
     '/homepage': '首页编排',
     '/site-overview': '网站总览',
     '/site-pages/products': '产品总列表 SEO',
+    '/site-pages/contact': '联系页面 SEO',
+    '/site-pages/request-a-quote': '询价页面 SEO',
     '/privacy': '隐私版本',
   }
   const matching = navGroups.flatMap((group) => group.items).find((item) => item.to === route.path)
@@ -192,6 +194,22 @@ async function handleLogout(): Promise<void> {
             >
               <span aria-hidden="true">SE</span>
               产品总列表 SEO
+            </NuxtLink>
+            <NuxtLink
+              v-if="currentUser.permissions.includes('seo.read')"
+              to="/site-pages/contact"
+              @click="sidebarOpen = false"
+            >
+              <span aria-hidden="true">SC</span>
+              联系页面 SEO
+            </NuxtLink>
+            <NuxtLink
+              v-if="currentUser.permissions.includes('seo.read')"
+              to="/site-pages/request-a-quote"
+              @click="sidebarOpen = false"
+            >
+              <span aria-hidden="true">SQ</span>
+              询价页面 SEO
             </NuxtLink>
             <NuxtLink
               v-if="currentUser.permissions.includes('privacy.read')"

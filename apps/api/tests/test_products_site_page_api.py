@@ -37,6 +37,40 @@ from app.seed import seed_database
 # 仅供隔离测试登录使用；不是环境账号、口令或可复用凭据。
 TEST_LOGIN_PROOF = "Test-Only-Auth-2026!"
 PRODUCTS_KEY = "products"
+FIXED_UTILITY_PAGES = {
+    "contact": {
+        "zh-CN": {
+            "display_name": "联系我们",
+            "path": "/zh-cn/contact/",
+            "title": "联系我们 · 舟山骏辉塑料机械有限公司",
+            "description": "可查看并填写产品、材料、尺寸或当前问题；演示站不会创建询盘或发送真实邮件。",
+            "robots": "noindex, nofollow",
+        },
+        "en": {
+            "display_name": "Contact",
+            "path": "/en/contact/",
+            "title": "Contact · Zhoushan Junhui Plastic Machinery Co., Ltd.",
+            "description": "You may review and fill in product, material, dimension, or problem details. The demo will not create an inquiry or send real email.",
+            "robots": "noindex, nofollow",
+        },
+    },
+    "request-a-quote": {
+        "zh-CN": {
+            "display_name": "获取报价",
+            "path": "/zh-cn/request-a-quote/",
+            "title": "获取报价",
+            "description": "查看螺杆、机筒及配套件的演示询价表单，了解设备信息和技术需求等填写项目。当前演示环境暂不提交询盘或上传附件。",
+            "robots": "noindex, follow",
+        },
+        "en": {
+            "display_name": "Request a Quote",
+            "path": "/en/request-a-quote/",
+            "title": "Request a Quote",
+            "description": "Preview the demo RFQ form for screws, barrels and related components, including machine information and technical requirements. Inquiry submission and file uploads are currently unavailable in this demo.",
+            "robots": "noindex, follow",
+        },
+    },
+}
 
 
 @pytest.fixture
@@ -601,3 +635,124 @@ async def test_products_lifecycle_rejects_each_single_half_permission(
                     None,
                 )
             assert publish_error.value.status_code == 403
+
+
+@pytest.mark.parametrize("system_key", ["contact", "request-a-quote"])
+async def test_fixed_utility_page_initializer_uses_exact_bilingual_identity(
+    products_site_page_api_factory: async_sessionmaker[AsyncSession],
+    system_key: str,
+) -> None:
+    """
+    验证 Contact 与 RFQ 通过白名单固定键建立真实双语页面身份。
+
+    输入：
+        products_site_page_api_factory: 隔离 API 会话工厂。
+        system_key: str，目标固定页面键。
+
+    输出：
+        None；名称、路径、初始生命周期或幂等性不正确时失败。
+    """
+    endpoint = f"/api/v1/discovery/site-pages/{system_key}/initialize"
+    async with _role_client(products_site_page_api_factory, "content_admin") as client:
+        first = await client.post(endpoint)
+        second = await client.post(endpoint)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["data"] == second.json()["data"]
+    detail = first.json()["data"]
+    assert detail["page"]["system_key"] == system_key
+    languages = {item["locale"]["code"]: item for item in detail["languages"]}
+    assert set(languages) == {"zh-CN", "en"}
+    for locale_code, expected in FIXED_UTILITY_PAGES[system_key].items():
+        actual = languages[locale_code]
+        assert actual["translation"]["display_name"] == expected["display_name"]
+        assert actual["route"]["path"] == expected["path"]
+        assert actual["translation_status"]["status"] == "draft"
+        assert actual["publication"]["status"] == "draft"
+        assert actual["route"]["active"] is False
+        assert actual["route"]["indexable"] is False
+
+
+async def test_fixed_utility_page_public_metadata_is_exact_reciprocal_and_query_independent(
+    products_site_page_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证已发布 Contact/RFQ 元数据由真实 SitePage 返回且不受查询参数污染。
+
+    输入：products_site_page_api_factory，隔离 API 会话工厂。
+    输出：None；保存、生命周期、canonical、hreflang 或 robots 不符时失败。
+    """
+    for system_key, language_configs in FIXED_UTILITY_PAGES.items():
+        async with _role_client(products_site_page_api_factory, "content_admin") as client:
+            initialized = await client.post(
+                f"/api/v1/discovery/site-pages/{system_key}/initialize"
+            )
+        assert initialized.status_code == 200
+
+        for locale_code, expected in language_configs.items():
+            robots_index, robots_follow = {
+                "noindex, nofollow": (False, False),
+                "noindex, follow": (False, True),
+            }[expected["robots"]]
+            payload = {
+                "seo_title": expected["title"],
+                "meta_description": expected["description"],
+                "robots_index": robots_index,
+                "robots_follow": robots_follow,
+            }
+            async with _role_client(products_site_page_api_factory, "seo_manager") as client:
+                saved = await client.patch(
+                    f"/api/v1/discovery/site-pages/{system_key}/seo/{locale_code}",
+                    json=payload,
+                )
+                reopened = await client.get(
+                    f"/api/v1/discovery/site-pages/{system_key}"
+                )
+            assert saved.status_code == 200
+            assert reopened.status_code == 200
+
+            async with _role_client(products_site_page_api_factory, "reviewer") as client:
+                reviewed = await client.post(
+                    f"/api/v1/discovery/site-pages/{system_key}/translations/{locale_code}/review"
+                )
+                published = await client.post(
+                    f"/api/v1/discovery/site-pages/{system_key}/publications/{locale_code}/publish"
+                )
+            assert reviewed.status_code == 200
+            assert published.status_code == 200
+
+        for locale_code, expected in language_configs.items():
+            locale_slug = "zh-cn" if locale_code == "zh-CN" else "en"
+            path = f"/api/v1/public/site-pages/{system_key}/{locale_slug}"
+            async with _client(products_site_page_api_factory) as client:
+                plain = await client.get(path)
+                with_query = await client.get(
+                    path,
+                    params={
+                        "source_type": "product",
+                        "source_slug": "must-not-enter-head",
+                        "privacy_context_token": "must-not-enter-head",
+                    },
+                )
+
+            assert plain.status_code == 200
+            assert with_query.status_code == 200
+            assert plain.json()["data"] == with_query.json()["data"]
+            seo = plain.json()["data"]["seo"]
+            assert seo["title"] == expected["title"]
+            assert seo["description"] == expected["description"]
+            assert seo["canonical"] == f"https://junhuiscrewbarrel.com{expected['path']}"
+            assert seo["robots"] == expected["robots"]
+            assert seo["hreflang"] == {
+                "zh-CN": f"https://junhuiscrewbarrel.com{language_configs['zh-CN']['path']}",
+                "en": f"https://junhuiscrewbarrel.com{language_configs['en']['path']}",
+                "x-default": f"https://junhuiscrewbarrel.com{language_configs['zh-CN']['path']}",
+            }
+
+    async with _client(products_site_page_api_factory) as client:
+        for unavailable_key in ("products", "privacy", "home", "unknown"):
+            response = await client.get(
+                f"/api/v1/public/site-pages/{unavailable_key}/zh-cn"
+            )
+            assert response.status_code == 404

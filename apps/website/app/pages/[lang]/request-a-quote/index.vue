@@ -5,7 +5,11 @@ import { computed, nextTick, onMounted, reactive, ref, toRef } from 'vue'
 import { normalizeLocale, type RfqSourceType } from '~/composables/useLocalePath'
 import { useRfqPrivacy } from '~/composables/useRfqPrivacy'
 import { ui } from '~/i18n/ui'
-import type { PublicPrivacyContextDto, PublicPrivacyPolicyDto } from '~/types/public'
+import type {
+  PublicPageMetadataDto,
+  PublicPrivacyContextDto,
+  PublicPrivacyPolicyDto,
+} from '~/types/public'
 import {
   buildRfqSubmissionPayload,
   pendingAttachmentSnapshot,
@@ -30,6 +34,11 @@ const api = useApi()
 const route = useRoute()
 const locale = normalizeLocale(route.params.lang)
 const labels = computed(() => ui[locale])
+// RFQ Head 只读取固定 SitePage；来源参数继续用于表单归因，但绝不参与 canonical。
+const { data: metadataResponse } = await useAsyncData(`rfq-metadata:${locale}`, () =>
+  api<Envelope<PublicPageMetadataDto>>(`/public/site-pages/request-a-quote/${locale}`),
+)
+const metadata = computed(() => metadataResponse.value?.data ?? null)
 // SSR 只读取可公开政策；404 不跳转，表单保留浏览入口但保持不可提交。
 const { data: privacyResponse } = await useAsyncData(`rfq-privacy:${locale}`, () =>
   api<Envelope<PublicPrivacyPolicyDto>>(`/public/privacy/${locale}`),
@@ -324,8 +333,23 @@ async function submit(): Promise<void> {
 
 useHead(() => ({
   htmlAttrs: { lang: locale === 'zh-cn' ? 'zh-CN' : 'en' },
-  title: labels.value.cta.requestQuote,
-  meta: [{ name: 'robots', content: 'noindex,follow' }],
+  title: metadata.value?.seo.title || labels.value.cta.requestQuote,
+  meta: [
+    ...(metadata.value?.seo.description
+      ? [{ name: 'description', content: metadata.value.seo.description }]
+      : []),
+    { name: 'robots', content: metadata.value?.seo.robots || 'noindex,follow' },
+  ],
+  link: metadata.value
+    ? [
+        { rel: 'canonical', href: metadata.value.seo.canonical },
+        ...Object.entries(metadata.value.seo.hreflang ?? {}).map(([hreflang, href]) => ({
+          rel: 'alternate' as const,
+          hreflang,
+          href,
+        })),
+      ]
+    : [],
 }))
 </script>
 

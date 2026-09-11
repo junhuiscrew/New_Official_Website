@@ -1,4 +1,4 @@
-"""Products 固定 SitePage 模型与迁移测试。"""
+"""系统固定 SitePage 模型与迁移测试。"""
 
 import uuid
 from pathlib import Path
@@ -92,6 +92,38 @@ async def test_site_page_orm_creation_assigns_real_uuid(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "system_key",
+    ["products", "privacy", "home", "contact", "request-a-quote"],
+)
+async def test_site_page_database_accepts_supported_fixed_page_identities(
+    sqlite_database_url: str,
+    system_key: str,
+) -> None:
+    """
+    验证数据库只接受代码明确登记的固定页面身份。
+
+    输入：
+        sqlite_database_url: str，隔离 SQLite 数据库地址。
+        system_key: str，受支持的固定页面键。
+
+    输出：
+        None；任一登记页面无法写入时失败。
+    """
+    engine = create_database_engine(sqlite_database_url)
+    try:
+        await _create_site_page_model_tables(engine)
+        factory = create_session_factory(engine)
+        async with factory() as session, session.begin():
+            page = SitePage(system_key=system_key, status="enabled")
+            session.add(page)
+            await session.flush()
+            assert isinstance(page.id, uuid.UUID)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "invalid_values",
     [
         {"system_key": "about", "status": "enabled"},
@@ -103,7 +135,7 @@ async def test_site_page_database_rejects_unsupported_identity_or_status(
     invalid_values: dict[str, str],
 ) -> None:
     """
-    验证数据库拒绝 products 之外的 key 和既有业务语义之外的状态。
+    验证数据库拒绝未登记 key 和既有业务语义之外的状态。
 
     输入：sqlite_database_url，隔离 SQLite；invalid_values，非法模型字段。
     输出：None；非法固定页面可写入时失败。

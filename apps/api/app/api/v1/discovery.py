@@ -96,7 +96,7 @@ async def initialize_site_page(
     _csrf: None = Depends(require_csrf),
 ) -> ApiResponse[dict[str, Any]]:
     """
-    初始化唯一 Products SitePage；重复请求只回读，不覆盖现有内容。
+    初始化白名单固定 SitePage；重复请求只回读，不覆盖现有内容。
 
     输入：固定页面 key、数据库 session、具备 content.update 的用户与 CSRF。
     输出：ApiResponse，包含页面和两语言完整管理状态。

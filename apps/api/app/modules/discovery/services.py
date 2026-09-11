@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 from fastapi.encoders import jsonable_encoder
@@ -70,6 +71,45 @@ PRODUCTS_SITE_PAGE_LANGUAGES: dict[str, dict[str, str]] = {
         "path": "/en/products/",
     },
 }
+MANAGED_SITE_PAGE_DEFINITIONS: dict[str, dict[str, Any]] = {
+    PRODUCTS_SITE_PAGE_KEY: {
+        "languages": PRODUCTS_SITE_PAGE_LANGUAGES,
+        "public_metadata": False,
+        "robots_index": True,
+        "robots_follow": True,
+    },
+    "contact": {
+        "languages": {
+            "zh-CN": {
+                "display_name": "联系我们",
+                "path": "/zh-cn/contact/",
+            },
+            "en": {
+                "display_name": "Contact",
+                "path": "/en/contact/",
+            },
+        },
+        "public_metadata": True,
+        "robots_index": False,
+        "robots_follow": False,
+    },
+    "request-a-quote": {
+        "languages": {
+            "zh-CN": {
+                "display_name": "获取报价",
+                "path": "/zh-cn/request-a-quote/",
+            },
+            "en": {
+                "display_name": "Request a Quote",
+                "path": "/en/request-a-quote/",
+            },
+        },
+        "public_metadata": True,
+        "robots_index": False,
+        "robots_follow": True,
+    },
+}
+OFFICIAL_SITE_ORIGIN = "https://junhuiscrewbarrel.com"
 
 
 def _visible_values(*values: object) -> list[str]:
@@ -411,26 +451,32 @@ def _serialize_site_page_entity(entity: object) -> dict[str, object]:
     return jsonable_encoder({column.name: getattr(entity, column.name) for column in table.columns})
 
 
-def _require_products_site_page_key(system_key: str) -> None:
+def _require_managed_site_page_definition(system_key: str) -> dict[str, Any]:
     """
-    限制固定页面服务只接受 products 系统键。
+    将后台固定页面键解析为服务端白名单配置。
 
     输入：
         system_key: str，调用方提供的稳定页面键。
 
     输出：
-        None；非 products 键抛出 404。
+        dict[str, Any]，固定页面名称、路径和 robots 规则；未登记键抛出 404。
     """
-    if system_key != PRODUCTS_SITE_PAGE_KEY:
+    definition = MANAGED_SITE_PAGE_DEFINITIONS.get(system_key)
+    if definition is None:
         raise AppException(404, "site_page_not_found", "固定页面不存在")
+    return definition
 
 
-async def _lock_products_site_page_initialization(session: AsyncSession) -> None:
+async def _lock_site_page_initialization(
+    session: AsyncSession,
+    system_key: str,
+) -> None:
     """
-    在 PostgreSQL 事务内串行化固定 Products 页面初始化。
+    在 PostgreSQL 事务内按固定键串行化页面初始化和组合回读。
 
     输入：
         session: AsyncSession，调用方控制的数据库事务。
+        system_key: str，白名单固定页面键。
 
     输出：
         None；SQLite 等测试数据库依赖唯一约束，不执行数据库专用锁。
@@ -440,16 +486,20 @@ async def _lock_products_site_page_initialization(session: AsyncSession) -> None
         # 固定 advisory key 使并发初始化先后读取，避免两个请求同时创建半套关联记录。
         await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
-            {"lock_key": "site_page:products:initialize"},
+            {"lock_key": f"site_page:{system_key}:initialize"},
         )
 
 
-async def _products_locales(session: AsyncSession) -> dict[str, Locale]:
+async def _site_page_locales(
+    session: AsyncSession,
+    language_definitions: dict[str, dict[str, str]],
+) -> dict[str, Locale]:
     """
-    读取 Products 页面要求的两个启用语言。
+    读取固定页面要求的全部启用语言。
 
     输入：
         session: AsyncSession，数据库会话。
+        language_definitions: dict，按语言代码登记的固定页面配置。
 
     输出：
         dict[str, Locale]，按 zh-CN/en 代码索引的语言；缺失或停用时抛出 409。
@@ -458,17 +508,17 @@ async def _products_locales(session: AsyncSession) -> dict[str, Locale]:
         locale.code: locale
         for locale in (
             await session.scalars(
-                select(Locale).where(Locale.code.in_(PRODUCTS_SITE_PAGE_LANGUAGES))
+                select(Locale).where(Locale.code.in_(language_definitions))
             )
         ).all()
     }
-    if set(locales) != set(PRODUCTS_SITE_PAGE_LANGUAGES) or any(
+    if set(locales) != set(language_definitions) or any(
         not locale.is_enabled for locale in locales.values()
     ):
         raise AppException(
             409,
             "site_page_conflict",
-            "Products 固定页面要求启用的 zh-CN 与 en 语言",
+            "固定页面要求启用的 zh-CN 与 en 语言",
         )
     return locales
 
@@ -527,40 +577,44 @@ async def _site_page_language_records(
         raise AppException(
             409,
             "site_page_conflict",
-            "Products 固定页面的双语生命周期记录不完整",
+            "固定页面的双语生命周期记录不完整",
         )
     return translation, translation_status, publication, route
 
 
-async def _validate_products_site_page(
+async def _validate_managed_site_page(
     session: AsyncSession,
     page: SitePage,
     locales: dict[str, Locale],
     *,
+    system_key: str,
+    language_definitions: dict[str, dict[str, str]],
     lock: bool = False,
 ) -> dict[
     str,
     tuple[SitePageTranslation, TranslationStatus, ContentPublication, ContentRoute],
 ]:
     """
-    验证已有 Products 页面身份、翻译和路由未被人工改成不一致状态。
+    验证已有固定页面身份、翻译、路由和生命周期保持一致。
 
     输入：
         session: AsyncSession，数据库会话。
         page: SitePage，待核验页面。
         locales: dict[str, Locale]，要求的双语语言映射。
+        system_key: str，服务端登记的页面键。
+        language_definitions: dict，服务端登记的双语名称和路径。
         lock: bool，写事务校验时是否锁定双语关联记录。
 
     输出：
         dict，按语言代码返回已验证记录；发现不一致时抛出 409，绝不覆盖。
     """
-    if page.system_key != PRODUCTS_SITE_PAGE_KEY or page.status != "enabled":
-        raise AppException(409, "site_page_conflict", "Products 固定页面身份或状态不一致")
+    if page.system_key != system_key or page.status != "enabled":
+        raise AppException(409, "site_page_conflict", "固定页面身份或状态不一致")
     records: dict[
         str,
         tuple[SitePageTranslation, TranslationStatus, ContentPublication, ContentRoute],
     ] = {}
-    for locale_code, config in PRODUCTS_SITE_PAGE_LANGUAGES.items():
+    for locale_code, config in language_definitions.items():
         language_records = await _site_page_language_records(
             session,
             page=page,
@@ -569,9 +623,9 @@ async def _validate_products_site_page(
         )
         translation, translation_status, publication, route = language_records
         if translation.display_name != config["display_name"]:
-            raise AppException(409, "site_page_conflict", "Products 页面语言名称不一致")
+            raise AppException(409, "site_page_conflict", "固定页面语言名称不一致")
         if route.path != config["path"] or not route.is_canonical:
-            raise AppException(409, "site_page_conflict", "Products 页面 canonical Route 不一致")
+            raise AppException(409, "site_page_conflict", "固定页面 canonical Route 不一致")
         expected_lifecycle = {
             PublicationStatus.DRAFT.value: (TranslationState.DRAFT.value, False, False),
             PublicationStatus.REVIEW.value: (
@@ -587,7 +641,7 @@ async def _validate_products_site_page(
         }.get(publication.status)
         actual_lifecycle = (translation_status.status, route.active, route.indexable)
         if expected_lifecycle is None or actual_lifecycle != expected_lifecycle:
-            raise AppException(409, "site_page_conflict", "Products 页面生命周期状态不一致")
+            raise AppException(409, "site_page_conflict", "固定页面生命周期状态不一致")
         records[locale_code] = language_records
     return records
 
@@ -599,19 +653,20 @@ async def initialize_products_site_page(
     actor_id: uuid.UUID | None,
 ) -> SitePage:
     """
-    幂等初始化唯一 Products SitePage 及其双语生命周期记录。
+    幂等初始化服务端白名单内的 SitePage 及其双语生命周期记录。
 
     输入：
         session: AsyncSession，调用方控制提交的数据库事务。
-        system_key: str，必须为 products。
+        system_key: str，必须为 products、contact 或 request-a-quote。
         actor_id: uuid.UUID | None，执行初始化的认证用户 ID。
 
     输出：
         SitePage，新建或已存在且一致的固定页面；冲突时不覆盖并抛出 409。
     """
-    _require_products_site_page_key(system_key)
-    await _lock_products_site_page_initialization(session)
-    locales = await _products_locales(session)
+    definition = _require_managed_site_page_definition(system_key)
+    language_definitions: dict[str, dict[str, str]] = definition["languages"]
+    await _lock_site_page_initialization(session, system_key)
+    locales = await _site_page_locales(session, language_definitions)
     page = await session.scalar(
         select(SitePage).where(SitePage.system_key == system_key).with_for_update()
     )
@@ -621,7 +676,7 @@ async def initialize_products_site_page(
                 select(ContentRoute)
                 .where(
                     ContentRoute.path.in_(
-                        config["path"] for config in PRODUCTS_SITE_PAGE_LANGUAGES.values()
+                        config["path"] for config in language_definitions.values()
                     )
                 )
                 .with_for_update()
@@ -633,12 +688,12 @@ async def initialize_products_site_page(
             raise AppException(
                 409,
                 "site_page_conflict",
-                "Products 固定页面路径已被其他内容占用",
+                "固定页面路径已被其他内容占用",
             )
-        page = SitePage(system_key=PRODUCTS_SITE_PAGE_KEY, status="enabled")
+        page = SitePage(system_key=system_key, status="enabled")
         session.add(page)
         await session.flush()
-        for locale_code, config in PRODUCTS_SITE_PAGE_LANGUAGES.items():
+        for locale_code, config in language_definitions.items():
             locale = locales[locale_code]
             session.add_all(
                 [
@@ -677,7 +732,7 @@ async def initialize_products_site_page(
             target_type=SITE_PAGE_OWNER_TYPE,
             target_id=str(page.id),
             user_id=actor_id,
-            metadata={"system_key": PRODUCTS_SITE_PAGE_KEY},
+            metadata={"system_key": system_key},
         )
         await session.flush()
         return page
@@ -687,8 +742,14 @@ async def initialize_products_site_page(
         route.owner_type != SITE_PAGE_OWNER_TYPE or route.owner_id != page.id
         for route in occupied_routes
     ):
-        raise AppException(409, "site_page_conflict", "Products 页面路径归属不一致")
-    await _validate_products_site_page(session, page, locales)
+        raise AppException(409, "site_page_conflict", "固定页面路径归属不一致")
+    await _validate_managed_site_page(
+        session,
+        page,
+        locales,
+        system_key=system_key,
+        language_definitions=language_definitions,
+    )
     return page
 
 
@@ -703,26 +764,34 @@ async def get_site_page_detail(
 
     输入：
         session: AsyncSession，数据库会话。
-        system_key: str，必须为 products。
+        system_key: str，后台可管理的白名单固定页面键。
         include_seo: bool，调用者具备 seo.read 时才返回 SEO 文档。
 
     输出：
         dict[str, object]，仅包含页面、语言、SEO 和生命周期业务字段。
     """
-    _require_products_site_page_key(system_key)
+    definition = _require_managed_site_page_definition(system_key)
+    language_definitions: dict[str, dict[str, str]] = definition["languages"]
     # Admin 回读与写入共用事务锁，避免 READ COMMITTED 下拼接出跨事务的双语混合状态。
-    await _lock_products_site_page_initialization(session)
+    await _lock_site_page_initialization(session, system_key)
     page = await session.scalar(
         select(SitePage)
         .where(SitePage.system_key == system_key)
         .with_for_update()
     )
     if page is None:
-        raise AppException(404, "site_page_not_initialized", "Products 固定页面尚未初始化")
-    locales = await _products_locales(session)
-    records = await _validate_products_site_page(session, page, locales, lock=True)
+        raise AppException(404, "site_page_not_initialized", "固定页面尚未初始化")
+    locales = await _site_page_locales(session, language_definitions)
+    records = await _validate_managed_site_page(
+        session,
+        page,
+        locales,
+        system_key=system_key,
+        language_definitions=language_definitions,
+        lock=True,
+    )
     languages: list[dict[str, object]] = []
-    for locale_code in PRODUCTS_SITE_PAGE_LANGUAGES:
+    for locale_code in language_definitions:
         locale = locales[locale_code]
         translation, translation_status, publication, route = records[locale_code]
         language_detail: dict[str, object] = {
@@ -744,7 +813,130 @@ async def get_site_page_detail(
                 _serialize_site_page_entity(seo) if seo is not None else None
             )
         languages.append(language_detail)
-    return {"page": _serialize_site_page_entity(page), "languages": languages}
+    return {
+        "page": _serialize_site_page_entity(page),
+        "languages": languages,
+        "seo_defaults": {
+            "robots_index": definition["robots_index"],
+            "robots_follow": definition["robots_follow"],
+        },
+    }
+
+
+async def get_public_fixed_site_page_metadata(
+    session: AsyncSession,
+    *,
+    system_key: str,
+    locale_slug: str,
+) -> dict[str, object]:
+    """
+    返回 Contact/RFQ 固定页面的已发布服务端 SEO 元数据。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        system_key: str，仅允许配置为公开元数据页的固定键。
+        locale_slug: str，请求页面的语言 slug。
+
+    输出：
+        dict[str, object]，包含 title、description、canonical、robots 与双语 hreflang；
+        页面未完整发布、SEO 不完整或策略不一致时抛出公开 404。
+    """
+    definition = _require_managed_site_page_definition(system_key)
+    if not definition["public_metadata"]:
+        raise AppException(404, "public_site_page_not_found", "公开固定页面不存在")
+    language_definitions: dict[str, dict[str, str]] = definition["languages"]
+    locale = await session.scalar(
+        select(Locale).where(
+            Locale.slug == locale_slug,
+            Locale.is_enabled.is_(True),
+        )
+    )
+    page = await session.scalar(
+        select(SitePage).where(
+            SitePage.system_key == system_key,
+            SitePage.status == "enabled",
+        )
+    )
+    if locale is None or page is None or locale.code not in language_definitions:
+        raise AppException(404, "public_site_page_not_found", "公开固定页面不存在")
+
+    locales = await _site_page_locales(session, language_definitions)
+    try:
+        records = await _validate_managed_site_page(
+            session,
+            page,
+            locales,
+            system_key=system_key,
+            language_definitions=language_definitions,
+        )
+    except AppException as exc:
+        raise AppException(
+            404,
+            "public_site_page_not_found",
+            "公开固定页面尚未完整发布",
+        ) from exc
+
+    seo_by_locale: dict[str, SeoDocument] = {}
+    for locale_code, (_translation, translation_status, publication, route) in records.items():
+        seo = await session.scalar(
+            select(SeoDocument).where(
+                SeoDocument.owner_type == SITE_PAGE_OWNER_TYPE,
+                SeoDocument.owner_id == page.id,
+                SeoDocument.locale_id == locales[locale_code].id,
+            )
+        )
+        expected_canonical = OFFICIAL_SITE_ORIGIN + route.path
+        is_publishable_metadata = (
+            translation_status.status == TranslationState.PUBLISHED.value
+            and publication.status == PublicationStatus.PUBLISHED.value
+            and route.active
+            and seo is not None
+            and bool(seo.seo_title)
+            and bool(seo.meta_description)
+            and seo.robots_index is definition["robots_index"]
+            and seo.robots_follow is definition["robots_follow"]
+            and seo.canonical_override in {None, expected_canonical}
+        )
+        if not is_publishable_metadata or seo is None:
+            raise AppException(
+                404,
+                "public_site_page_not_found",
+                "公开固定页面尚未完整发布",
+            )
+        seo_by_locale[locale_code] = seo
+
+    current_records = records[locale.code]
+    _translation, _translation_status, _publication, current_route = current_records
+    current_seo = seo_by_locale[locale.code]
+    canonical = current_seo.canonical_override or OFFICIAL_SITE_ORIGIN + current_route.path
+    hreflang = {
+        locale_code: OFFICIAL_SITE_ORIGIN + records[locale_code][3].path
+        for locale_code in language_definitions
+    }
+    default_locale = next(
+        (item for item in locales.values() if item.is_default),
+        None,
+    )
+    if default_locale is not None:
+        hreflang["x-default"] = (
+            OFFICIAL_SITE_ORIGIN + records[default_locale.code][3].path
+        )
+    return {
+        "seo": {
+            "title": current_seo.seo_title,
+            "description": current_seo.meta_description,
+            "canonical": canonical,
+            "robots": (
+                f"{'index' if current_seo.robots_index else 'noindex'}, "
+                f"{'follow' if current_seo.robots_follow else 'nofollow'}"
+            ),
+            "og_title": current_seo.og_title,
+            "og_description": current_seo.og_description,
+            "hreflang": hreflang,
+        },
+        "breadcrumb": [],
+        "schema": [],
+    }
 
 
 async def validate_site_page_seo_owner_locale(
@@ -786,7 +978,7 @@ async def validate_site_page_seo_owner_locale(
     return page
 
 
-async def _products_site_page_lifecycle_records(
+async def _managed_site_page_lifecycle_records(
     session: AsyncSession,
     *,
     system_key: str,
@@ -797,18 +989,19 @@ async def _products_site_page_lifecycle_records(
 
     输入：
         session: AsyncSession，数据库会话。
-        system_key: str，必须为 products。
+        system_key: str，后台可管理的白名单固定页面键。
         locale_code: str，必须为 zh-CN 或 en。
 
     输出：
         tuple，页面、翻译状态、发布状态及 canonical Route。
     """
-    _require_products_site_page_key(system_key)
-    if locale_code not in PRODUCTS_SITE_PAGE_LANGUAGES:
+    definition = _require_managed_site_page_definition(system_key)
+    language_definitions: dict[str, dict[str, str]] = definition["languages"]
+    if locale_code not in language_definitions:
         raise AppException(404, "site_page_locale_not_found", "固定页面语言不存在")
     # 与初始化共用事务锁；先锁定并完整校验双语记录，再允许任何 SEO/生命周期写入。
-    await _lock_products_site_page_initialization(session)
-    locales = await _products_locales(session)
+    await _lock_site_page_initialization(session, system_key)
+    locales = await _site_page_locales(session, language_definitions)
     page = await session.scalar(
         select(SitePage)
         .where(SitePage.system_key == system_key)
@@ -816,8 +1009,15 @@ async def _products_site_page_lifecycle_records(
     )
     locale = locales.get(locale_code)
     if page is None or locale is None:
-        raise AppException(404, "site_page_not_initialized", "Products 固定页面尚未初始化")
-    records = await _validate_products_site_page(session, page, locales, lock=True)
+        raise AppException(404, "site_page_not_initialized", "固定页面尚未初始化")
+    records = await _validate_managed_site_page(
+        session,
+        page,
+        locales,
+        system_key=system_key,
+        language_definitions=language_definitions,
+        lock=True,
+    )
     _translation, translation_status, publication, route = records[locale_code]
     return page, translation_status, publication, route
 
@@ -833,13 +1033,13 @@ async def resolve_products_site_page_owner_locale(
 
     输入：
         session: AsyncSession，数据库会话。
-        system_key: str，必须为 products。
+        system_key: str，后台可管理的白名单固定页面键。
         locale_code: str，必须为 zh-CN 或 en。
 
     输出：
         tuple[SitePage, Locale]，供 SEO 保存使用的真实 UUID owner 与语言。
     """
-    page, _translation, _publication, _route = await _products_site_page_lifecycle_records(
+    page, _translation, _publication, _route = await _managed_site_page_lifecycle_records(
         session,
         system_key=system_key,
         locale_code=locale_code,
@@ -877,7 +1077,7 @@ async def review_products_site_page(
     actor_id: uuid.UUID | None,
 ) -> None:
     """
-    审核 Products 页面翻译并复用统一服务把 Publication 转为 review。
+    审核白名单固定页面翻译并复用统一服务把 Publication 转为 review。
 
     输入：session、固定页面 key、语言代码、完整权限集合与操作用户 ID。
     输出：None；状态或双重审核权限不满足时抛出 AppException。
@@ -886,7 +1086,7 @@ async def review_products_site_page(
         actor_permissions,
         {"translation.review", "content.review"},
     )
-    page, translation, publication, route = await _products_site_page_lifecycle_records(
+    page, translation, publication, route = await _managed_site_page_lifecycle_records(
         session,
         system_key=system_key,
         locale_code=locale_code,
@@ -931,7 +1131,7 @@ async def publish_products_site_page(
     actor_id: uuid.UUID | None,
 ) -> None:
     """
-    复用统一生命周期服务发布已审核的 Products 固定页面语言。
+    复用统一生命周期服务发布已审核的白名单固定页面语言。
 
     输入：session、固定页面 key、语言代码、完整权限集合与操作用户 ID。
     输出：None；状态或双重发布权限不满足时抛出 AppException。
@@ -940,7 +1140,7 @@ async def publish_products_site_page(
         actor_permissions,
         {"translation.publish", "content.publish"},
     )
-    _page, translation, publication, route = await _products_site_page_lifecycle_records(
+    _page, translation, publication, route = await _managed_site_page_lifecycle_records(
         session,
         system_key=system_key,
         locale_code=locale_code,

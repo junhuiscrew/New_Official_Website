@@ -4,11 +4,15 @@ import { computed } from 'vue'
 
 import { resolveRouteLocale } from '~/composables/useLocalePath'
 import { ui } from '~/i18n/ui'
-import type { PublicCompanyProfileDto } from '~/types/public'
+import type { PublicCompanyProfileDto, PublicPageMetadataDto } from '~/types/public'
 
 interface CompanyEnvelope {
   success: boolean
   data: PublicCompanyProfileDto | null
+}
+interface PageMetadataEnvelope {
+  success: boolean
+  data: PublicPageMetadataDto | null
 }
 
 const route = useRoute()
@@ -20,7 +24,13 @@ const { data: response } = await useAsyncData(
   () => `contact:${locale.value}`,
   () => api<CompanyEnvelope>(`/public/company-profile/${locale.value}`),
 )
+// Contact 的 title/description/canonical/hreflang 统一读取服务端固定页面，不使用请求 Host。
+const { data: metadataResponse } = await useAsyncData(
+  () => `contact-metadata:${locale.value}`,
+  () => api<PageMetadataEnvelope>(`/public/site-pages/contact/${locale.value}`),
+)
 const company = computed(() => (response.value?.success ? response.value.data : null))
+const metadata = computed(() => metadataResponse.value?.data ?? null)
 const demoMode = computed(() => Boolean(runtimeConfig.public.demoMode))
 const contactSummary = computed(() =>
   demoMode.value ? labels.value.home.demoContactSummary : labels.value.home.contactSummary,
@@ -28,11 +38,23 @@ const contactSummary = computed(() =>
 
 useHead(() => ({
   htmlAttrs: { lang: locale.value === 'zh-cn' ? 'zh-CN' : 'en' },
-  title: `${labels.value.navigation.contact} · ${company.value?.company_name || 'Junhui'}`,
+  title:
+    metadata.value?.seo.title ||
+    `${labels.value.navigation.contact} · ${company.value?.company_name || 'Junhui'}`,
   meta: [
-    { name: 'description', content: contactSummary.value },
-    { name: 'robots', content: 'noindex, nofollow' },
+    { name: 'description', content: metadata.value?.seo.description || contactSummary.value },
+    { name: 'robots', content: metadata.value?.seo.robots || 'noindex, nofollow' },
   ],
+  link: metadata.value
+    ? [
+        { rel: 'canonical', href: metadata.value.seo.canonical },
+        ...Object.entries(metadata.value.seo.hreflang ?? {}).map(([hreflang, href]) => ({
+          rel: 'alternate' as const,
+          hreflang,
+          href,
+        })),
+      ]
+    : [],
 }))
 </script>
 

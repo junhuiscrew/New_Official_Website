@@ -1,6 +1,6 @@
 <!-- 页面用途：以字段化双语表单维护唯一Company Profile，不向编辑人员暴露JSON或媒体UUID。 -->
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 interface LocaleItem {
   id: string
@@ -22,11 +22,23 @@ interface CompanyTranslationDraft {
   mission: string
   advantages: string
 }
+interface CompanySeoDocument {
+  seo_title: string | null
+  meta_description: string | null
+  canonical_override: string | null
+  robots_index: boolean
+  robots_follow: boolean
+  og_title: string | null
+  og_description: string | null
+  og_media_id: string | null
+  schema_override_jsonb: Record<string, unknown> | null
+}
 
 useHead({
   title: '公司资料 · Junhui Admin',
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
+const { currentUser } = useAuth()
 const api = useAuthorityApi()
 const message = ref('')
 const errorMessage = ref('')
@@ -37,6 +49,11 @@ const media = ref<MediaItem[]>([])
 const translations = ref<CompanyTranslationDraft[]>([])
 const translationStatuses = ref<Array<{ locale_id: string; status: string }>>([])
 const publications = ref<Array<{ locale_id: string; status: string }>>([])
+const companySeoLocaleCode = ref('zh-CN')
+const companySeoDescription = ref('')
+const companySeoDocument = ref<CompanySeoDocument | null>(null)
+const seoLoading = ref(false)
+const seoSaving = ref(false)
 const form = reactive({
   status: 'enabled',
   founded_year: '',
@@ -53,6 +70,39 @@ const form = reactive({
   logo_media_id: '',
   primary_factory_media_id: '',
 })
+const activeCompanySeoLocale = computed(
+  () => locales.value.find((item) => item.code === companySeoLocaleCode.value) ?? null,
+)
+const canReadSeo = computed(() => currentUser.value?.permissions.includes('seo.read'))
+const canUpdateSeo = computed(() => currentUser.value?.permissions.includes('seo.update'))
+
+/**
+ * 读取当前语言的 Company SeoDocument，不触碰公司正文与发布状态。
+ *
+ * 输入：localeCode，语言代码；省略时使用当前下拉选择。
+ * 输出：Promise<CompanySeoDocument | null>，数据库中的完整 SEO 文档或 null。
+ */
+async function loadCompanySeo(
+  localeCode = companySeoLocaleCode.value,
+): Promise<CompanySeoDocument | null> {
+  const locale = locales.value.find((item) => item.code === localeCode)
+  if (!profileId.value || !locale || !canReadSeo.value) {
+    companySeoDocument.value = null
+    companySeoDescription.value = ''
+    return null
+  }
+  seoLoading.value = true
+  try {
+    const document = await api.detail<CompanySeoDocument | null>(
+      `/discovery/seo/company_profile/${profileId.value}/${locale.id}`,
+    )
+    companySeoDocument.value = document
+    companySeoDescription.value = document?.meta_description ?? ''
+    return document
+  } finally {
+    seoLoading.value = false
+  }
+}
 
 /** 读取公司、语言和媒体选项，并把数组转换为“一行一项”的可读表单。 */
 async function load(): Promise<void> {
@@ -104,8 +154,48 @@ async function load(): Promise<void> {
         advantages: Array.isArray(source.advantages_json) ? source.advantages_json.join('\n') : '',
       }
     })
+    await loadCompanySeo()
   } catch {
     errorMessage.value = '无法读取公司资料，请检查公司与媒体读取权限。'
+  }
+}
+
+/**
+ * 仅更新当前语言的 About SEO 摘要，并 fresh GET 核对保存结果。
+ *
+ * 输入：无，使用当前语言和摘要字段。
+ * 输出：Promise<void>，保存成功后保留其他 SEO 字段并显示回读结果。
+ */
+async function saveCompanySeo(): Promise<void> {
+  const locale = activeCompanySeoLocale.value
+  if (!profileId.value || !locale || !canUpdateSeo.value) return
+  const previous = companySeoDocument.value
+  const submittedDescription = companySeoDescription.value.trim() || null
+  seoSaving.value = true
+  message.value = ''
+  errorMessage.value = ''
+  try {
+    await api.replace(`/discovery/seo/company_profile/${profileId.value}/${locale.id}`, {
+      seo_title: previous?.seo_title ?? null,
+      meta_description: submittedDescription,
+      canonical_override: previous?.canonical_override ?? null,
+      robots_index: previous?.robots_index ?? true,
+      robots_follow: previous?.robots_follow ?? true,
+      og_title: previous?.og_title ?? null,
+      og_description: previous?.og_description ?? null,
+      og_media_id: previous?.og_media_id ?? null,
+      schema_override_jsonb: previous?.schema_override_jsonb ?? null,
+    })
+    const reloadedSeo = await loadCompanySeo(locale.code)
+    if (reloadedSeo?.meta_description !== submittedDescription) {
+      errorMessage.value = '保存请求已返回，但 fresh GET 未确认摘要实际值。'
+      return
+    }
+    message.value = 'About SEO 摘要已保存并重新读取。'
+  } catch {
+    errorMessage.value = 'About SEO 摘要保存失败；公司正文未被覆盖。'
+  } finally {
+    seoSaving.value = false
   }
 }
 
@@ -180,6 +270,7 @@ async function transition(localeId: string, target: 'published' | 'archived'): P
   await load()
 }
 
+watch(companySeoLocaleCode, () => loadCompanySeo())
 onMounted(load)
 </script>
 
@@ -329,6 +420,42 @@ onMounted(load)
         </div>
       </article>
     </section>
+
+    <!-- 权限来自客户端安全会话；延后渲染可避免 SSR 匿名态与登录态结构不一致。 -->
+    <ClientOnly>
+      <section v-if="canReadSeo" class="company-panel company-seo-panel">
+        <header>
+          <span>05</span>
+          <div>
+            <h2>About 页面 SEO 摘要</h2>
+            <p>复用 Company SEO；保存此处不会重存公司正文或改变发布状态。</p>
+          </div>
+        </header>
+        <label>
+          编辑语言
+          <select v-model="companySeoLocaleCode">
+            <option v-for="locale in locales" :key="locale.id" :value="locale.code">
+              {{ locale.native_name }}（{{ locale.code }}）
+            </option>
+          </select>
+        </label>
+        <label>
+          页面摘要
+          <textarea
+            v-model="companySeoDescription"
+            :disabled="seoLoading"
+            :readonly="!canUpdateSeo"
+          />
+        </label>
+        <button
+          type="button"
+          :disabled="seoSaving || seoLoading || !canUpdateSeo"
+          @click="saveCompanySeo"
+        >
+          {{ seoSaving ? '正在保存…' : '保存 About SEO 摘要' }}
+        </button>
+      </section>
+    </ClientOnly>
   </main>
 </template>
 

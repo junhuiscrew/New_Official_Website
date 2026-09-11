@@ -3,6 +3,13 @@
 import { computed, ref, watch } from 'vue'
 
 import { adminMeta } from '../../admin-config'
+import {
+  ENTITY_STATUS_LABELS,
+  PUBLICATION_STATUS_LABELS,
+  TRANSLATION_STATUS_LABELS,
+  labelFrom,
+  localeOperationLabel,
+} from '~/utils/adminZhCn'
 
 interface LocaleSummary {
   code: string
@@ -51,6 +58,7 @@ const PAGE_CONFIGS: Record<string, PageConfig> = {
 }
 
 const route = useRoute()
+const runtimeConfig = useRuntimeConfig()
 const resolvedPageConfig = PAGE_CONFIGS[String(route.params.systemKey ?? '')]
 if (!resolvedPageConfig) {
   throw createError({ statusCode: 404, statusMessage: '固定页面不存在' })
@@ -83,6 +91,28 @@ const canPublish = computed(
   () =>
     currentUser.value?.permissions.includes('translation.publish') &&
     currentUser.value?.permissions.includes('content.publish'),
+)
+const translationStateLabel = computed(() =>
+  labelFrom(TRANSLATION_STATUS_LABELS, activeLanguage.value?.translation_status.status, '尚未核对'),
+)
+const publicationStateLabel = computed(() => {
+  const statusValue = activeLanguage.value?.publication.status
+  if (!statusValue) return '尚未核对'
+  const translated = labelFrom(PUBLICATION_STATUS_LABELS, statusValue, '尚未核对')
+  return statusValue === 'published' && runtimeConfig.public.demoMode
+    ? `${translated}至本地演示环境`
+    : translated
+})
+const pageAccessStateLabel = computed(() => {
+  if (!activeLanguage.value) return '尚未核对'
+  return activeLanguage.value.route.active ? '已启用' : '未启用'
+})
+const robotsStateLabel = computed(() => {
+  if (!activeLanguage.value?.seo) return '尚未核对'
+  return activeLanguage.value.seo.robots_index ? '允许索引' : '禁止索引'
+})
+const environmentProtectionLabel = computed(() =>
+  runtimeConfig.public.demoMode ? '全站禁止索引' : '按部署环境配置',
 )
 
 useHead(() => ({
@@ -236,7 +266,7 @@ onMounted(loadPage)
 
     <template v-else>
       <section class="fixed-page-panel fixed-page-toolbar">
-        <strong>页面状态：{{ detail.page.status }}</strong>
+        <strong>页面状态：{{ labelFrom(ENTITY_STATUS_LABELS, detail.page.status) }}</strong>
         <label>
           编辑语言
           <select v-model="activeLocaleCode" data-testid="fixed-page-seo-locale">
@@ -245,7 +275,9 @@ onMounted(loadPage)
               :key="language.locale.code"
               :value="language.locale.code"
             >
-              {{ language.locale.native_name }}（{{ language.locale.code }}）
+              {{ localeOperationLabel(language.locale.code, language.locale.native_name) }}（{{
+                language.locale.code
+              }}）
             </option>
           </select>
         </label>
@@ -255,25 +287,38 @@ onMounted(loadPage)
         <h2>当前状态</h2>
         <dl class="status-grid">
           <div>
-            <dt>翻译</dt>
-            <dd>{{ activeLanguage.translation_status.status }}</dd>
+            <dt>翻译状态</dt>
+            <dd>{{ translationStateLabel }}</dd>
           </div>
           <div>
-            <dt>发布</dt>
-            <dd>{{ activeLanguage.publication.status }}</dd>
+            <dt>内容发布状态</dt>
+            <dd>{{ publicationStateLabel }}</dd>
+          </div>
+          <div>
+            <dt>页面访问状态</dt>
+            <dd>{{ pageAccessStateLabel }}</dd>
+          </div>
+          <div>
+            <dt>页面搜索引擎规则</dt>
+            <dd>{{ robotsStateLabel }}</dd>
+          </div>
+          <div>
+            <dt>环境保护</dt>
+            <dd>{{ environmentProtectionLabel }}</dd>
           </div>
           <div>
             <dt>固定路径</dt>
             <dd>{{ activeLanguage.route.path }}</dd>
           </div>
-          <div>
-            <dt>Route</dt>
-            <dd>
-              {{ activeLanguage.route.active ? '已启用' : '未启用' }} ·
-              {{ activeLanguage.route.indexable ? '业务可索引' : '业务不可索引' }}
-            </dd>
-          </div>
         </dl>
+        <details class="route-details">
+          <summary>Route 技术状态</summary>
+          <p>
+            active={{ activeLanguage.route.active }} · indexable={{
+              activeLanguage.route.indexable
+            }}
+          </p>
+        </details>
       </section>
 
       <form v-if="activeLanguage" class="fixed-page-panel" @submit.prevent="saveSeo">
@@ -376,6 +421,10 @@ onMounted(loadPage)
 .status-grid dd {
   margin: 0.2rem 0 0;
   overflow-wrap: anywhere;
+}
+.route-details p {
+  margin-block-start: 0.5rem;
+  color: #64778a;
 }
 .lifecycle-actions {
   grid-template-columns: 1fr auto;

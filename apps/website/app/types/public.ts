@@ -88,19 +88,26 @@ export interface PublicCardDto extends PublicLinkDto {
   role_type?: PublicPersonRole | null
 }
 
-/** Search V1 仅允许检索的六类公开内容。 */
+/** Search Coverage R1 仅允许检索的八类公开内容。 */
 export type PublicSearchType =
   | 'product'
   | 'material'
+  | 'technology'
   | 'application'
   | 'solution'
+  | 'manufacturing_capability'
   | 'knowledge_article'
   | 'case_study'
 
-/** Search API 按类型返回的 canonical 卡片集合。 */
+/** Search API 在同一合格集合上返回的全局分页及兼容分组。 */
 export interface PublicSearchDto {
   query: string
+  items: PublicLinkDto[]
   groups: Record<PublicSearchType, PublicLinkDto[]>
+  page: number
+  page_size: number
+  total: number
+  pages: number
 }
 
 /** Knowledge 分类仅用于已发布文章筛选，不伪装成独立详情实体。 */

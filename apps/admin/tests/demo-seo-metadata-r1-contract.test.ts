@@ -39,4 +39,22 @@ describe('Demo SEO metadata R1 admin', () => {
     expect(source).toContain('to="/site-pages/request-a-quote"')
     expect(source).toContain("currentUser.permissions.includes('seo.read')")
   })
+
+  it('separates publication, access, robots, and Demo environment status in Chinese', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/pages/site-pages/[systemKey].vue'),
+      'utf8',
+    )
+
+    expect(source).toContain('内容发布状态')
+    expect(source).toContain('页面访问状态')
+    expect(source).toContain('页面搜索引擎规则')
+    expect(source).toContain('环境保护')
+    expect(source).toContain("activeLanguage.value.seo.robots_index ? '允许索引' : '禁止索引'")
+    expect(source).toContain("runtimeConfig.public.demoMode ? '全站禁止索引' : '按部署环境配置'")
+    expect(source).toContain('localeOperationLabel(')
+    expect(source).toContain('PUBLICATION_STATUS_LABELS')
+    expect(source).not.toContain('业务可索引')
+    expect(source).not.toContain('业务不可索引')
+  })
 })

@@ -314,8 +314,10 @@ async def public_expert_list(
 SearchType = Literal[
     "product",
     "material",
+    "technology",
     "application",
     "solution",
+    "manufacturing_capability",
     "knowledge_article",
     "case_study",
 ]
@@ -326,23 +328,37 @@ async def public_search(
     locale_slug: str,
     q: str = Query(min_length=2, max_length=200),
     types: list[SearchType] | None = Query(default=None),
-    limit: int = Query(default=10, ge=1, le=20),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=12, ge=1, le=48),
+    limit: int | None = Query(default=None, ge=1, le=20, deprecated=True),
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[dict[str, Any]]:
     """
-    搜索六个批准内容族。
+    搜索八个批准内容族，并返回统一的全局分页结果。
 
     输入：
         locale_slug: str，目标语言 slug。
         q: str，长度为 2 到 200 的用户搜索词。
-        types: list[SearchType] | None，可选的六类内容类型白名单子集。
-        limit: int，每类最多返回的结果数，范围为 1 到 20。
+        types: list[SearchType] | None，可选的八类内容类型白名单子集。
+        page: int，从 1 开始的全局页码。
+        page_size: int，每页结果数，范围为 1 到 48。
+        limit: int | None，兼容旧客户端的每页结果数，范围为 1 到 20。
         session: AsyncSession，数据库会话。
 
     输出：
-        ApiResponse[dict[str, Any]]，data 按类型分组且仅含 canonical Card DTO。
+        ApiResponse[dict[str, Any]]，data 含统一总数、分页及 canonical Card DTO。
     """
-    return success_response(await search_public_content(session, locale_slug, q, types, limit))
+    effective_page_size = limit if limit is not None else page_size
+    return success_response(
+        await search_public_content(
+            session,
+            locale_slug,
+            q,
+            types,
+            page_size=effective_page_size,
+            page=page,
+        )
+    )
 
 
 @router.get("/downloads/{locale_slug}", response_model=ApiResponse[list[dict[str, Any]]])

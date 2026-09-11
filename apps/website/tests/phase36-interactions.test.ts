@@ -75,7 +75,7 @@ describe('Phase 3.6 search journey', () => {
     expect(source).not.toContain('<main id="main-content"')
   })
 
-  it('renders all six approved groups and safe no-result recovery routes', () => {
+  it('renders all eight approved groups and safe no-result recovery routes', () => {
     const source = readAppSource('pages/[lang]/search/index.vue')
 
     for (const type of [
@@ -83,12 +83,19 @@ describe('Phase 3.6 search journey', () => {
       'material',
       'application',
       'solution',
+      'technology',
+      'manufacturing_capability',
       'knowledge_article',
       'case_study',
     ]) {
       expect(source).toContain(type)
     }
     expect(source).toContain('labels.empty.searchResults')
+    expect(source).toContain('response.value?.data.items')
+    expect(source).toContain('response.value?.data.total')
+    expect(source).toContain("dedupe: 'cancel'")
+    expect(source).toContain('clearSearch')
+    expect(source).toContain('search-page__type')
     expect(source).toContain('`/${locale}/products/`')
     expect(source).toContain('`/${locale}/knowledge/`')
     expect(source).toContain('`/${locale}/request-a-quote/`')

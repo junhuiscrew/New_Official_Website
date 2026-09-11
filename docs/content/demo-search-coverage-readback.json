@@ -1,0 +1,330 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260911T100118+0800",
+  "completed_at": "2026-09-11T10:30:24+08:00",
+  "project": "junhuiscrew/New_Official_Website",
+  "worktree": "D:/Python_Project/New_Official_Website/junhui-global-website/.worktrees/phase-3.6",
+  "branch": "phase-3.7",
+  "git": {
+    "baseline_head": "d3e4435da63c583a3c46b395d3875ca573801ea1",
+    "local_upstream_head": "d3e4435da63c583a3c46b395d3875ca573801ea1",
+    "remote_fetch_performed": false,
+    "commit_created": false,
+    "push_performed": false,
+    "merge_performed": false,
+    "preexisting_readme_change_preserved": true
+  },
+  "scope": {
+    "target_environment": "junhui-demo-r2",
+    "search_coverage_issue_closed": true,
+    "admin_status_copy_issue_closed": true,
+    "full_site_seo_geo_approved": false,
+    "production_approved": false,
+    "deployment_performed": false
+  },
+  "coverage": {
+    "before": [
+      "product",
+      "material",
+      "application",
+      "solution",
+      "knowledge_article",
+      "case_study"
+    ],
+    "after": [
+      "product",
+      "material",
+      "technology",
+      "application",
+      "solution",
+      "manufacturing_capability",
+      "case_study",
+      "knowledge_article"
+    ],
+    "new_types": {
+      "technology": [
+        "title",
+        "definition",
+        "process_description",
+        "benefits",
+        "limitations"
+      ],
+      "manufacturing_capability": [
+        "title",
+        "summary",
+        "description"
+      ]
+    },
+    "query_engine": [
+      "PostgreSQL full-text search",
+      "pg_trgm title similarity",
+      "case-insensitive literal substring matching"
+    ],
+    "external_search_engine_added": false,
+    "ai_or_automatic_translation_added": false,
+    "database_index_added": false,
+    "migration_added_or_modified": false
+  },
+  "public_eligibility": {
+    "same_locale_only": true,
+    "entity_enabled": true,
+    "locale_enabled": true,
+    "translation_published": true,
+    "publication_published": true,
+    "route_active": true,
+    "route_indexable": true,
+    "route_self_canonical": true,
+    "seo_robots_index": true,
+    "demo_gateway_noindex_does_not_zero_internal_search": true,
+    "private_fields_used_for_matching": false,
+    "private_fields_used_for_summary_or_ranking": false
+  },
+  "main_demo_queries": [
+    {
+      "locale": "zh-cn",
+      "query": "螺杆",
+      "total": 6,
+      "representative": {
+        "type": "product",
+        "title": "通用注塑螺杆（演示）",
+        "path": "/zh-cn/products/demo-cat-screws/demo-s01/"
+      }
+    },
+    {
+      "locale": "zh-cn",
+      "query": "氮化",
+      "total": 1,
+      "representative": {
+        "type": "technology",
+        "title": "氮化流程演示",
+        "path": "/zh-cn/technologies/demo-tec-nitriding/"
+      }
+    },
+    {
+      "locale": "zh-cn",
+      "query": "需求评审",
+      "total": 1,
+      "representative": {
+        "type": "manufacturing_capability",
+        "title": "需求评审（演示流程）",
+        "path": "/zh-cn/capabilities/demo-cap-01/"
+      }
+    },
+    {
+      "locale": "en",
+      "query": "Nitriding",
+      "total": 1,
+      "representative": {
+        "type": "technology",
+        "title": "Nitriding workflow demo",
+        "path": "/en/technologies/demo-tec-nitriding/"
+      }
+    },
+    {
+      "locale": "en",
+      "query": "Requirements review",
+      "types": [
+        "manufacturing_capability"
+      ],
+      "total": 1,
+      "representative": {
+        "type": "manufacturing_capability",
+        "title": "Requirements review — demo workflow",
+        "path": "/en/capabilities/demo-cap-01/"
+      }
+    },
+    {
+      "locale": "zh-cn",
+      "query": "Nitriding",
+      "total": 0,
+      "purpose": "language isolation"
+    },
+    {
+      "locale": "en",
+      "query": "氮化",
+      "total": 0,
+      "purpose": "language isolation"
+    },
+    {
+      "locale": "zh-cn",
+      "query": "%_",
+      "total": 0,
+      "purpose": "literal wildcard handling"
+    },
+    {
+      "locale": "zh-cn",
+      "query": "' OR 1=1 --",
+      "total": 0,
+      "purpose": "parameterization and SQL metacharacter handling"
+    }
+  ],
+  "main_demo_cross_type_paging": {
+    "query": "演示",
+    "total": 46,
+    "api_page_size": 5,
+    "api_pages": 10,
+    "collected_items": 46,
+    "unique_type_slug_pairs": 46,
+    "type_counts": {
+      "product": 9,
+      "material": 8,
+      "technology": 6,
+      "application": 6,
+      "solution": 1,
+      "manufacturing_capability": 4,
+      "case_study": 4,
+      "knowledge_article": 8
+    },
+    "browser_page_size": 12,
+    "browser_page_1_cards": 12,
+    "browser_page_2_cards": 12,
+    "query_preserved_on_page_2": true
+  },
+  "postgresql_test_only": {
+    "persistent_demo_database_used": false,
+    "seed_run": false,
+    "migrated_revision": "20260910_0016",
+    "positive_types": 8,
+    "total": 8,
+    "page_size": 3,
+    "page_item_counts": [
+      3,
+      3,
+      2
+    ],
+    "unique_type_slug_pairs": 8,
+    "excluded_cases": [
+      "draft translation",
+      "disabled entity",
+      "archived publication",
+      "inactive route",
+      "route noindex",
+      "non-canonical route",
+      "SEO robots noindex",
+      "wrong canonical override",
+      "disabled locale",
+      "cross-locale content",
+      "literal wildcard query",
+      "private case client fields"
+    ],
+    "all_excluded_case_totals": 0,
+    "after_technology_withdrawal_and_capability_disable_total": 6
+  },
+  "browser_acceptance": {
+    "tool": "Playwright CLI 0.1.14 with Microsoft Edge",
+    "browser_plugin_available": false,
+    "final_image_rerun": true,
+    "desktop_viewport": "1440x900",
+    "mobile_viewport": "375x812",
+    "journeys": [
+      "zh product search and detail",
+      "zh technology search and detail",
+      "zh manufacturing capability search and detail",
+      "en technology search and detail",
+      "mobile manufacturing capability search and detail",
+      "cross-type next-page navigation",
+      "clear-to-empty state"
+    ],
+    "same_demo_origin_after_click": true,
+    "title_equals_detail_h1": true,
+    "horizontal_overflow": false,
+    "console_errors": 0,
+    "page_errors": 0
+  },
+  "admin_status": {
+    "pages": [
+      "contact",
+      "request-a-quote"
+    ],
+    "locales": [
+      "zh-CN",
+      "en"
+    ],
+    "translation_state": "已发布",
+    "content_publication_state": "已发布至本地演示环境",
+    "page_access_state": "已启用",
+    "page_search_engine_rule": "禁止索引",
+    "environment_protection": "全站禁止索引",
+    "misleading_business_indexable_label_present": false,
+    "english_operation_label": "英语（en）",
+    "seo_values_changed": false,
+    "publication_changed": false,
+    "permissions_changed": false,
+    "english_body_changed": false
+  },
+  "data_integrity": {
+    "before_snapshot_created": true,
+    "snapshot_private_and_excluded_from_evidence_zip": true,
+    "snapshot_bytes": 717192,
+    "snapshot_sha256": "f8c58eaea3955770658863936ff5a05921331840aff7140df9b61d1dcce65404",
+    "snapshot_format_verified": true,
+    "tables_compared": 103,
+    "expected_login_only_differences": {
+      "auth_sessions": 1,
+      "audit_logs": 1
+    },
+    "business_difference_count": 0,
+    "business_data_unchanged": true
+  },
+  "frozen_seo": {
+    "baseline_run_id": "20260910T234537+0800",
+    "pages_checked": 6,
+    "pages_unchanged": 6,
+    "all_unchanged": true,
+    "formal_canonical_unchanged": true,
+    "gateway_noindex_no_store_unchanged": true
+  },
+  "runtime": {
+    "demo_services_healthy": true,
+    "demo_kept_running": true,
+    "host_listener": "127.0.0.1:443",
+    "sitemap_status": 404,
+    "privacy_page_status": 404,
+    "privacy_api_status": 404,
+    "rfq_submit_disabled": true,
+    "api_image": "sha256:33db341f4bf93f69f489d1be6947f75c798220104a102f3c42e8713faf2e9850",
+    "website_image": "sha256:ee405d4a17e01e9cd2dd3e7eba1db52b3e729e8845bfab76f6f4f0ee841439cd",
+    "admin_image": "sha256:409673ed519019b8d78f64f72b60b0c2bb9dbe22a0d668bdecad07566e4ac9ef"
+  },
+  "verification": {
+    "api_affected_and_postgresql": {
+      "result": "passed",
+      "tests": 39,
+      "duration_seconds": 29.22
+    },
+    "website_vitest": {
+      "result": "passed",
+      "files": 16,
+      "tests": 155
+    },
+    "admin_vitest": {
+      "result": "passed",
+      "files": 14,
+      "tests": 89
+    },
+    "ruff_0_12_11": "passed",
+    "pnpm_lint_and_typecheck": "passed",
+    "pnpm_format_check": "passed",
+    "website_production_build_after_format": "passed",
+    "admin_production_build": "passed",
+    "git_diff_check": "passed",
+    "six_page_seo_invariance": "passed"
+  },
+  "changed_files": [
+    "apps/api/app/modules/discovery/public_collections.py",
+    "apps/api/app/api/v1/public.py",
+    "apps/api/tests/test_phase36_public_collections.py",
+    "apps/api/tests/test_postgresql_integration.py",
+    "apps/website/app/types/public.ts",
+    "apps/website/app/pages/[lang]/search/index.vue",
+    "apps/website/app/i18n/ui.ts",
+    "apps/website/tests/phase36-interactions.test.ts",
+    "apps/admin/app/pages/site-pages/[systemKey].vue",
+    "apps/admin/tests/demo-seo-metadata-r1-contract.test.ts"
+  ],
+  "deliverables": {
+    "report": "docs/content/demo-search-coverage-r1-report.md",
+    "readback": "docs/content/demo-search-coverage-readback.json",
+    "evidence_zip": "Junhui-Demo-Search-Coverage-R1-Evidence-20260911T100118+0800.zip"
+  }
+}

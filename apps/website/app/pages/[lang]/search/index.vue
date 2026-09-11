@@ -1,4 +1,4 @@
-<!-- 页面用途：服务端渲染六类公开内容搜索，并提供可恢复的无结果体验。 -->
+<!-- 页面用途：服务端渲染八类公开内容搜索，并提供可取消、可清除的分页体验。 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
@@ -23,10 +23,12 @@ interface SearchGroup {
 const SEARCH_TYPES: PublicSearchType[] = [
   'product',
   'material',
+  'technology',
   'application',
   'solution',
-  'knowledge_article',
+  'manufacturing_capability',
   'case_study',
+  'knowledge_article',
 ]
 const PAGE_SIZE = 12
 
@@ -54,56 +56,65 @@ const emptySearch = (): Envelope<PublicSearchDto> => ({
   success: true,
   data: {
     query: query.value,
+    items: [],
     groups: {
       product: [],
       material: [],
+      technology: [],
       application: [],
       solution: [],
+      manufacturing_capability: [],
       knowledge_article: [],
       case_study: [],
     },
+    page: requestedPage.value,
+    page_size: PAGE_SIZE,
+    total: 0,
+    pages: 0,
   },
   error: null,
 })
 
 // 查询词进入 AsyncData key，确保 SSR HTML 与当前 URL 一致；短词不会请求后端。
-const searchKey = computed(() => `search:${locale}:${query.value}`)
-const { data: response, error } = await useAsyncData(
+const searchKey = computed(() => `search:${locale}:${query.value}:${requestedPage.value}`)
+const {
+  data: response,
+  error,
+  status,
+} = await useAsyncData(
   searchKey,
   () =>
     query.value.length >= 2
       ? api<Envelope<PublicSearchDto>>(`/public/search/${locale}`, {
-          query: { q: query.value, limit: 20 },
+          query: { q: query.value, page: requestedPage.value, page_size: PAGE_SIZE },
         })
       : Promise.resolve(emptySearch()),
-  { watch: [query] },
+  { watch: [query, requestedPage], dedupe: 'cancel' },
 )
 
 watch(query, (value) => {
   searchInput.value = value
 })
 
-const allResults = computed(() => {
-  const groups = response.value?.data.groups
-  return SEARCH_TYPES.flatMap((type) => (groups?.[type] ?? []).map((item) => ({ type, item })))
-})
-const totalPages = computed(() => Math.max(1, Math.ceil(allResults.value.length / PAGE_SIZE)))
-const currentPage = computed(() => Math.min(requestedPage.value, totalPages.value))
+const allResults = computed(() => response.value?.data.items ?? [])
+const totalResults = computed(() => response.value?.data.total ?? 0)
+const totalPages = computed(() => response.value?.data.pages ?? 0)
+const currentPage = computed(() => response.value?.data.page ?? requestedPage.value)
 const visibleGroups = computed<SearchGroup[]>(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE
-  const pageItems = allResults.value.slice(start, start + PAGE_SIZE)
   const titles: Record<PublicSearchType, string> = {
     product: labels.value.search.products,
     material: labels.value.search.materials,
+    technology: labels.value.search.technologies,
     application: labels.value.search.applications,
     solution: labels.value.search.solutions,
+    manufacturing_capability: labels.value.search.capabilities,
     knowledge_article: labels.value.search.knowledge,
     case_study: labels.value.search.cases,
   }
   return SEARCH_TYPES.map((type) => ({
     type,
     title: titles[type],
-    items: pageItems.filter((entry) => entry.type === type).map((entry) => entry.item),
+    items: allResults.value.filter((item) => item.type === type),
   })).filter((group) => group.items.length > 0)
 })
 
@@ -115,6 +126,12 @@ async function submitSearch(): Promise<void> {
     path: `/${locale}/search/`,
     query: nextQuery ? { q: nextQuery } : {},
   })
+}
+
+/** 清空当前查询并回到未输入状态，不保留旧页码或旧结果。 */
+async function clearSearch(): Promise<void> {
+  searchInput.value = ''
+  await navigateTo({ path: `/${locale}/search/` })
 }
 
 /** 创建始终保留查询词的分页目标。 */
@@ -152,12 +169,30 @@ useHead(() => ({
             :placeholder="labels.search.placeholder"
           />
           <button type="submit">{{ labels.cta.search }}</button>
+          <button
+            v-if="searchInput || query"
+            class="search-page__clear"
+            type="button"
+            @click="clearSearch"
+          >
+            {{ labels.search.clear }}
+          </button>
         </div>
       </form>
 
-      <p v-if="query" class="search-page__summary">{{ labels.search.resultsFor }} “{{ query }}”</p>
+      <p v-if="query && status !== 'pending'" class="search-page__summary">
+        {{ labels.search.resultsFor }} “{{ query }}” · {{ totalResults }}
+        {{ labels.search.resultCount }}
+      </p>
       <p v-if="error" class="search-page__notice status-error" role="alert">
         {{ labels.error.loadingFailed }}
+      </p>
+      <p
+        v-else-if="status === 'pending' && query.length >= 2"
+        class="search-page__notice"
+        role="status"
+      >
+        {{ labels.search.loading }}
       </p>
       <p v-else-if="query.length < 2" class="search-page__notice" role="status">
         {{ labels.search.prompt }}
@@ -169,6 +204,7 @@ useHead(() => ({
           <ul>
             <li v-for="item in group.items" :key="`${item.type}:${item.slug}`">
               <article>
+                <span class="search-page__type">{{ group.title }}</span>
                 <h3>
                   <a :href="item.url">{{ item.name }}</a>
                 </h3>
@@ -244,6 +280,12 @@ useHead(() => ({
   cursor: pointer;
 }
 
+.search-page__form .search-page__clear {
+  color: var(--color-navy-900);
+  background: var(--color-white);
+  border: var(--border-subtle);
+}
+
 .search-page__summary,
 .search-page__notice {
   margin-block-start: var(--space-6);
@@ -275,6 +317,12 @@ useHead(() => ({
   background: var(--color-white);
   border-block-start: 3px solid var(--color-blue-600);
   box-shadow: var(--shadow-sm);
+}
+
+.search-page__type {
+  color: var(--color-blue-700);
+  font-size: var(--font-size-small);
+  font-weight: 700;
 }
 
 .search-page__groups h3 a {

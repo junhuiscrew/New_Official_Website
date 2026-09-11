@@ -163,10 +163,12 @@ _COLLECTION_CONFIG: dict[str, _CollectionConfig] = {
 _SEARCH_TYPES = (
     "product",
     "material",
+    "technology",
     "application",
     "solution",
-    "knowledge_article",
+    "manufacturing_capability",
     "case_study",
+    "knowledge_article",
 )
 
 _SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
@@ -177,8 +179,10 @@ _SEARCH_FIELDS: dict[str, tuple[str, ...]] = {
         "screw_impact",
         "recommendations",
     ),
+    "technology": ("definition", "process_description", "benefits", "limitations"),
     "application": ("description", "technical_requirements", "common_problems"),
     "solution": ("definition", "symptoms", "causes", "diagnosis", "solution"),
+    "manufacturing_capability": ("summary", "description"),
     "knowledge_article": ("summary", "body_markdown"),
     "case_study": ("summary", "problem", "analysis", "solution", "result"),
 }
@@ -1787,10 +1791,10 @@ def _search_select(
     dialect_name: str,
 ) -> Select[Any]:
     """
-    构造单个批准内容族的标准化搜索 select，供统一 UNION 使用。
+    构造单个批准内容族的标准化搜索 select，供八类内容统一 UNION 使用。
 
     输入：
-        owner_type: str，六个批准搜索内容族之一。
+        owner_type: str，八个批准搜索内容族之一。
         locale: Locale，已启用的目标语言。
         query: str，已经 API 校验的用户搜索词。
         dialect_name: str，当前数据库方言名称。
@@ -1841,16 +1845,18 @@ def _search_select(
         normalized_query = query.casefold()
         lowered_title = func.lower(title)
         lowered_body = func.lower(body_text)
-        contains_pattern = f"%{normalized_query}%"
+        # SQLite 仅用于隔离单测；autoescape 保证百分号、下划线和转义符按字面匹配。
+        title_contains = lowered_title.contains(normalized_query, autoescape=True)
+        body_contains = lowered_body.contains(normalized_query, autoescape=True)
         match_condition = or_(
-            lowered_title.like(contains_pattern),
-            lowered_body.like(contains_pattern),
+            title_contains,
+            body_contains,
         )
         score = case(
             (lowered_title == normalized_query, 400.0),
-            (lowered_title.like(f"{normalized_query}%"), 300.0),
-            (lowered_title.like(contains_pattern), 200.0),
-            (lowered_body.like(contains_pattern), 100.0),
+            (lowered_title.startswith(normalized_query, autoescape=True), 300.0),
+            (title_contains, 200.0),
+            (body_contains, 100.0),
             else_=0.0,
         )
 
@@ -1869,25 +1875,29 @@ async def search_public_content(
     locale_slug: str,
     query: str,
     content_types: tuple[str, ...] | list[str] | None = None,
-    limit_per_type: int = 10,
+    page_size: int = 12,
+    page: int = 1,
 ) -> dict[str, Any]:
     """
-    搜索六个批准内容族并按类型返回 canonical Card DTO。
+    搜索八个批准内容族，并在同一合格集合上完成全局去重、计数和分页。
 
     输入：
         session: AsyncSession，数据库会话。
         locale_slug: str，目标语言 slug。
         query: str，已在 API 层校验长度的搜索词。
         content_types: tuple[str, ...] | list[str] | None，可选类型白名单子集。
-        limit_per_type: int，每个类型最多返回的卡片数。
+        page_size: int，每页最多返回的卡片数；公开 API 将其限制在 1 到 48。
+        page: int，从 1 开始的全局页码。
 
     输出：
-        dict[str, Any]，包含原查询词和按批准类型分组的公开卡片。
+        dict[str, Any]，包含全局分页卡片、总数及当前页按类型分组的兼容字段。
     """
     locale = await _locale(session, locale_slug)
     requested_types = tuple(content_types or _SEARCH_TYPES)
     if not requested_types or any(item not in _SEARCH_TYPES for item in requested_types):
         raise AppException(422, "invalid_search_type", "搜索类型不受支持")
+    if page < 1 or page_size < 1:
+        raise AppException(422, "invalid_search_page", "搜索分页参数无效")
     # 去重但保留 API 请求顺序，使分组合同稳定。
     selected_types = tuple(dict.fromkeys(requested_types))
     bind = session.get_bind()
@@ -1896,35 +1906,64 @@ async def search_public_content(
         _search_select(owner_type, locale, query, dialect_name) for owner_type in selected_types
     ]
     search_union = selects[0].subquery() if len(selects) == 1 else union_all(*selects).subquery()
+    # 先按类型与 slug 去除因关联或状态连接产生的重复行，再基于同一集合统计和全局分页。
     ranked = select(
         search_union,
         func.row_number()
         .over(
-            partition_by=search_union.c.type,
+            partition_by=(search_union.c.type, search_union.c.slug),
             order_by=(
                 search_union.c.score.desc(),
                 search_union.c.name,
-                search_union.c.slug,
+                search_union.c.url,
             ),
         )
-        .label("type_rank"),
+        .label("duplicate_rank"),
     ).subquery()
+    eligible = (
+        select(
+            ranked.c.type,
+            ranked.c.slug,
+            ranked.c.name,
+            ranked.c.url,
+            ranked.c.summary,
+            ranked.c.score,
+        )
+        .where(ranked.c.duplicate_rank == 1)
+        .subquery()
+    )
+    total = int(await session.scalar(select(func.count()).select_from(eligible)) or 0)
     rows = (
         await session.execute(
-            select(ranked)
-            .where(ranked.c.type_rank <= limit_per_type)
-            .order_by(ranked.c.type, ranked.c.type_rank)
+            select(eligible)
+            .order_by(
+                eligible.c.score.desc(),
+                eligible.c.name,
+                eligible.c.type,
+                eligible.c.slug,
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
     ).mappings()
     groups: dict[str, list[dict[str, str]]] = {owner_type: [] for owner_type in selected_types}
+    items: list[dict[str, str]] = []
     for row in rows:
-        groups[row["type"]].append(
-            {
-                "type": row["type"],
-                "slug": row["slug"],
-                "name": row["name"],
-                "url": row["url"],
-                "summary": row["summary"],
-            }
-        )
-    return {"query": query, "groups": groups}
+        item = {
+            "type": row["type"],
+            "slug": row["slug"],
+            "name": row["name"],
+            "url": row["url"],
+            "summary": row["summary"],
+        }
+        items.append(item)
+        groups[row["type"]].append(item)
+    return {
+        "query": query,
+        "items": items,
+        "groups": groups,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": ceil(total / page_size),
+    }

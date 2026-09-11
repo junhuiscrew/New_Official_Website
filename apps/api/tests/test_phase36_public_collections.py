@@ -1638,7 +1638,7 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
     public_collections_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """
-    验证搜索只覆盖六个批准内容族，并隔离草稿、其他语言和案例私密字段。
+    验证搜索覆盖八个批准内容族，并隔离草稿、其他语言和案例私密字段。
 
     输入：
         public_collections_factory: async_sessionmaker[AsyncSession]，隔离数据库。
@@ -1668,6 +1668,18 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
         zh_material = Material(slug="zh-precision-material", status="enabled")
         application = Application(slug="precision-application", status="enabled")
         solution = Solution(slug="precision-solution", status="enabled")
+        technology = Technology(slug="precision-technology", status="enabled")
+        hidden_technology = Technology(slug="hidden-precision-technology", status="enabled")
+        capability = ManufacturingCapability(
+            slug="precision-capability",
+            capability_type="inspection",
+            status="enabled",
+        )
+        hidden_capability = ManufacturingCapability(
+            slug="hidden-precision-capability",
+            capability_type="inspection",
+            status="enabled",
+        )
         case_study = CaseStudy(
             slug="precision-case",
             status="enabled",
@@ -1693,6 +1705,10 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
                 zh_material,
                 application,
                 solution,
+                technology,
+                hidden_technology,
+                capability,
+                hidden_capability,
                 case_study,
                 author,
                 knowledge_category,
@@ -1799,6 +1815,32 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
                 en,
             ),
             (
+                "technology",
+                technology.id,
+                TechnologyTranslation(
+                    technology_id=technology.id,
+                    locale_id=en.id,
+                    name="Precision nitriding",
+                    definition="Published technology definition",
+                ),
+                "/en/technologies/precision-technology/",
+                "published",
+                en,
+            ),
+            (
+                "manufacturing_capability",
+                capability.id,
+                ManufacturingCapabilityTranslation(
+                    capability_id=capability.id,
+                    locale_id=en.id,
+                    name="Precision inspection capability",
+                    summary="Published capability summary",
+                ),
+                "/en/capabilities/precision-capability/",
+                "published",
+                en,
+            ),
+            (
                 "case_study",
                 case_study.id,
                 CaseStudyTranslation(
@@ -1835,6 +1877,36 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
                 path=path,
                 status=status,
             )
+        session.add_all(
+            [
+                TechnologyTranslation(
+                    technology_id=hidden_technology.id,
+                    locale_id=en.id,
+                    name="Precision hidden technology",
+                ),
+                ManufacturingCapabilityTranslation(
+                    capability_id=hidden_capability.id,
+                    locale_id=en.id,
+                    name="Precision hidden capability",
+                ),
+            ]
+        )
+        _add_lifecycle(
+            session,
+            owner_type="technology",
+            owner_id=hidden_technology.id,
+            locale_id=en.id,
+            path="/en/technologies/hidden-precision-technology/",
+            robots_index=False,
+        )
+        _add_lifecycle(
+            session,
+            owner_type="manufacturing_capability",
+            owner_id=hidden_capability.id,
+            locale_id=en.id,
+            path="/en/capabilities/hidden-precision-capability/",
+            status="draft",
+        )
 
     async with _public_client(public_collections_factory) as client:
         search_response = await client.get("/api/v1/public/search/en", params={"q": "precision"})
@@ -1842,12 +1914,32 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
             "/api/v1/public/search/en",
             params={"q": "precision", "types": "product"},
         )
+        technology_only_response = await client.get(
+            "/api/v1/public/search/en",
+            params={"q": "precision", "types": "technology"},
+        )
+        capability_only_response = await client.get(
+            "/api/v1/public/search/en",
+            params={"q": "precision", "types": "manufacturing_capability"},
+        )
+        first_page_response = await client.get(
+            "/api/v1/public/search/en",
+            params={"q": "precision", "page": 1, "page_size": 3},
+        )
+        second_page_response = await client.get(
+            "/api/v1/public/search/en",
+            params={"q": "precision", "page": 2, "page_size": 3},
+        )
+        literal_special_response = await client.get(
+            "/api/v1/public/search/en",
+            params={"q": "%_", "page": 1, "page_size": 12},
+        )
         private_case_response = await client.get(
             "/api/v1/public/search/en", params={"q": "private-secret-client"}
         )
         invalid_type_response = await client.get(
             "/api/v1/public/search/en",
-            params={"q": "precision", "types": "technology"},
+            params={"q": "precision", "types": "privacy"},
         )
 
     assert search_response.status_code == 200
@@ -1857,6 +1949,8 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
         "material",
         "application",
         "solution",
+        "technology",
+        "manufacturing_capability",
         "knowledge_article",
         "case_study",
     }
@@ -1874,8 +1968,34 @@ async def test_search_honors_type_allowlist_publication_locale_and_case_privacy(
         assert forbidden not in serialized
     assert product_only_response.status_code == 200
     assert set(product_only_response.json()["data"]["groups"]) == {"product"}
+    assert technology_only_response.status_code == 200
+    assert [
+        item["slug"] for item in technology_only_response.json()["data"]["groups"]["technology"]
+    ] == ["precision-technology"]
+    assert capability_only_response.status_code == 200
+    assert [
+        item["slug"]
+        for item in capability_only_response.json()["data"]["groups"][
+            "manufacturing_capability"
+        ]
+    ] == ["precision-capability"]
     assert private_case_response.status_code == 200
     assert all(not items for items in private_case_response.json()["data"]["groups"].values())
+    first_page = first_page_response.json()["data"]
+    second_page = second_page_response.json()["data"]
+    assert first_page["total"] == 8
+    assert first_page["pages"] == 3
+    assert first_page["page"] == 1
+    assert first_page["page_size"] == 3
+    assert len(first_page["items"]) == 3
+    assert second_page["total"] == first_page["total"]
+    assert second_page["pages"] == first_page["pages"]
+    assert len(second_page["items"]) == 3
+    assert {
+        (item["type"], item["slug"]) for item in first_page["items"]
+    }.isdisjoint({(item["type"], item["slug"]) for item in second_page["items"]})
+    assert literal_special_response.status_code == 200
+    assert literal_special_response.json()["data"]["total"] == 0
     assert invalid_type_response.status_code == 422
 
 

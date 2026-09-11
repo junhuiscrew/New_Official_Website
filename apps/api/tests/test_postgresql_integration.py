@@ -914,3 +914,455 @@ async def test_postgresql_public_search_matches_cjk_substrings_without_relaxing_
     assert products["noindex"].slug not in slugs
     assert literal_percent["groups"]["product"] == []
     await engine.dispose()
+
+
+async def test_postgresql_public_search_covers_eight_types_and_privacy_gates() -> None:
+    """
+    验证真实 PostgreSQL 搜索的八类覆盖、统一分页及公开边界。
+
+    输入：TEST_DATABASE_URL 环境变量，必须指向独立临时 PostgreSQL。
+
+    输出：None；八类命中、跨类型分页、语言隔离、特殊字符或隐私门禁失效时测试失败。
+    """
+    from app.modules.authority.models import (
+        AuthorExpert,
+        AuthorExpertTranslation,
+        CaseStudy,
+        CaseStudyTranslation,
+        KnowledgeArticle,
+        KnowledgeArticleTranslation,
+        KnowledgeCategory,
+    )
+    from app.modules.catalog.models import (
+        Application,
+        ApplicationTranslation,
+        Material,
+        MaterialTranslation,
+        Solution,
+        SolutionTranslation,
+        Technology,
+        TechnologyTranslation,
+    )
+    from app.modules.company.models import (
+        ManufacturingCapability,
+        ManufacturingCapabilityTranslation,
+    )
+    from app.modules.discovery.models import SeoDocument
+    from app.modules.discovery.public_collections import search_public_content
+
+    engine = create_database_engine(TEST_DATABASE_URL or "")
+    factory = create_session_factory(engine)
+    unique = uuid.uuid4().hex
+    needle = f"coverage{unique}"
+    # 各类反向检索词使用独立随机值，避免长 UUID 的共同 trigram 触发合法模糊命中。
+    blocked_needle = f"blocked{uuid.uuid4().hex}"
+    private_needle = f"private{uuid.uuid4().hex}"
+    zh_needle = f"氮化隔离{uuid.uuid4().hex}"
+
+    async with factory() as session, session.begin():
+        # 测试自行建立最小语言数据，不调用默认 Seed，也不依赖其他用例的执行顺序。
+        en = await session.scalar(select(Locale).where(Locale.code == "en"))
+        if en is None:
+            has_default = bool(
+                await session.scalar(
+                    select(func.count()).select_from(Locale).where(Locale.is_default.is_(True))
+                )
+            )
+            en = Locale(
+                code="en",
+                slug="en",
+                name="English",
+                native_name="English",
+                is_default=not has_default,
+                is_enabled=True,
+            )
+            session.add(en)
+            await session.flush()
+        zh = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        if zh is None:
+            zh = Locale(
+                code="zh-CN",
+                slug="zh-cn",
+                name="Simplified Chinese",
+                native_name="简体中文",
+                is_default=False,
+                is_enabled=True,
+            )
+            session.add(zh)
+            await session.flush()
+        disabled_locale = Locale(
+            code=f"x-{unique[:8]}",
+            slug=f"x-{unique[:8]}",
+            name="Disabled test locale",
+            native_name="禁用测试语言",
+            is_default=False,
+            is_enabled=False,
+        )
+        session.add(disabled_locale)
+
+        category = ProductCategory(slug=f"coverage-category-{unique}", status="enabled")
+        knowledge_category = KnowledgeCategory(
+            slug=f"coverage-knowledge-{unique}", status="enabled"
+        )
+        author = AuthorExpert(
+            slug=f"coverage-author-{unique}",
+            status="enabled",
+            role_type="author",
+            identity_kind="person",
+            is_real_person_verified=True,
+            public_profile_enabled=True,
+        )
+        session.add_all([category, knowledge_category, author])
+        await session.flush()
+        session.add(
+            AuthorExpertTranslation(
+                author_expert_id=author.id,
+                locale_id=en.id,
+                name="Verified integration author",
+                expertise_json=[],
+            )
+        )
+
+        async def register_lifecycle(
+            owner_type: str,
+            owner_id: uuid.UUID,
+            locale_id: uuid.UUID,
+            path: str,
+            *,
+            translation_status: str = "published",
+            publication_status: str = "published",
+            active: bool = True,
+            indexable: bool = True,
+            is_canonical: bool = True,
+            robots_index: bool | None = None,
+            canonical_override: str | None = None,
+        ) -> ContentPublication:
+            """
+            为搜索样本登记翻译、发布、路由和可选 SEO 门禁。
+
+            输入：实体类型、实体ID、语言ID、公开路径及各门禁状态。
+            输出：ContentPublication，本用例后续用于模拟已发布内容撤回。
+            """
+            publication = ContentPublication(
+                owner_type=owner_type,
+                owner_id=owner_id,
+                locale_id=locale_id,
+                status=publication_status,
+            )
+            session.add_all(
+                [
+                    TranslationStatus(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale_id,
+                        status=translation_status,
+                    ),
+                    publication,
+                    ContentRoute(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale_id,
+                        path=path,
+                        is_canonical=is_canonical,
+                        active=active,
+                        indexable=indexable,
+                    ),
+                ]
+            )
+            if robots_index is not None or canonical_override is not None:
+                session.add(
+                    SeoDocument(
+                        owner_type=owner_type,
+                        owner_id=owner_id,
+                        locale_id=locale_id,
+                        robots_index=True if robots_index is None else robots_index,
+                        robots_follow=True,
+                        canonical_override=canonical_override,
+                    )
+                )
+            return publication
+
+        # 八类正向样本使用同一唯一检索词，便于证明全局计数与分页来自同一集合。
+        product = Product(
+            category_id=category.id,
+            slug=f"coverage-product-{unique}",
+            status="enabled",
+        )
+        material = Material(slug=f"coverage-material-{unique}", status="enabled")
+        technology = Technology(slug=f"coverage-technology-{unique}", status="enabled")
+        application = Application(slug=f"coverage-application-{unique}", status="enabled")
+        solution = Solution(slug=f"coverage-solution-{unique}", status="enabled")
+        capability = ManufacturingCapability(
+            slug=f"coverage-capability-{unique}",
+            capability_type="machining",
+            status="enabled",
+        )
+        case_study = CaseStudy(
+            slug=f"coverage-case-{unique}",
+            status="enabled",
+            client_name=private_needle,
+            client_address=f"{private_needle} address",
+        )
+        article = KnowledgeArticle(
+            category_id=knowledge_category.id,
+            author_id=author.id,
+            slug=f"coverage-article-{unique}",
+            status="enabled",
+        )
+        session.add_all(
+            [
+                product,
+                material,
+                technology,
+                application,
+                solution,
+                capability,
+                case_study,
+                article,
+            ]
+        )
+        await session.flush()
+        session.add_all(
+            [
+                ProductTranslation(
+                    product_id=product.id,
+                    locale_id=en.id,
+                    name=f"{needle} product",
+                    short_description="Public product summary",
+                ),
+                MaterialTranslation(
+                    material_id=material.id,
+                    locale_id=en.id,
+                    name=f"{needle} material",
+                    definition="Public material summary",
+                ),
+                TechnologyTranslation(
+                    technology_id=technology.id,
+                    locale_id=en.id,
+                    name=f"{needle} technology",
+                    definition="Public technology summary",
+                ),
+                ApplicationTranslation(
+                    application_id=application.id,
+                    locale_id=en.id,
+                    name=f"{needle} application",
+                    description="Public application summary",
+                ),
+                SolutionTranslation(
+                    solution_id=solution.id,
+                    locale_id=en.id,
+                    name=f"{needle} solution",
+                    definition="Public solution summary",
+                ),
+                ManufacturingCapabilityTranslation(
+                    capability_id=capability.id,
+                    locale_id=en.id,
+                    name=f"{needle} capability",
+                    summary="Public capability summary",
+                ),
+                CaseStudyTranslation(
+                    case_study_id=case_study.id,
+                    locale_id=en.id,
+                    title=f"{needle} case",
+                    summary="Public anonymized case summary",
+                ),
+                KnowledgeArticleTranslation(
+                    article_id=article.id,
+                    locale_id=en.id,
+                    title=f"{needle} article",
+                    summary="Public article summary",
+                    body_markdown="Public article body",
+                ),
+            ]
+        )
+        positive_paths = {
+            "product": f"/en/products/{category.slug}/{product.slug}/",
+            "material": f"/en/materials/{material.slug}/",
+            "technology": f"/en/technologies/{technology.slug}/",
+            "application": f"/en/applications/{application.slug}/",
+            "solution": f"/en/solutions/{solution.slug}/",
+            "manufacturing_capability": f"/en/capabilities/{capability.slug}/",
+            "case_study": f"/en/case-studies/{case_study.slug}/",
+            "knowledge_article": (
+                f"/en/knowledge/{knowledge_category.slug}/{article.slug}/"
+            ),
+        }
+        positive_entities = {
+            "product": product,
+            "material": material,
+            "technology": technology,
+            "application": application,
+            "solution": solution,
+            "manufacturing_capability": capability,
+            "case_study": case_study,
+            "knowledge_article": article,
+        }
+        positive_publications: dict[str, ContentPublication] = {}
+        for owner_type, entity in positive_entities.items():
+            positive_publications[owner_type] = await register_lifecycle(
+                owner_type,
+                entity.id,
+                en.id,
+                positive_paths[owner_type],
+            )
+
+        # 各类反向样本分别覆盖草稿、停用、归档、路由关闭、noindex 和非自规范。
+        hidden_specs = (
+            ("technology", "draft", "enabled", "draft", "draft", True, True, True, None, None),
+            ("manufacturing_capability", "disabled", "disabled", "published", "published", True, True, True, None, None),
+            ("technology", "archived", "enabled", "published", "archived", True, True, True, None, None),
+            ("manufacturing_capability", "inactive", "enabled", "published", "published", False, True, True, None, None),
+            ("technology", "route-noindex", "enabled", "published", "published", True, False, True, None, None),
+            ("manufacturing_capability", "not-canonical", "enabled", "published", "published", True, True, False, None, None),
+            ("technology", "robots-noindex", "enabled", "published", "published", True, True, True, False, None),
+            ("manufacturing_capability", "wrong-canonical", "enabled", "published", "published", True, True, True, True, "https://example.invalid/private"),
+        )
+        for (
+            owner_type,
+            marker,
+            entity_status,
+            translation_status,
+            publication_status,
+            active,
+            indexable,
+            is_canonical,
+            robots_index,
+            canonical_override,
+        ) in hidden_specs:
+            if owner_type == "technology":
+                hidden_entity = Technology(
+                    slug=f"coverage-hidden-{marker}-{unique}", status=entity_status
+                )
+            else:
+                hidden_entity = ManufacturingCapability(
+                    slug=f"coverage-hidden-{marker}-{unique}",
+                    capability_type="test",
+                    status=entity_status,
+                )
+            session.add(hidden_entity)
+            await session.flush()
+            if owner_type == "technology":
+                session.add(
+                    TechnologyTranslation(
+                        technology_id=hidden_entity.id,
+                        locale_id=en.id,
+                        name=f"{blocked_needle} {marker}",
+                        definition="Must remain private",
+                    )
+                )
+                hidden_path = f"/en/technologies/{hidden_entity.slug}/"
+            else:
+                session.add(
+                    ManufacturingCapabilityTranslation(
+                        capability_id=hidden_entity.id,
+                        locale_id=en.id,
+                        name=f"{blocked_needle} {marker}",
+                        summary="Must remain private",
+                    )
+                )
+                hidden_path = f"/en/capabilities/{hidden_entity.slug}/"
+            await register_lifecycle(
+                owner_type,
+                hidden_entity.id,
+                en.id,
+                hidden_path,
+                translation_status=translation_status,
+                publication_status=publication_status,
+                active=active,
+                indexable=indexable,
+                is_canonical=is_canonical,
+                robots_index=robots_index,
+                canonical_override=canonical_override,
+            )
+
+        # 同一中文词只登记中文翻译，证明英文查询不会读取其他语言内容。
+        zh_technology = Technology(
+            slug=f"coverage-zh-technology-{unique}", status="enabled"
+        )
+        session.add(zh_technology)
+        await session.flush()
+        session.add(
+            TechnologyTranslation(
+                technology_id=zh_technology.id,
+                locale_id=zh.id,
+                name=zh_needle,
+                definition="仅用于语言隔离验证的公开工艺说明",
+            )
+        )
+        await register_lifecycle(
+            "technology",
+            zh_technology.id,
+            zh.id,
+            f"/zh-cn/technologies/{zh_technology.slug}/",
+        )
+
+    async with factory() as session:
+        first_page = await search_public_content(session, "en", needle, page_size=3, page=1)
+        second_page = await search_public_content(session, "en", needle, page_size=3, page=2)
+        third_page = await search_public_content(session, "en", needle, page_size=3, page=3)
+        narrowed = await search_public_content(
+            session,
+            "en",
+            needle,
+            ("technology", "manufacturing_capability"),
+            page_size=12,
+        )
+        special = await search_public_content(session, "en", "%_", page_size=12)
+        blocked = await search_public_content(session, "en", blocked_needle, page_size=48)
+        private = await search_public_content(session, "en", private_needle, page_size=48)
+        language_leak = await search_public_content(session, "en", zh_needle, page_size=12)
+        zh_result = await search_public_content(session, "zh-cn", zh_needle, page_size=12)
+        with pytest.raises(AppException):
+            await search_public_content(
+                session, disabled_locale.slug, needle, page_size=12
+            )
+
+    expected_types = {
+        "product",
+        "material",
+        "technology",
+        "application",
+        "solution",
+        "manufacturing_capability",
+        "case_study",
+        "knowledge_article",
+    }
+    paged_items = first_page["items"] + second_page["items"] + third_page["items"]
+    assert first_page["total"] == second_page["total"] == third_page["total"] == 8
+    assert first_page["pages"] == second_page["pages"] == third_page["pages"] == 3
+    assert [len(first_page["items"]), len(second_page["items"]), len(third_page["items"])] == [3, 3, 2]
+    assert {item["type"] for item in paged_items} == expected_types
+    assert len({(item["type"], item["slug"]) for item in paged_items}) == 8
+    assert all(item["url"].startswith("/en/") for item in paged_items)
+    assert all(item["name"] and item["summary"] for item in paged_items)
+    assert narrowed["total"] == 2
+    assert {item["type"] for item in narrowed["items"]} == {
+        "technology",
+        "manufacturing_capability",
+    }
+    assert special["total"] == 0
+    assert blocked["total"] == 0
+    assert private["total"] == 0
+    assert language_leak["total"] == 0
+    assert zh_result["total"] == 1
+    assert zh_result["items"][0]["type"] == "technology"
+
+    # 发布状态和业务状态变化后再次查询，确认撤回与停用立即从同一合格集合剔除。
+    async with factory() as session, session.begin():
+        publication = await session.get(
+            ContentPublication,
+            positive_publications["technology"].id,
+        )
+        capability_row = await session.get(ManufacturingCapability, capability.id)
+        assert publication is not None and capability_row is not None
+        publication.status = "archived"
+        capability_row.status = "disabled"
+    async with factory() as session:
+        after_withdrawal = await search_public_content(
+            session, "en", needle, page_size=12, page=1
+        )
+    assert after_withdrawal["total"] == 6
+    assert {item["type"] for item in after_withdrawal["items"]}.isdisjoint(
+        {"technology", "manufacturing_capability"}
+    )
+    await engine.dispose()

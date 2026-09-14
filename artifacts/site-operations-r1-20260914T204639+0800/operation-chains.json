@@ -1,0 +1,132 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260914T204639+0800",
+  "environment": "independent TEST ONLY PostgreSQL/Redis/MinIO/API/Admin/Website",
+  "persistent_demo_used_for_test_writes": false,
+  "brand": {
+    "initial": {
+      "draft_revision": 2,
+      "applied_revision": 1,
+      "zh_display_name": "TEST ONLY 品牌初始值",
+      "en_display_name": "Junhui TEST ONLY"
+    },
+    "saved": {
+      "draft_revision": 4,
+      "zh_display_name": "TEST ONLY 站点运营品牌已保存",
+      "desktop_logo": "existing approved static asset",
+      "mobile_logo": "site-operations-r1-test-only.png",
+      "favicon": "site-operations-r1-test-only.png",
+      "fresh_get_after_save": true,
+      "browser_reload_after_save": true,
+      "english_preserved": true
+    },
+    "authenticated_preview": true,
+    "applied": {
+      "draft_revision": 4,
+      "applied_revision": 4,
+      "public_frontend_read_applied_name": true
+    },
+    "restore": {
+      "intermediate_draft_revision": 5,
+      "intermediate_zh_display_name": "TEST ONLY 待恢复品牌草稿",
+      "restored_draft_revision": 6,
+      "restored_zh_display_name": "TEST ONLY 站点运营品牌已保存",
+      "applied_revision_unchanged": 4,
+      "new_revision_created": true
+    }
+  },
+  "navigation_footer": {
+    "initial": {
+      "zh_draft_revision": 2,
+      "zh_applied_revision": 1,
+      "en_draft_revision": 0,
+      "en_applied_revision": 0
+    },
+    "actions": [
+      "changed Chinese label",
+      "changed order",
+      "added then removed one menu item",
+      "disabled one item",
+      "saved Chinese draft",
+      "reloaded page",
+      "verified English remained Products/Solutions/Materials",
+      "opened authenticated preview",
+      "confirmed apply",
+      "clicked applied desktop link",
+      "opened 375px mobile menu and clicked applied link",
+      "saved a later draft and restored from applied"
+    ],
+    "saved_zh_revision": 3,
+    "applied_zh_revision": 3,
+    "restored_zh_draft_revision": 5,
+    "applied_zh_revision_after_restore": 3,
+    "desktop_click": {
+      "label": "TEST ONLY 联系",
+      "path": "/zh-cn/contact/",
+      "same_origin": true,
+      "h1": "从需求开始沟通"
+    },
+    "mobile_375_click": {
+      "label": "TEST ONLY 联系",
+      "path": "/zh-cn/contact/",
+      "same_origin": true,
+      "h1": "从需求开始沟通"
+    },
+    "privacy_target_shown_as_unavailable": true,
+    "sitemap_target_shown_as_unavailable": true,
+    "unavailable_targets_excluded_from_public_output": true
+  },
+  "redirect": {
+    "source_host": "junhuiscrew.com",
+    "source_path": "/site-operations-r1-ui-test-only/",
+    "target": "https://junhuiscrewbarrel.com/en/products/",
+    "status_code": 308,
+    "draft_saved": true,
+    "fresh_get_after_save": true,
+    "check": {
+      "passed": true,
+      "network_fetch_performed": false,
+      "workflow_status": "checked"
+    },
+    "confirmed": {
+      "enabled": true,
+      "workflow_status": "confirmed",
+      "actual_http_status": 308,
+      "actual_location": "https://junhuiscrewbarrel.com/en/products/",
+      "automatic_external_follow": false
+    },
+    "disabled": {
+      "revision": 1,
+      "enabled": false,
+      "actual_resolver_status": 404
+    },
+    "history_actions": [
+      "redirect.draft.create",
+      "redirect.check",
+      "redirect.confirm",
+      "redirect.disable"
+    ],
+    "automated_rejections": [
+      "duplicate source",
+      "self redirect",
+      "redirect loop",
+      "redirect chain",
+      "protected path",
+      "query leakage",
+      "unsafe protocol",
+      "missing permission/CSRF"
+    ]
+  },
+  "persistent_demo_final": {
+    "brand_revision": "0/0",
+    "navigation_revisions": {
+      "zh-CN": "0/0",
+      "en": "0/0"
+    },
+    "test_only_brand_or_navigation_text": false,
+    "redirect_rules": 0,
+    "enabled_redirect_rules": 0,
+    "homepage_modules_per_locale": 14,
+    "hero_slides_per_locale": 4
+  }
+}

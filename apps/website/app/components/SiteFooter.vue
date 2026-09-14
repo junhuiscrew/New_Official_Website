@@ -19,6 +19,11 @@ const props = withDefaults(
 const labels = computed(() => ui[props.locale])
 const company = computed(() => props.navigation.company)
 const primary = computed(() => new Set(props.navigation.primary))
+const footerGroups = computed(() => props.navigation.footer_groups ?? [])
+const copyrightName = computed(
+  // 法定/公开公司名称继续来自原 Company 来源，品牌显示名只在其缺失时兜底。
+  () => company.value?.name || props.navigation.brand?.display_name || '',
+)
 // 演示环境可使用“演示联系电话”等展示标签；只有真实号码格式才输出可拨号链接。
 const phoneHref = computed(() => telephoneHref(company.value?.phone))
 </script>
@@ -40,62 +45,75 @@ const phoneHref = computed(() => telephoneHref(company.value?.phone))
         </address>
       </section>
 
-      <section>
-        <h2>{{ labels.navigation.products }}</h2>
-        <ul>
-          <li>
-            <a :href="`/${locale}/products/`">{{ labels.navigation.viewAllProducts }}</a>
-          </li>
-        </ul>
-      </section>
+      <template v-if="footerGroups.length">
+        <section v-for="group in footerGroups" :key="group.title">
+          <h2>{{ group.title }}</h2>
+          <ul>
+            <li v-for="item in group.items" :key="item.target_key">
+              <a :href="item.path">{{ item.label }}</a>
+            </li>
+          </ul>
+        </section>
+      </template>
 
-      <section v-if="primary.has('solutions')">
-        <h2>{{ labels.navigation.solutions }}</h2>
-        <ul>
-          <li>
-            <a :href="`/${locale}/solutions/`">{{ labels.navigation.solutions }}</a>
-          </li>
-        </ul>
-      </section>
+      <template v-else>
+        <section>
+          <h2>{{ labels.navigation.products }}</h2>
+          <ul>
+            <li>
+              <a :href="`/${locale}/products/`">{{ labels.navigation.viewAllProducts }}</a>
+            </li>
+          </ul>
+        </section>
 
-      <section v-if="primary.has('knowledge')">
-        <h2>{{ labels.navigation.knowledge }}</h2>
-        <ul>
-          <li>
-            <a :href="`/${locale}/knowledge/`">{{ labels.navigation.knowledge }}</a>
-          </li>
-        </ul>
-      </section>
+        <section v-if="primary.has('solutions')">
+          <h2>{{ labels.navigation.solutions }}</h2>
+          <ul>
+            <li>
+              <a :href="`/${locale}/solutions/`">{{ labels.navigation.solutions }}</a>
+            </li>
+          </ul>
+        </section>
 
-      <section>
-        <h2>{{ labels.footer.contact }}</h2>
-        <ul>
-          <li>
-            <a :href="`/${locale}/contact/`">{{ labels.navigation.contact }}</a>
-          </li>
-          <li>
-            <a :href="`/${locale}/request-a-quote/`">{{ labels.cta.requestQuote }}</a>
-          </li>
-          <li>
-            <a :href="`/${locale}/downloads/`">{{ labels.navigation.downloads }}</a>
-          </li>
-        </ul>
-      </section>
+        <section v-if="primary.has('knowledge')">
+          <h2>{{ labels.navigation.knowledge }}</h2>
+          <ul>
+            <li>
+              <a :href="`/${locale}/knowledge/`">{{ labels.navigation.knowledge }}</a>
+            </li>
+          </ul>
+        </section>
 
-      <section>
-        <h2>{{ labels.footer.legal }}</h2>
-        <ul>
-          <li>
-            <a :href="`/${locale}/privacy/`">{{ labels.footer.privacy }}</a>
-          </li>
-          <li v-if="termsUrl">
-            <a :href="termsUrl">{{ labels.footer.terms }}</a>
-          </li>
-          <li>
-            <a href="/sitemap.xml">{{ labels.footer.sitemap }}</a>
-          </li>
-        </ul>
-      </section>
+        <section>
+          <h2>{{ labels.footer.contact }}</h2>
+          <ul>
+            <li>
+              <a :href="`/${locale}/contact/`">{{ labels.navigation.contact }}</a>
+            </li>
+            <li>
+              <a :href="`/${locale}/request-a-quote/`">{{ labels.cta.requestQuote }}</a>
+            </li>
+            <li>
+              <a :href="`/${locale}/downloads/`">{{ labels.navigation.downloads }}</a>
+            </li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>{{ labels.footer.legal }}</h2>
+          <ul>
+            <li>
+              <a :href="`/${locale}/privacy/`">{{ labels.footer.privacy }}</a>
+            </li>
+            <li v-if="termsUrl">
+              <a :href="termsUrl">{{ labels.footer.terms }}</a>
+            </li>
+            <li>
+              <a href="/sitemap.xml">{{ labels.footer.sitemap }}</a>
+            </li>
+          </ul>
+        </section>
+      </template>
 
       <section>
         <h2>{{ labels.footer.language }}</h2>
@@ -112,7 +130,7 @@ const phoneHref = computed(() => telephoneHref(company.value?.phone))
 
     <div class="site-footer__bottom">
       <p>
-        © {{ year }}<template v-if="company"> {{ company.name }}</template
+        © {{ year }}<template v-if="copyrightName"> {{ copyrightName }}</template
         >. {{ labels.footer.copyright }}.
       </p>
     </div>

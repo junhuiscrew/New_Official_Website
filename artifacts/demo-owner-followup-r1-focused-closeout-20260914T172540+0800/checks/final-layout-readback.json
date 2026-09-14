@@ -1,0 +1,178 @@
+{
+  "schema_version": 1,
+  "run_id": "20260914T172540+0800",
+  "environment": "junhui-demo-r2 / phase-3.7",
+  "read_only_capture": true,
+  "screenshots": {
+    "front_desktop": "D:\\Python_Project\\New_Official_Website\\junhui-global-website\\.worktrees\\phase-3.6\\artifacts\\demo-owner-followup-r1-focused-closeout-20260914T172540+0800\\screenshots\\frontend-hero-final-1440.png",
+    "front_mobile": "D:\\Python_Project\\New_Official_Website\\junhui-global-website\\.worktrees\\phase-3.6\\artifacts\\demo-owner-followup-r1-focused-closeout-20260914T172540+0800\\screenshots\\frontend-hero-final-375.png",
+    "admin_editor": "D:\\Python_Project\\New_Official_Website\\junhui-global-website\\.worktrees\\phase-3.6\\artifacts\\demo-owner-followup-r1-focused-closeout-20260914T172540+0800\\screenshots\\admin-hero-editor-final-1366.png"
+  },
+  "front": {
+    "desktop_1440": {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "content": {
+        "x": 80,
+        "y": 120.55,
+        "width": 1280,
+        "height": 708.89
+      },
+      "copy": {
+        "x": 80,
+        "y": 280.55,
+        "width": 800,
+        "height": 372.89
+      },
+      "heading": {
+        "x": 80,
+        "y": 336.02,
+        "width": 691.44,
+        "height": 176.25
+      },
+      "cta": {
+        "x": 80,
+        "y": 598.17,
+        "width": 146.06,
+        "height": 55.27
+      },
+      "controls": {
+        "x": 80,
+        "y": 759,
+        "width": 1280,
+        "height": 44
+      },
+      "document_scroll_width": 1440,
+      "horizontal_overflow": false,
+      "h1": "螺杆与机筒精密制造",
+      "slide_count": 4
+    },
+    "mobile_375": {
+      "viewport": {
+        "width": 375,
+        "height": 812
+      },
+      "content": {
+        "x": 16,
+        "y": 140.36,
+        "width": 343,
+        "height": 509.27
+      },
+      "copy": {
+        "x": 16,
+        "y": 224.36,
+        "width": 343,
+        "height": 273.27
+      },
+      "heading": {
+        "x": 16,
+        "y": 270.23,
+        "width": 302.59,
+        "height": 84.13
+      },
+      "cta": {
+        "x": 16,
+        "y": 442.36,
+        "width": 146.06,
+        "height": 55.27
+      },
+      "controls": {
+        "x": 16,
+        "y": 639,
+        "width": 343,
+        "height": 44
+      },
+      "document_scroll_width": 375,
+      "horizontal_overflow": false,
+      "h1": "螺杆与机筒精密制造",
+      "slide_count": 4
+    }
+  },
+  "admin": {
+    "first_card": {
+      "card": {
+        "width": 468,
+        "height": 569.11
+      },
+      "thumbnail": {
+        "width": 256,
+        "height": 144,
+        "ratio": 1.778
+      },
+      "rendered_image": {
+        "width": 256,
+        "height": 144,
+        "object_fit": "cover"
+      },
+      "natural_image": {
+        "width": 1200,
+        "height": 900
+      }
+    },
+    "languages": [
+      {
+        "locale": "zh-CN",
+        "module_count": 14,
+        "draft_revision": 7,
+        "applied_revision": 7,
+        "slide_count": 4,
+        "titles": [
+          "螺杆与机筒精密制造",
+          "表面工程与工艺技术",
+          "制造能力与质量控制",
+          "面向应用的解决方案"
+        ],
+        "enabled": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "hrefs": [
+          "/zh-cn/products/",
+          "/zh-cn/technologies/",
+          "/zh-cn/capabilities/",
+          "/zh-cn/solutions/"
+        ]
+      },
+      {
+        "locale": "en",
+        "module_count": 14,
+        "draft_revision": 2,
+        "applied_revision": 2,
+        "slide_count": 4,
+        "titles": [
+          "Precision Screw & Barrel Manufacturing",
+          "Surface Engineering & Process Technology",
+          "Manufacturing Capability & Quality Control",
+          "Application-led Solutions"
+        ],
+        "enabled": [
+          true,
+          true,
+          true,
+          true
+        ],
+        "hrefs": [
+          "/en/products/",
+          "/en/technologies/",
+          "/en/capabilities/",
+          "/en/solutions/"
+        ]
+      }
+    ]
+  },
+  "assertions": {
+    "desktop_reasonable_gutter": true,
+    "mobile_reasonable_gutter": true,
+    "no_horizontal_overflow": true,
+    "four_public_slides": true,
+    "thumbnail_is_16_by_9": true,
+    "thumbnail_is_bounded": true,
+    "bilingual_four_slide_drafts": true,
+    "fourteen_modules_preserved": true,
+    "no_test_only_title_in_persistent_demo": true
+  }
+}

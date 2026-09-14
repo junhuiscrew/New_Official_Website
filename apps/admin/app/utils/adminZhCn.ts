@@ -187,6 +187,9 @@ export const MEDIA_USAGE_ROLE_LABELS: Record<string, string> = {
   cover: '封面',
   hero: '首页主视觉',
   profile: '公开头像',
+  header_logo: '桌面 Logo',
+  mobile_logo: '移动端 Logo',
+  favicon: '浏览器小图标',
 }
 
 /**

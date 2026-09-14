@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, status
 from fastapi.encoders import jsonable_encoder
@@ -24,6 +25,7 @@ from app.modules.discovery.public_delivery import (
     PUBLIC_HANDLER_OWNER_TYPES,
     get_relation_health,
 )
+from app.modules.discovery.redirects import OFFICIAL_HOST
 from app.modules.discovery.schemas import (
     GeoDocumentUpsert,
     PublishedUrlChange,
@@ -35,7 +37,6 @@ from app.modules.discovery.schemas import (
 from app.modules.discovery.services import (
     build_visible_source_text,
     change_published_url,
-    create_redirect_rule,
     create_source_citation,
     get_site_page_detail,
     initialize_products_site_page,
@@ -46,6 +47,8 @@ from app.modules.discovery.services import (
     upsert_seo_document,
     validate_site_page_seo_owner_locale,
 )
+from app.modules.site_operations.schemas import ManagedRedirectInput
+from app.modules.site_operations.services import create_managed_redirect
 from app.modules.users.models import User
 from app.modules.users.service import collect_authorization
 
@@ -59,7 +62,9 @@ def _serialize(entity: Any) -> dict[str, Any]:
     输入：entity，SQLAlchemy 实体。
     输出：dict，全部业务列。
     """
-    return jsonable_encoder({column.name: getattr(entity, column.name) for column in entity.__table__.columns})
+    return jsonable_encoder(
+        {column.name: getattr(entity, column.name) for column in entity.__table__.columns}
+    )
 
 
 async def _commit(session: AsyncSession) -> None:
@@ -250,7 +255,9 @@ async def publish_site_page_publication(
     return success_response(detail)
 
 
-@router.get("/health/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any]])
+@router.get(
+    "/health/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any]]
+)
 async def get_discovery_health(
     owner_type: str,
     owner_id: uuid.UUID,
@@ -298,9 +305,7 @@ async def get_discovery_health(
     claims_match = True
     if geo is not None:
         try:
-            visible_text = await build_visible_source_text(
-                session, owner_type, owner_id, locale_id
-            )
+            visible_text = await build_visible_source_text(session, owner_type, owner_id, locale_id)
             validate_geo_visibility(
                 direct_answer=geo.direct_answer,
                 key_facts=geo.key_facts_json,
@@ -366,7 +371,9 @@ async def get_geo_visible_source(
     )
 
 
-@router.get("/seo/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any] | None])
+@router.get(
+    "/seo/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any] | None]
+)
 async def get_seo_document(
     owner_type: str,
     owner_id: uuid.UUID,
@@ -381,7 +388,13 @@ async def get_seo_document(
             owner_id=owner_id,
             locale_id=locale_id,
         )
-    document = await session.scalar(select(SeoDocument).where(SeoDocument.owner_type == owner_type, SeoDocument.owner_id == owner_id, SeoDocument.locale_id == locale_id))
+    document = await session.scalar(
+        select(SeoDocument).where(
+            SeoDocument.owner_type == owner_type,
+            SeoDocument.owner_id == owner_id,
+            SeoDocument.locale_id == locale_id,
+        )
+    )
     return success_response(_serialize(document) if document else None)
 
 
@@ -402,7 +415,9 @@ async def put_seo_document(
     return success_response(serialized)
 
 
-@router.get("/geo/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any] | None])
+@router.get(
+    "/geo/{owner_type}/{owner_id}/{locale_id}", response_model=ApiResponse[dict[str, Any] | None]
+)
 async def get_geo_document(
     owner_type: str,
     owner_id: uuid.UUID,
@@ -411,7 +426,13 @@ async def get_geo_document(
     _user: User = Depends(require_permission("geo.read")),
 ) -> ApiResponse[dict[str, Any] | None]:
     """读取指定内容语言的统一 GEO 文档。"""
-    document = await session.scalar(select(GeoDocument).where(GeoDocument.owner_type == owner_type, GeoDocument.owner_id == owner_id, GeoDocument.locale_id == locale_id))
+    document = await session.scalar(
+        select(GeoDocument).where(
+            GeoDocument.owner_type == owner_type,
+            GeoDocument.owner_id == owner_id,
+            GeoDocument.locale_id == locale_id,
+        )
+    )
     return success_response(_serialize(document) if document else None)
 
 
@@ -439,11 +460,19 @@ async def list_sources(
     _user: User = Depends(require_permission("source.read")),
 ) -> ApiResponse[list[dict[str, Any]]]:
     """按稳定排序读取可核验来源。"""
-    rows = list((await session.scalars(select(SourceCitation).order_by(SourceCitation.sort_order, SourceCitation.id))).all())
+    rows = list(
+        (
+            await session.scalars(
+                select(SourceCitation).order_by(SourceCitation.sort_order, SourceCitation.id)
+            )
+        ).all()
+    )
     return success_response([_serialize(item) for item in rows])
 
 
-@router.post("/sources", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
+@router.post(
+    "/sources", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]]
+)
 async def post_source(
     payload: SourceCitationCreate,
     session: AsyncSession = Depends(get_session),
@@ -462,21 +491,53 @@ async def list_redirects(
     _user: User = Depends(require_permission("redirect.read")),
 ) -> ApiResponse[list[dict[str, Any]]]:
     """读取 Redirect Manager 规则。"""
-    rows = list((await session.scalars(select(RedirectRule).order_by(RedirectRule.source_host, RedirectRule.source_path))).all())
+    rows = list(
+        (
+            await session.scalars(
+                select(RedirectRule).order_by(RedirectRule.source_host, RedirectRule.source_path)
+            )
+        ).all()
+    )
     return success_response([_serialize(item) for item in rows])
 
 
-@router.post("/redirects", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]])
+@router.post(
+    "/redirects", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[dict[str, Any]]
+)
 async def post_redirect(
     payload: RedirectRuleCreate,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(require_permission("redirect.manage")),
     _csrf: None = Depends(require_csrf),
 ) -> ApiResponse[dict[str, Any]]:
-    """创建通过 self/loop/chain/duplicate/unsafe 校验的 Redirect。"""
-    rule = await create_redirect_rule(session, payload, user.id)
+    """
+    将旧入口兼容映射到受控草稿工作流，避免直接创建启用规则。
+
+    输入：旧版 RedirectRuleCreate、数据库会话、授权用户与 CSRF。
+    输出：ApiResponse，包含待检查且未启用的受控规则。
+    """
+    target = urlparse(payload.target_url)
+    if (
+        target.scheme != "https"
+        or target.hostname != OFFICIAL_HOST
+        or target.netloc != OFFICIAL_HOST
+        or bool(target.query)
+        or bool(target.fragment)
+    ):
+        raise AppException(422, "redirect_target_not_managed", "请使用受控正式站内目标")
+    rule = await create_managed_redirect(
+        session,
+        payload=ManagedRedirectInput(
+            source_host=payload.source_host,
+            source_path=payload.source_path,
+            target_path=target.path,
+            status_code=payload.status_code,
+            notes=payload.notes,
+        ),
+        actor_id=user.id,
+    )
     await _commit(session)
-    return success_response(_serialize(rule))
+    return success_response(rule)
 
 
 @router.post("/url-change", response_model=ApiResponse[dict[str, Any]])

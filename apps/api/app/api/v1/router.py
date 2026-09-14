@@ -19,6 +19,7 @@ from app.api.v1.public import router as public_router
 from app.api.v1.rbac import router as rbac_router
 from app.api.v1.rfq import public_router as public_rfq_router
 from app.api.v1.rfq import router as rfq_router
+from app.api.v1.site_operations import router as site_operations_router
 from app.api.v1.trust import router as trust_router
 from app.api.v1.users import router as users_router
 
@@ -42,3 +43,4 @@ api_v1_router.include_router(media_router)
 api_v1_router.include_router(public_media_router)
 api_v1_router.include_router(rfq_router)
 api_v1_router.include_router(public_rfq_router)
+api_v1_router.include_router(site_operations_router)

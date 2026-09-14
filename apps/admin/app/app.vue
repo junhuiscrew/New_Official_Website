@@ -34,6 +34,24 @@ const navGroups: AdminNavGroup[] = [
     ],
   },
   {
+    label: '站点运营',
+    items: [
+      { label: '站点与品牌', to: '/site-operations/brand', permission: 'content.read', mark: 'BR' },
+      {
+        label: '导航与页脚',
+        to: '/site-operations/navigation',
+        permission: 'content.read',
+        mark: 'NV',
+      },
+      {
+        label: '重定向管理',
+        to: '/site-operations/redirects',
+        permission: 'redirect.read',
+        mark: 'RD',
+      },
+    ],
+  },
+  {
     label: '内容与产品',
     items: [
       {
@@ -129,6 +147,9 @@ const pageTitle = computed(() => {
     '/site-pages/contact': '联系页面 SEO',
     '/site-pages/request-a-quote': '询价页面 SEO',
     '/privacy': '隐私版本',
+    '/site-operations/brand': '站点与品牌',
+    '/site-operations/navigation': '导航与页脚',
+    '/site-operations/redirects': '重定向管理',
   }
   const matching = navGroups.flatMap((group) => group.items).find((item) => item.to === route.path)
   return fixedTitles[route.path] || matching?.label || '内容管理'

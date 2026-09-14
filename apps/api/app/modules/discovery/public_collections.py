@@ -65,6 +65,7 @@ from app.modules.presentation.services import (
     attach_homepage_presentation,
     get_homepage_configuration,
 )
+from app.modules.site_operations.services import get_public_site_operations
 
 from .public_delivery import (
     OFFICIAL_ORIGIN,
@@ -1319,6 +1320,7 @@ async def get_public_navigation(
     capabilities = await _published_rows(session, "manufacturing_capability", locale, 1, False)
     cases = await _published_rows(session, "case_study", locale, 1, False)
     knowledge = await _published_rows(session, "knowledge_article", locale, 1, False)
+    technologies = await _published_rows(session, "technology", locale, 1, False)
     company_result = await _published_company(session, locale)
     company = company_result[0] if company_result else None
 
@@ -1331,8 +1333,34 @@ async def get_public_navigation(
         "capabilities": bool(capabilities),
         "case_studies": bool(cases),
         "knowledge": bool(knowledge),
+        "technologies": bool(technologies),
         "about": company is not None,
     }
+
+    operations = await get_public_site_operations(session, locale.slug)
+    if operations is not None:
+        # 内容型目标继续经过当前语言的真实发布门禁；工具页由各自固定路由策略控制。
+        gated_keys = set(available_sections)
+        operations["header_items"] = [
+            item
+            for item in operations["header_items"]
+            if item["target_key"] not in gated_keys or available_sections[item["target_key"]]
+        ]
+        operations["footer_groups"] = [
+            {
+                **group,
+                "items": [
+                    item
+                    for item in group["items"]
+                    if item["target_key"] not in gated_keys
+                    or available_sections[item["target_key"]]
+                ],
+            }
+            for group in operations["footer_groups"]
+        ]
+        operations["footer_groups"] = [
+            group for group in operations["footer_groups"] if group["items"]
+        ]
 
     return {
         "locale": locale.slug,
@@ -1359,6 +1387,10 @@ async def get_public_navigation(
             if company
             else None
         ),
+        # 新字段仅来自已应用设置；未初始化时旧前端合同保持可用。
+        "brand": operations["brand"] if operations else None,
+        "header_items": operations["header_items"] if operations else [],
+        "footer_groups": operations["footer_groups"] if operations else [],
     }
 
 
@@ -1415,10 +1447,7 @@ async def get_public_home(
                 )
             ).all()
         )
-        links_by_role = {
-            (link.role, link.sort_order): link
-            for link in media_links
-        }
+        links_by_role = {(link.role, link.sort_order): link for link in media_links}
         for order in (0, 1):
             video_link = links_by_role.get(("video", order))
             if video_link is None:
@@ -1451,9 +1480,7 @@ async def get_public_home(
 
     category_rows = await _published_row_tuples(session, "product_category", locale, 12, False)
     product_rows = await _published_row_tuples(session, "product", locale, 12, True)
-    all_product_rows = await _published_row_tuples(
-        session, "product", locale, 48, False
-    )
+    all_product_rows = await _published_row_tuples(session, "product", locale, 48, False)
     capability_rows = await _published_row_tuples(
         session, "manufacturing_capability", locale, 8, False
     )
@@ -1482,15 +1509,10 @@ async def get_public_home(
         if slug
     ]
     requested_order = {
-        slug: index
-        for index, slug in enumerate(dict.fromkeys(requested_product_slugs))
+        slug: index for index, slug in enumerate(dict.fromkeys(requested_product_slugs))
     }
     homepage_product_rows = sorted(
-        (
-            row
-            for row in all_product_rows
-            if row[0].slug in requested_order
-        ),
+        (row for row in all_product_rows if row[0].slug in requested_order),
         key=lambda row: requested_order[row[0].slug],
     )
     homepage_products = await _product_card_payloads(
@@ -1508,9 +1530,7 @@ async def get_public_home(
             None,
         )
         if first_product_media is not None:
-            hero_media = PublicMediaDto(
-                **{**first_product_media, "loading": "eager"}
-            )
+            hero_media = PublicMediaDto(**{**first_product_media, "loading": "eager"})
     knowledge = await _authority_card_payloads(session, "knowledge_article", locale, knowledge_rows)
     materials = await _published_rows(session, "material", locale, 8, False)
     technologies = await _published_rows(session, "technology", locale, 8, False)
@@ -1834,7 +1854,8 @@ def _search_select(
             body_contains,
         )
         score = (
-            func.ts_rank_cd(weighted_vector, ts_query) * 100 + func.similarity(title, query) * 10
+            func.ts_rank_cd(weighted_vector, ts_query) * 100
+            + func.similarity(title, query) * 10
             + case(
                 (lowered_title == normalized_query, 400.0),
                 (title_contains, 200.0),

@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260914T204639+0800",
+  "status": "SITE_OPERATIONS_R1_READY_FOR_REVIEW",
+  "scope": "Demo/local preview only",
+  "target": "junhui-demo-r2",
+  "workspace_branch": "phase-3.7",
+  "baseline_head": "245075f6eac8093adf9605785f8c67c76fa4a8de",
+  "head_includes_all_implementation": false,
+  "git_actions": {
+    "staged": false,
+    "committed": false,
+    "tagged": false,
+    "pushed": false,
+    "merged": false
+  },
+  "admin_entries": [
+    {
+      "name": "站点与品牌",
+      "path": "/site-operations/brand",
+      "draft_preview_apply_restore": true
+    },
+    {
+      "name": "导航与页脚",
+      "path": "/site-operations/navigation",
+      "draft_preview_apply_restore": true
+    },
+    {
+      "name": "重定向管理",
+      "path": "/site-operations/redirects",
+      "search_check_confirm_disable_history": true
+    }
+  ],
+  "migration_head": "20260914_0017_site_operations_r1",
+  "runtime_images_sha256": {
+    "api": "9a9bd7380726b70c7617fd0fc263be6370f848c177ded683fed3a37ba232ae18",
+    "worker": "3af5c1b5ff837b7af1c2139dc32e63bc508f5a309452085047831484f64b815f",
+    "website": "576759816d9a7f1612d551733562fe9c72f2144bd5db8f9207811ca5398ee466",
+    "admin": "d826868c845e818eee2772bed45195e2f01ada98b24a66e4cccb10fa8557d955"
+  },
+  "private_pre_migration_snapshot": {
+    "path": "data/demo-r2/private/site-operations-r1-20260914T204639+0800/demo-r2-before.dump",
+    "bytes": 722883,
+    "sha256": "E4FF88FB18BAED3901CE69D703B42F3BE17F73E0D7C85A807B66FFACD7134DBA",
+    "included_in_evidence": false
+  },
+  "permissions_reused": [
+    "content.read",
+    "content.update",
+    "content.publish",
+    "redirect.read",
+    "redirect.manage"
+  ],
+  "new_permission_assignment_required": false,
+  "operation_chains": {
+    "brand": {
+      "saved": true,
+      "fresh_get": true,
+      "browser_reopen": true,
+      "authenticated_preview": true,
+      "applied": true,
+      "restored_as_new_revision": true,
+      "english_preserved": true
+    },
+    "navigation_footer": {
+      "label_and_order_changed": true,
+      "item_added_then_removed": true,
+      "item_disabled": true,
+      "saved_and_reopened": true,
+      "authenticated_preview": true,
+      "applied": true,
+      "desktop_same_origin_click": true,
+      "mobile_375_same_origin_click": true,
+      "restored_as_new_revision": true,
+      "english_preserved": true
+    },
+    "redirect": {
+      "saved": true,
+      "fresh_get": true,
+      "checked_without_network_fetch": true,
+      "confirmed": true,
+      "actual_http_status": 308,
+      "actual_location": "https://junhuiscrewbarrel.com/en/products/",
+      "disabled_resolver_status": 404,
+      "history_preserved": true,
+      "invalid_rules_rejected": true
+    }
+  },
+  "persistent_demo_final": {
+    "brand_revision": {
+      "draft": 0,
+      "applied": 0
+    },
+    "navigation_revision": {
+      "zh-CN": {
+        "draft": 0,
+        "applied": 0
+      },
+      "en": {
+        "draft": 0,
+        "applied": 0
+      }
+    },
+    "test_only_text_present": false,
+    "redirect_rules": 0,
+    "enabled_redirect_rules": 0,
+    "homepage_modules_per_locale": 14,
+    "hero_slides_per_locale": 4,
+    "services_healthy": true,
+    "phase37_services_healthy_and_not_rebuilt": true
+  },
+  "regression": {
+    "api_full": {
+      "collected": 399,
+      "passed": 380,
+      "skipped": 19,
+      "failed": 0,
+      "errors": 0
+    },
+    "api_site_operations_targeted_passed": 9,
+    "postgresql_minio_integration_passed": 1,
+    "website_test_files": 17,
+    "website_tests_passed": 161,
+    "admin_test_files": 15,
+    "admin_tests_passed": 95,
+    "website_typecheck": "passed",
+    "admin_typecheck": "passed",
+    "ruff_lint": "passed",
+    "affected_python_format": "passed",
+    "affected_prettier": "passed",
+    "website_build": "passed",
+    "admin_build": "passed",
+    "full_prettier": "failed_on_two_preexisting_unrelated_json_files",
+    "full_ruff_format": "96_preexisting_historical_files_would_reformat"
+  },
+  "unchanged_protections": {
+    "https": true,
+    "loopback_443": true,
+    "frontend_basic_auth_prompt": false,
+    "admin_auth_rbac_csrf": true,
+    "noindex": true,
+    "no_store": true,
+    "sitemap_status": 404,
+    "privacy_published": false,
+    "rfq_submission_enabled": false
+  },
+  "non_editable_registry": {
+    "total_original_ids": 50,
+    "operational_editing_gaps": {
+      "total": 6,
+      "closed_this_round": 6,
+      "remaining": 0
+    },
+    "controlled_technical_configuration": 19,
+    "awaiting_real_material_or_authorization": 15,
+    "optional_enhancements": 10
+  },
+  "owner_inputs_still_required": [
+    "公司正式主数据及允许公开的联系方式与介绍",
+    "拟正式上架产品的双语名称、审核规格和关系，不要求九款 Demo 全部正式化",
+    "获批的技术资料、案例、人员、设备能力和证书事实及公开授权",
+    "实际展示位置所需的批准图片、视频和 PDF；不重复索取已有 Logo",
+    "Privacy、RFQ 同意范围、收件人、保留期和数据处理决定"
+  ],
+  "deliverables": {
+    "report": "docs/handoff/site-operations-r1/site-operations-r1-report.md",
+    "readback": "docs/handoff/site-operations-r1/site-operations-r1-readback.json",
+    "manual": "docs/handoff/demo-owner-review-followup-r1/后台中文使用手册.md",
+    "non_editable_inventory": "docs/handoff/demo-owner-review-followup-r1/后台不能直接修改的内容清单.md",
+    "evidence_directory": "artifacts/site-operations-r1-20260914T204639+0800",
+    "evidence_zip": "Junhui-Site-Operations-R1-Evidence-20260914T204639+0800.zip"
+  },
+  "production_deployed": false,
+  "scope_claim": "Only the three Site Operations R1 operational gaps are closed; no full-site or production launch claim."
+}

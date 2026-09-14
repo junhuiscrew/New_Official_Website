@@ -1,0 +1,1056 @@
+{
+  "schema_version": 1,
+  "run_id": "20260914T172540+0800",
+  "environment": {
+    "label": "TEST ONLY",
+    "admin_origin": "http://127.0.0.1:53001",
+    "website_origin": "http://127.0.0.1:53000",
+    "isolated_compose_project": "junhui-integrated-acceptance-r1-test-only",
+    "persistent_demo_touched": false,
+    "credentials_or_tokens_recorded": false
+  },
+  "steps": {
+    "media_precondition": {
+      "eligible_public_ready_images": 43,
+      "required_demo_files": [
+        "generated-01.jpg",
+        "generated-14.jpg",
+        "generated-31.jpg",
+        "generated-23.jpg"
+      ],
+      "all_required_present": true
+    },
+    "baseline_setup": {
+      "zh": {
+        "saved": {
+          "status": 200,
+          "draft_revision": 17
+        },
+        "applied": {
+          "status": 200,
+          "draft_revision": 17,
+          "applied_revision": 9
+        }
+      },
+      "en": {
+        "saved": {
+          "status": 200,
+          "draft_revision": 3
+        },
+        "applied": {
+          "status": 200,
+          "draft_revision": 3,
+          "applied_revision": 3
+        }
+      }
+    },
+    "baseline_readback": {
+      "zh": {
+        "locale": "zh-CN",
+        "draft_revision": 17,
+        "applied_revision": 9,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      },
+      "en": {
+        "locale": "en",
+        "draft_revision": 3,
+        "applied_revision": 3,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378583167",
+            "title": "Precision Screw & Barrel Manufacturing",
+            "subtitle": "Demo asset | Precision components for extrusion and injection applications.",
+            "cta_label": "View products",
+            "cta_href": "/en/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583236",
+            "title": "Surface Engineering & Process Technology",
+            "subtitle": "Demo asset | A coordinated path across materials, heat treatment and surfaces.",
+            "cta_label": "Explore technologies",
+            "cta_href": "/en/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583430",
+            "title": "Manufacturing Capability & Quality Control",
+            "subtitle": "Demo asset | Controlled manufacturing, inspection and quality traceability.",
+            "cta_label": "View capabilities",
+            "cta_href": "/en/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583605",
+            "title": "Application-led Solutions",
+            "subtitle": "Demo asset | Product, material and process relationships organized by application.",
+            "cta_label": "Browse solutions",
+            "cta_href": "/en/solutions/",
+            "enabled": true
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378583167",
+            "title": "Precision Screw & Barrel Manufacturing",
+            "subtitle": "Demo asset | Precision components for extrusion and injection applications.",
+            "cta_label": "View products",
+            "cta_href": "/en/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583236",
+            "title": "Surface Engineering & Process Technology",
+            "subtitle": "Demo asset | A coordinated path across materials, heat treatment and surfaces.",
+            "cta_label": "Explore technologies",
+            "cta_href": "/en/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583430",
+            "title": "Manufacturing Capability & Quality Control",
+            "subtitle": "Demo asset | Controlled manufacturing, inspection and quality traceability.",
+            "cta_label": "View capabilities",
+            "cta_href": "/en/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583605",
+            "title": "Application-led Solutions",
+            "subtitle": "Demo asset | Product, material and process relationships organized by application.",
+            "cta_label": "Browse solutions",
+            "cta_href": "/en/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      }
+    },
+    "modify_save_fresh_get": {
+      "response": {
+        "status": 200,
+        "draft_revision": 18
+      },
+      "readback": {
+        "locale": "zh-CN",
+        "draft_revision": 18,
+        "applied_revision": 9,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": false
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      }
+    },
+    "reopen": {
+      "ui": [
+        {
+          "order": 1,
+          "title": "表面工程与工艺技术",
+          "enabled": true
+        },
+        {
+          "order": 2,
+          "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+          "enabled": true
+        },
+        {
+          "order": 3,
+          "title": "制造能力与质量控制",
+          "enabled": true
+        },
+        {
+          "order": 4,
+          "title": "面向应用的解决方案",
+          "enabled": false
+        }
+      ],
+      "fresh_get": {
+        "locale": "zh-CN",
+        "draft_revision": 18,
+        "applied_revision": 9,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": false
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      }
+    },
+    "authenticated_preview": {
+      "url": "http://127.0.0.1:53001/preview/zh-cn/",
+      "h1": "表面工程与工艺技术",
+      "dot_count": 3,
+      "active_title_matches_saved_order": true
+    },
+    "apply_and_public_readback": {
+      "response": {
+        "status": 200,
+        "draft_revision": 18,
+        "applied_revision": 10
+      },
+      "api_readback": {
+        "locale": "zh-CN",
+        "draft_revision": 18,
+        "applied_revision": 10,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": false
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": false
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      },
+      "public_page": {
+        "url": "http://127.0.0.1:53000/zh-cn/",
+        "h1": "表面工程与工艺技术",
+        "dot_count": 3,
+        "same_origin_navigation": true
+      }
+    },
+    "add_delete": {
+      "add": {
+        "response": {
+          "status": 200,
+          "draft_revision": 19
+        },
+        "readback": {
+          "locale": "zh-CN",
+          "draft_revision": 19,
+          "applied_revision": 10,
+          "module_count": 14,
+          "draft_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            },
+            {
+              "id": "demo-hero-1789378587521",
+              "title": "TEST ONLY｜临时第五项",
+              "subtitle": "仅用于验证新增、保存、重开和删除链，不进入最终应用版。",
+              "cta_label": "临时查看",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            }
+          ],
+          "applied_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "hero_product_slugs": [
+            "demo-s01",
+            "demo-s02",
+            "demo-s03"
+          ],
+          "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+          "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+        }
+      },
+      "delete": {
+        "response": {
+          "status": 200,
+          "draft_revision": 20
+        },
+        "readback": {
+          "locale": "zh-CN",
+          "draft_revision": 20,
+          "applied_revision": 10,
+          "module_count": 14,
+          "draft_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "applied_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "hero_product_slugs": [
+            "demo-s01",
+            "demo-s02",
+            "demo-s03"
+          ],
+          "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+          "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+        }
+      }
+    },
+    "restore_from_applied": {
+      "divergent_draft_save": {
+        "response": {
+          "status": 200,
+          "draft_revision": 21
+        },
+        "readback": {
+          "locale": "zh-CN",
+          "draft_revision": 21,
+          "applied_revision": 10,
+          "module_count": 14,
+          "draft_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "TEST ONLY｜等待恢复的草稿差异。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "applied_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "hero_product_slugs": [
+            "demo-s01",
+            "demo-s02",
+            "demo-s03"
+          ],
+          "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+          "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+        }
+      },
+      "restore": {
+        "response": {
+          "status": 200,
+          "draft_revision": 22
+        },
+        "readback": {
+          "locale": "zh-CN",
+          "draft_revision": 22,
+          "applied_revision": 10,
+          "module_count": 14,
+          "draft_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "applied_slides": [
+            {
+              "id": "demo-hero-1789378582416",
+              "title": "表面工程与工艺技术",
+              "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+              "cta_label": "了解工艺技术",
+              "cta_href": "/zh-cn/technologies/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582119",
+              "title": "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+              "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+              "cta_label": "查看产品",
+              "cta_href": "/zh-cn/products/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582502",
+              "title": "制造能力与质量控制",
+              "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+              "cta_label": "查看制造能力",
+              "cta_href": "/zh-cn/capabilities/",
+              "enabled": true
+            },
+            {
+              "id": "demo-hero-1789378582592",
+              "title": "面向应用的解决方案",
+              "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+              "cta_label": "浏览解决方案",
+              "cta_href": "/zh-cn/solutions/",
+              "enabled": false
+            }
+          ],
+          "hero_product_slugs": [
+            "demo-s01",
+            "demo-s02",
+            "demo-s03"
+          ],
+          "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+          "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+        }
+      }
+    },
+    "final_restore": {
+      "save": {
+        "status": 200,
+        "draft_revision": 23
+      },
+      "preview": {
+        "url": "http://127.0.0.1:53001/preview/zh-cn/",
+        "h1": "螺杆与机筒精密制造",
+        "dot_count": 4
+      },
+      "apply": {
+        "status": 200,
+        "draft_revision": 23,
+        "applied_revision": 11
+      },
+      "zh_readback": {
+        "locale": "zh-CN",
+        "draft_revision": 23,
+        "applied_revision": 11,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378582119",
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 素材｜面向挤出与注塑应用的精密部件制造展示。",
+            "cta_label": "查看产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582416",
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 素材｜展示材料、热处理与表面工程的协同路径。",
+            "cta_label": "了解工艺技术",
+            "cta_href": "/zh-cn/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582502",
+            "title": "制造能力与质量控制",
+            "subtitle": "Demo 素材｜以受控流程呈现制造、检测与质量追溯能力。",
+            "cta_label": "查看制造能力",
+            "cta_href": "/zh-cn/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378582592",
+            "title": "面向应用的解决方案",
+            "subtitle": "Demo 素材｜从应用工况出发组织产品、材料与工艺关系。",
+            "cta_label": "浏览解决方案",
+            "cta_href": "/zh-cn/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      },
+      "en_readback": {
+        "locale": "en",
+        "draft_revision": 3,
+        "applied_revision": 3,
+        "module_count": 14,
+        "draft_slides": [
+          {
+            "id": "demo-hero-1789378583167",
+            "title": "Precision Screw & Barrel Manufacturing",
+            "subtitle": "Demo asset | Precision components for extrusion and injection applications.",
+            "cta_label": "View products",
+            "cta_href": "/en/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583236",
+            "title": "Surface Engineering & Process Technology",
+            "subtitle": "Demo asset | A coordinated path across materials, heat treatment and surfaces.",
+            "cta_label": "Explore technologies",
+            "cta_href": "/en/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583430",
+            "title": "Manufacturing Capability & Quality Control",
+            "subtitle": "Demo asset | Controlled manufacturing, inspection and quality traceability.",
+            "cta_label": "View capabilities",
+            "cta_href": "/en/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583605",
+            "title": "Application-led Solutions",
+            "subtitle": "Demo asset | Product, material and process relationships organized by application.",
+            "cta_label": "Browse solutions",
+            "cta_href": "/en/solutions/",
+            "enabled": true
+          }
+        ],
+        "applied_slides": [
+          {
+            "id": "demo-hero-1789378583167",
+            "title": "Precision Screw & Barrel Manufacturing",
+            "subtitle": "Demo asset | Precision components for extrusion and injection applications.",
+            "cta_label": "View products",
+            "cta_href": "/en/products/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583236",
+            "title": "Surface Engineering & Process Technology",
+            "subtitle": "Demo asset | A coordinated path across materials, heat treatment and surfaces.",
+            "cta_label": "Explore technologies",
+            "cta_href": "/en/technologies/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583430",
+            "title": "Manufacturing Capability & Quality Control",
+            "subtitle": "Demo asset | Controlled manufacturing, inspection and quality traceability.",
+            "cta_label": "View capabilities",
+            "cta_href": "/en/capabilities/",
+            "enabled": true
+          },
+          {
+            "id": "demo-hero-1789378583605",
+            "title": "Application-led Solutions",
+            "subtitle": "Demo asset | Product, material and process relationships organized by application.",
+            "cta_label": "Browse solutions",
+            "cta_href": "/en/solutions/",
+            "enabled": true
+          }
+        ],
+        "hero_product_slugs": [
+          "demo-s01",
+          "demo-s02",
+          "demo-s03"
+        ],
+        "draft_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928",
+        "applied_non_hero_sha256": "1bceef1c77e529728c0a8a55defd068835cf72507f22949a249b80828bf49928"
+      }
+    }
+  },
+  "assertions": {
+    "four_zh_slides_restored": true,
+    "four_en_slides_unchanged": true,
+    "fourteen_modules_preserved": true,
+    "non_hero_modules_preserved": true,
+    "hero_product_relations_preserved": true,
+    "transient_save_reopened": true,
+    "transient_preview_used_draft": true,
+    "transient_apply_visible_on_public": true,
+    "fifth_add_and_delete_read_back": true,
+    "built_in_restore_matched_applied": true,
+    "final_preview_has_four_slides": true,
+    "no_persistent_demo_write": true
+  }
+}

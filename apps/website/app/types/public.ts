@@ -128,6 +128,30 @@ export interface NavigationCompanyDto {
   address: string | null
 }
 
+/** 已应用品牌设置；媒体为空时组件继续使用仓库内已批准 Logo。 */
+export interface NavigationBrandDto {
+  display_name: string
+  short_name: string
+  media: {
+    header_logo: { filename: string; mime_type: string; url: string } | null
+    mobile_logo: { filename: string; mime_type: string; url: string } | null
+    favicon: { filename: string; mime_type: string; url: string } | null
+  }
+}
+
+/** 服务端白名单解析后的安全站内菜单项。 */
+export interface NavigationMenuItemDto {
+  label: string
+  target_key: string
+  path: string
+}
+
+/** 服务端应用版页脚分组。 */
+export interface NavigationFooterGroupDto {
+  title: string
+  items: NavigationMenuItemDto[]
+}
+
 /** Desktop、Mobile 与 Footer 共用的导航聚合 DTO。 */
 export interface NavigationDto {
   locale: LocaleSlug
@@ -153,6 +177,9 @@ export interface NavigationDto {
   materials: PublicLinkDto[]
   applications: PublicLinkDto[]
   company: NavigationCompanyDto | null
+  brand?: NavigationBrandDto | null
+  header_items?: NavigationMenuItemDto[]
+  footer_groups?: NavigationFooterGroupDto[]
 }
 
 /** 首页 API 中经过发布门禁的公司公开事实。 */

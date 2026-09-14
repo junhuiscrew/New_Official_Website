@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
@@ -66,6 +66,7 @@ from app.modules.media.models import (
 )
 from app.modules.media.services import refresh_public_image_dimensions, validate_upload_bytes
 from app.modules.media.storage import MinioStorageAdapter, get_storage_adapter
+from app.modules.site_operations.models import SiteBrandSetting
 from app.modules.users.models import User
 from app.modules.users.service import collect_authorization
 
@@ -474,6 +475,42 @@ async def get_media_usage(
         )
         is not None
     ]
+    if "content.read" in permission_set:
+        brand = await session.scalar(
+            select(SiteBrandSetting).where(
+                or_(
+                    SiteBrandSetting.draft_header_logo_media_id == asset.id,
+                    SiteBrandSetting.draft_mobile_logo_media_id == asset.id,
+                    SiteBrandSetting.draft_favicon_media_id == asset.id,
+                    SiteBrandSetting.applied_header_logo_media_id == asset.id,
+                    SiteBrandSetting.applied_mobile_logo_media_id == asset.id,
+                    SiteBrandSetting.applied_favicon_media_id == asset.id,
+                )
+            )
+        )
+        if brand is not None:
+            # 品牌草稿和应用版均属于真实删除保护引用；用途合并后不给员工暴露内部记录ID。
+            brand_fields = {
+                "header_logo": (
+                    brand.draft_header_logo_media_id,
+                    brand.applied_header_logo_media_id,
+                ),
+                "mobile_logo": (
+                    brand.draft_mobile_logo_media_id,
+                    brand.applied_mobile_logo_media_id,
+                ),
+                "favicon": (brand.draft_favicon_media_id, brand.applied_favicon_media_id),
+            }
+            for role, referenced_ids in brand_fields.items():
+                if asset.id in referenced_ids:
+                    usage_rows.append(
+                        {
+                            "location": "站点与品牌",
+                            "content_name": "站点品牌草稿或应用版",
+                            "role": role,
+                            "admin_url": "/site-operations/brand",
+                        }
+                    )
     usage_rows.sort(key=lambda row: (row["location"], row["content_name"], row["role"]))
     return success_response(usage_rows)
 

@@ -24,6 +24,7 @@ from app.modules.media import models as media_models  # noqa: F401
 from app.modules.presentation import models as presentation_models  # noqa: F401
 from app.modules.privacy import models as privacy_models  # noqa: F401
 from app.modules.rfq import models as rfq_models  # noqa: F401
+from app.modules.site_operations import models as site_operations_models  # noqa: F401
 from app.modules.users import models as user_models  # noqa: F401
 
 config = context.config

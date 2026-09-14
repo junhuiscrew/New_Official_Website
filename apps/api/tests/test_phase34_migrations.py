@@ -31,7 +31,7 @@ def test_phase34_migrations_are_linear_new_heads() -> None:
     """
     api_root = Path(__file__).resolve().parents[1]
     script = ScriptDirectory(str(api_root / "alembic"))
-    assert script.get_current_head() == "20260910_0016"
+    assert script.get_current_head() == "20260914_0017"
     assert (api_root / "alembic/versions/20260904_0006_authority_content.py").is_file()
     assert (api_root / "alembic/versions/20260904_0007_discovery_delivery.py").is_file()
     assert (api_root / "alembic/versions/20260907_0011_site_pages.py").is_file()
@@ -39,9 +39,7 @@ def test_phase34_migrations_are_linear_new_heads() -> None:
     assert (api_root / "alembic/versions/20260908_0013_privacy_p1_hardening.py").is_file()
     assert (api_root / "alembic/versions/20260908_0014_homepage_presentation_r1.py").is_file()
     assert (api_root / "alembic/versions/20260909_0015_demo_r2_foundation.py").is_file()
-    assert (
-        api_root / "alembic/versions/20260910_0016_demo_fixed_utility_site_pages.py"
-    ).is_file()
+    assert (api_root / "alembic/versions/20260910_0016_demo_fixed_utility_site_pages.py").is_file()
 
 
 def test_empty_database_upgrades_to_phase34_tables(

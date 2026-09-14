@@ -51,6 +51,13 @@ const navigation = computed(() => {
   return response?.success && response.data ? response.data : emptyNavigation(currentLocale.value)
 })
 
+// 浏览器小图标只读取服务端已应用品牌；草稿预览不会通过公开查询参数解锁。
+useHead(() => ({
+  link: navigation.value.brand?.media.favicon?.url
+    ? [{ rel: 'icon', href: navigation.value.brand.media.favicon.url }]
+    : [],
+}))
+
 // 页面可通过 route meta 注入 SSR alternate；组件还会读取现有 hreflang head 作为 SPA 导航后备。
 const alternates = computed(() => (route.meta.alternates as AlternateMap | undefined) ?? null)
 </script>

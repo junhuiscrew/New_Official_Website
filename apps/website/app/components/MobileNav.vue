@@ -5,7 +5,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LanguageSwitcher from './LanguageSwitcher.vue'
 import SearchButton from './SearchButton.vue'
 import { ui } from '~/i18n/ui'
-import type { LocaleSlug, NavigationDto } from '~/types/public'
+import type {
+  LocaleSlug,
+  NavigationDto,
+  NavigationMenuItemDto,
+  PublicLinkDto,
+} from '~/types/public'
 
 type AccordionKey = 'products' | 'solutions' | 'materials' | 'applications'
 
@@ -21,28 +26,12 @@ const props = withDefaults(
 
 const emit = defineEmits<{ close: [] }>()
 const labels = computed(() => ui[props.locale])
-const primary = computed(() => new Set(props.navigation.primary))
 const expanded = ref<AccordionKey | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const closeButton = ref<HTMLButtonElement | null>(null)
 let savedBodyOverflow = ''
 let bodyLocked = false
 let desktopMedia: MediaQueryList | null = null
-
-const staticRoutes = computed(() =>
-  [
-    {
-      key: 'capabilities',
-      primaryKey: 'capabilities',
-      label: labels.value.navigation.capabilities,
-    },
-    { key: 'case-studies', primaryKey: 'case_studies', label: labels.value.navigation.caseStudies },
-    { key: 'knowledge', primaryKey: 'knowledge', label: labels.value.navigation.knowledge },
-    { key: 'about', primaryKey: 'about', label: labels.value.navigation.about },
-  ].filter((item) =>
-    primary.value.has(item.primaryKey as (typeof props.navigation.primary)[number]),
-  ),
-)
 
 const productItems = computed(() => [
   ...props.navigation.products.categories,
@@ -52,6 +41,48 @@ const solutionItems = computed(() => [
   ...props.navigation.solutions.featured,
   ...props.navigation.solutions.problems,
 ])
+const brandLogo = computed(
+  () => props.navigation.brand?.media.mobile_logo?.url ?? '/brand/junhui-mark.png',
+)
+
+// 设置未初始化时按旧公开合同生成等值顺序，保证迁移窗口的移动菜单可用。
+const headerItems = computed<NavigationMenuItemDto[]>(() => {
+  if (props.navigation.header_items?.length) return props.navigation.header_items
+  const routes: Record<string, { label: string; path: string }> = {
+    products: { label: labels.value.navigation.products, path: `/${props.locale}/products/` },
+    solutions: { label: labels.value.navigation.solutions, path: `/${props.locale}/solutions/` },
+    materials: { label: labels.value.navigation.materials, path: `/${props.locale}/materials/` },
+    applications: {
+      label: labels.value.navigation.applications,
+      path: `/${props.locale}/applications/`,
+    },
+    capabilities: {
+      label: labels.value.navigation.capabilities,
+      path: `/${props.locale}/capabilities/`,
+    },
+    case_studies: {
+      label: labels.value.navigation.caseStudies,
+      path: `/${props.locale}/case-studies/`,
+    },
+    knowledge: { label: labels.value.navigation.knowledge, path: `/${props.locale}/knowledge/` },
+    about: { label: labels.value.navigation.about, path: `/${props.locale}/about/` },
+  }
+  return props.navigation.primary.map((key) => ({ target_key: key, ...routes[key]! }))
+})
+
+/** 判断当前项目是否支持动态子菜单。 */
+function isAccordionKey(key: string): key is AccordionKey {
+  return ['products', 'solutions', 'materials', 'applications'].includes(key)
+}
+
+/** 返回当前语言已通过发布门禁的子菜单内容。 */
+function submenuItems(key: string): PublicLinkDto[] {
+  if (!isAccordionKey(key)) return []
+  if (key === 'products') return productItems.value
+  if (key === 'solutions') return solutionItems.value
+  if (key === 'materials') return props.navigation.materials
+  return props.navigation.applications
+}
 
 /** 仅在移动菜单打开期间锁定 body，并保留页面原有 overflow 值。 */
 function syncBodyLock(shouldLock: boolean): void {
@@ -69,6 +100,11 @@ function syncBodyLock(shouldLock: boolean): void {
 /** 切换一个 accordion，同时关闭其余动态分组。 */
 function toggleAccordion(key: AccordionKey): void {
   expanded.value = expanded.value === key ? null : key
+}
+
+/** 输入任意服务端目标键；输出无，仅切换受支持动态分组。 */
+function toggleAccordionForKey(key: string): void {
+  if (isAccordionKey(key)) toggleAccordion(key)
 }
 
 watch(
@@ -142,7 +178,7 @@ onBeforeUnmount(() => {
     />
     <div ref="panel" class="mobile-nav__panel">
       <div class="mobile-nav__topbar">
-        <img src="/brand/junhui-mark.png" alt="" width="40" height="40" />
+        <img :src="brandLogo" :alt="navigation.brand?.short_name ?? ''" width="40" height="40" />
         <button
           ref="closeButton"
           type="button"
@@ -156,134 +192,38 @@ onBeforeUnmount(() => {
 
       <nav :aria-label="labels.navigation.menu">
         <ul class="mobile-nav__list">
-          <li v-if="primary.has('products')">
+          <li v-for="item in headerItems" :key="item.target_key">
             <button
-              v-if="productItems.length"
+              v-if="isAccordionKey(item.target_key) && submenuItems(item.target_key).length"
               type="button"
-              data-testid="mobile-products-toggle"
-              :aria-expanded="expanded === 'products'"
-              aria-controls="mobile-products-panel"
-              @click="toggleAccordion('products')"
+              :data-testid="`mobile-${item.target_key}-toggle`"
+              :aria-expanded="expanded === item.target_key"
+              :aria-controls="`mobile-${item.target_key}-panel`"
+              @click="toggleAccordionForKey(item.target_key)"
             >
-              {{ labels.navigation.products }}
+              {{ item.label }}
               <span aria-hidden="true">+</span>
             </button>
-            <a v-else :href="`/${locale}/products/`" @click="emit('close')">
-              {{ labels.navigation.products }}
+            <a v-else :href="item.path" @click="emit('close')">
+              {{ item.label }}
             </a>
             <ul
-              v-if="productItems.length"
-              v-show="expanded === 'products'"
-              id="mobile-products-panel"
+              v-if="isAccordionKey(item.target_key) && submenuItems(item.target_key).length"
+              v-show="expanded === item.target_key"
+              :id="`mobile-${item.target_key}-panel`"
             >
-              <li v-for="item in productItems" :key="`${item.type}:${item.url}`">
-                <a :href="item.url" @click="emit('close')">{{ item.name }}</a>
+              <li
+                v-for="child in submenuItems(item.target_key)"
+                :key="`${child.type}:${child.url}`"
+              >
+                <a :href="child.url" @click="emit('close')">{{ child.name }}</a>
               </li>
               <li>
-                <a :href="`/${locale}/products/`" @click="emit('close')">
-                  {{ labels.navigation.viewAllProducts }}
+                <a :href="item.path" @click="emit('close')">
+                  {{ item.label }}
                 </a>
               </li>
             </ul>
-          </li>
-
-          <li v-if="primary.has('solutions')">
-            <button
-              v-if="solutionItems.length"
-              type="button"
-              data-testid="mobile-solutions-toggle"
-              :aria-expanded="expanded === 'solutions'"
-              aria-controls="mobile-solutions-panel"
-              @click="toggleAccordion('solutions')"
-            >
-              {{ labels.navigation.solutions }}
-              <span aria-hidden="true">+</span>
-            </button>
-            <a v-else :href="`/${locale}/solutions/`" @click="emit('close')">
-              {{ labels.navigation.solutions }}
-            </a>
-            <ul
-              v-if="solutionItems.length"
-              v-show="expanded === 'solutions'"
-              id="mobile-solutions-panel"
-            >
-              <li v-for="item in solutionItems" :key="`${item.type}:${item.url}`">
-                <a :href="item.url" @click="emit('close')">{{ item.name }}</a>
-              </li>
-              <li>
-                <a :href="`/${locale}/solutions/`" @click="emit('close')">
-                  {{ labels.navigation.viewAllSolutions }}
-                </a>
-              </li>
-            </ul>
-          </li>
-
-          <li v-if="primary.has('materials')">
-            <button
-              v-if="navigation.materials.length"
-              type="button"
-              data-testid="mobile-materials-toggle"
-              :aria-expanded="expanded === 'materials'"
-              aria-controls="mobile-materials-panel"
-              @click="toggleAccordion('materials')"
-            >
-              {{ labels.navigation.materials }}
-              <span aria-hidden="true">+</span>
-            </button>
-            <a v-else :href="`/${locale}/materials/`" @click="emit('close')">
-              {{ labels.navigation.materials }}
-            </a>
-            <ul
-              v-if="navigation.materials.length"
-              v-show="expanded === 'materials'"
-              id="mobile-materials-panel"
-            >
-              <li v-for="item in navigation.materials" :key="`${item.type}:${item.url}`">
-                <a :href="item.url" @click="emit('close')">{{ item.name }}</a>
-              </li>
-              <li>
-                <a :href="`/${locale}/materials/`" @click="emit('close')">
-                  {{ labels.navigation.viewAllMaterials }}
-                </a>
-              </li>
-            </ul>
-          </li>
-
-          <li v-if="primary.has('applications')">
-            <button
-              v-if="navigation.applications.length"
-              type="button"
-              data-testid="mobile-applications-toggle"
-              :aria-expanded="expanded === 'applications'"
-              aria-controls="mobile-applications-panel"
-              @click="toggleAccordion('applications')"
-            >
-              {{ labels.navigation.applications }}
-              <span aria-hidden="true">+</span>
-            </button>
-            <a v-else :href="`/${locale}/applications/`" @click="emit('close')">
-              {{ labels.navigation.applications }}
-            </a>
-            <ul
-              v-if="navigation.applications.length"
-              v-show="expanded === 'applications'"
-              id="mobile-applications-panel"
-            >
-              <li v-for="item in navigation.applications" :key="`${item.type}:${item.url}`">
-                <a :href="item.url" @click="emit('close')">{{ item.name }}</a>
-              </li>
-              <li>
-                <a :href="`/${locale}/applications/`" @click="emit('close')">
-                  {{ labels.navigation.viewAllApplications }}
-                </a>
-              </li>
-            </ul>
-          </li>
-
-          <li v-for="routeItem in staticRoutes" :key="routeItem.key">
-            <a :href="`/${locale}/${routeItem.key}/`" @click="emit('close')">
-              {{ routeItem.label }}
-            </a>
           </li>
         </ul>
       </nav>

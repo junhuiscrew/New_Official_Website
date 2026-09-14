@@ -9,7 +9,7 @@ import SearchButton from './SearchButton.vue'
 import type { MegaMenuSection } from './MegaMenu.vue'
 import { useTelemetry } from '~/composables/useTelemetry'
 import { ui } from '~/i18n/ui'
-import type { LocaleSlug, NavigationDto } from '~/types/public'
+import type { LocaleSlug, NavigationDto, NavigationMenuItemDto } from '~/types/public'
 
 type MenuKey = 'products' | 'solutions' | 'materials' | 'applications'
 
@@ -75,16 +75,76 @@ const hasSolutions = computed(
     props.navigation.solutions.featured.length > 0 ||
     props.navigation.solutions.problems.length > 0,
 )
-const primary = computed(() => new Set(props.navigation.primary))
+const brandLogo = computed(
+  () => props.navigation.brand?.media.header_logo?.url ?? '/brand/junhui-wordmark.png',
+)
+
+// 新设置未初始化时按旧合同生成等值菜单，避免部署迁移窗口造成导航归零。
+const headerItems = computed<NavigationMenuItemDto[]>(() => {
+  if (props.navigation.header_items?.length) return props.navigation.header_items
+  const routes: Record<string, { label: string; path: string }> = {
+    products: { label: labels.value.navigation.products, path: `/${props.locale}/products/` },
+    solutions: { label: labels.value.navigation.solutions, path: `/${props.locale}/solutions/` },
+    materials: { label: labels.value.navigation.materials, path: `/${props.locale}/materials/` },
+    applications: {
+      label: labels.value.navigation.applications,
+      path: `/${props.locale}/applications/`,
+    },
+    capabilities: {
+      label: labels.value.navigation.capabilities,
+      path: `/${props.locale}/capabilities/`,
+    },
+    case_studies: {
+      label: labels.value.navigation.caseStudies,
+      path: `/${props.locale}/case-studies/`,
+    },
+    knowledge: { label: labels.value.navigation.knowledge, path: `/${props.locale}/knowledge/` },
+    about: { label: labels.value.navigation.about, path: `/${props.locale}/about/` },
+  }
+  return props.navigation.primary.map((key) => ({ target_key: key, ...routes[key]! }))
+})
+
+/** 判断菜单项是否属于带动态内容的四个 Mega Menu。 */
+function isMenuKey(key: string): key is MenuKey {
+  return ['products', 'solutions', 'materials', 'applications'].includes(key)
+}
+
+/** 返回指定 Mega Menu 是否已有当前语言公开内容。 */
+function hasMenuContent(key: string): boolean {
+  if (!isMenuKey(key)) return false
+  if (key === 'products') return hasProducts.value
+  if (key === 'solutions') return hasSolutions.value
+  if (key === 'materials') return props.navigation.materials.length > 0
+  return props.navigation.applications.length > 0
+}
+
+/** 返回指定 Mega Menu 的发布内容分组。 */
+function menuSections(key: string): MegaMenuSection[] {
+  if (!isMenuKey(key)) return []
+  if (key === 'products') return productSections.value
+  if (key === 'solutions') return solutionSections.value
+  if (key === 'materials') return materialSections.value
+  return applicationSections.value
+}
 
 /** 保存各桌面 disclosure 按钮，关闭菜单时用于焦点回收。 */
 function setMenuButton(key: MenuKey, element: unknown): void {
   if (element instanceof HTMLButtonElement) menuButtons.set(key, element)
 }
 
+/** 输入任意服务端目标键和元素；输出无，仅登记受支持 Mega Menu 按钮。 */
+function setMenuButtonForKey(key: string, element: unknown): void {
+  if (isMenuKey(key)) setMenuButton(key, element)
+}
+
 /** 打开指定菜单；再次点击同一按钮时关闭。 */
 function toggleMenu(key: MenuKey): void {
   openMenu.value = openMenu.value === key ? null : key
+}
+
+/** 输入任意服务端目标键；输出无，仅切换受支持 Mega Menu。 */
+function toggleMenuForKey(key: string): void {
+  if (isMenuKey(key)) toggleMenu(key)
 }
 
 /** 关闭当前桌面菜单，并在 Escape/外部点击时恢复触发按钮焦点。 */
@@ -128,122 +188,44 @@ onBeforeUnmount(() => {
   <header ref="root" class="site-header">
     <div class="site-header__inner">
       <a class="site-header__brand" :href="`/${locale}/`" :aria-label="labels.navigation.home">
-        <img src="/brand/junhui-wordmark.png" alt="" width="220" height="60" />
+        <img :src="brandLogo" :alt="navigation.brand?.display_name ?? ''" width="220" height="60" />
       </a>
 
       <nav class="desktop-nav" data-testid="desktop-nav" :aria-label="labels.navigation.menu">
-        <div v-if="primary.has('products')" class="desktop-nav__item">
-          <button
-            v-if="hasProducts"
-            :ref="(element) => setMenuButton('products', element)"
-            type="button"
-            data-testid="desktop-products-toggle"
-            :aria-expanded="openMenu === 'products'"
-            aria-controls="products-mega-menu"
-            @click="toggleMenu('products')"
-          >
-            {{ labels.navigation.products }}
-          </button>
-          <a v-else :href="`/${locale}/products/`">{{ labels.navigation.products }}</a>
-          <MegaMenu
-            v-if="hasProducts"
-            id="products-mega-menu"
-            test-id="products-mega-menu"
-            :open="openMenu === 'products'"
-            :sections="productSections"
-            :view-all="{
-              label: labels.navigation.viewAllProducts,
-              href: `/${locale}/products/`,
-            }"
-            @close="closeMenu(true)"
-          />
+        <div
+          v-for="item in headerItems"
+          :key="item.target_key"
+          class="desktop-nav__item"
+          :data-menu-key="item.target_key"
+        >
+          <template v-if="isMenuKey(item.target_key)">
+            <button
+              v-if="hasMenuContent(item.target_key)"
+              :ref="(element) => setMenuButtonForKey(item.target_key, element)"
+              type="button"
+              :data-testid="`desktop-${item.target_key}-toggle`"
+              :aria-expanded="openMenu === item.target_key"
+              :aria-controls="`${item.target_key}-mega-menu`"
+              @click="toggleMenuForKey(item.target_key)"
+            >
+              {{ item.label }}
+            </button>
+            <a v-else :href="item.path">{{ item.label }}</a>
+            <MegaMenu
+              v-if="hasMenuContent(item.target_key)"
+              :id="`${item.target_key}-mega-menu`"
+              :test-id="`${item.target_key}-mega-menu`"
+              :open="openMenu === item.target_key"
+              :sections="menuSections(item.target_key)"
+              :view-all="{
+                label: item.label,
+                href: item.path,
+              }"
+              @close="closeMenu(true)"
+            />
+          </template>
+          <a v-else :href="item.path">{{ item.label }}</a>
         </div>
-        <div v-if="primary.has('solutions')" class="desktop-nav__item">
-          <button
-            v-if="hasSolutions"
-            :ref="(element) => setMenuButton('solutions', element)"
-            type="button"
-            data-testid="desktop-solutions-toggle"
-            :aria-expanded="openMenu === 'solutions'"
-            aria-controls="solutions-mega-menu"
-            @click="toggleMenu('solutions')"
-          >
-            {{ labels.navigation.solutions }}
-          </button>
-          <a v-else :href="`/${locale}/solutions/`">{{ labels.navigation.solutions }}</a>
-          <MegaMenu
-            v-if="hasSolutions"
-            id="solutions-mega-menu"
-            test-id="solutions-mega-menu"
-            :open="openMenu === 'solutions'"
-            :sections="solutionSections"
-            :view-all="{
-              label: labels.navigation.viewAllSolutions,
-              href: `/${locale}/solutions/`,
-            }"
-            @close="closeMenu(true)"
-          />
-        </div>
-        <div v-if="primary.has('materials')" class="desktop-nav__item">
-          <button
-            v-if="navigation.materials.length"
-            :ref="(element) => setMenuButton('materials', element)"
-            type="button"
-            :aria-expanded="openMenu === 'materials'"
-            aria-controls="materials-mega-menu"
-            @click="toggleMenu('materials')"
-          >
-            {{ labels.navigation.materials }}
-          </button>
-          <a v-else :href="`/${locale}/materials/`">{{ labels.navigation.materials }}</a>
-          <MegaMenu
-            v-if="navigation.materials.length"
-            id="materials-mega-menu"
-            test-id="materials-mega-menu"
-            :open="openMenu === 'materials'"
-            :sections="materialSections"
-            :view-all="{
-              label: labels.navigation.viewAllMaterials,
-              href: `/${locale}/materials/`,
-            }"
-            @close="closeMenu(true)"
-          />
-        </div>
-        <div v-if="primary.has('applications')" class="desktop-nav__item">
-          <button
-            v-if="navigation.applications.length"
-            :ref="(element) => setMenuButton('applications', element)"
-            type="button"
-            :aria-expanded="openMenu === 'applications'"
-            aria-controls="applications-mega-menu"
-            @click="toggleMenu('applications')"
-          >
-            {{ labels.navigation.applications }}
-          </button>
-          <a v-else :href="`/${locale}/applications/`">{{ labels.navigation.applications }}</a>
-          <MegaMenu
-            v-if="navigation.applications.length"
-            id="applications-mega-menu"
-            test-id="applications-mega-menu"
-            :open="openMenu === 'applications'"
-            :sections="applicationSections"
-            :view-all="{
-              label: labels.navigation.viewAllApplications,
-              href: `/${locale}/applications/`,
-            }"
-            @close="closeMenu(true)"
-          />
-        </div>
-        <a v-if="primary.has('capabilities')" :href="`/${locale}/capabilities/`">{{
-          labels.navigation.capabilities
-        }}</a>
-        <a v-if="primary.has('case_studies')" :href="`/${locale}/case-studies/`">{{
-          labels.navigation.caseStudies
-        }}</a>
-        <a v-if="primary.has('knowledge')" :href="`/${locale}/knowledge/`">{{
-          labels.navigation.knowledge
-        }}</a>
-        <a v-if="primary.has('about')" :href="`/${locale}/about/`">{{ labels.navigation.about }}</a>
       </nav>
 
       <div class="site-header__actions" @click.capture="closeMenu(false)">

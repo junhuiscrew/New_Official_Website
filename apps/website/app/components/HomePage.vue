@@ -95,13 +95,17 @@ const trustMetrics = computed<HomeMetric[]>(() => {
 /** 仅将后端可选 SEO 与 Schema 放入 Head；API 未提供时不生成替代规则。 */
 useHead(() => {
   const seo = props.home.seo
+  const sliderMedia = props.home.presentation?.modules.find((module) => module.key === 'hero')
+    ?.slides?.[0]?.media
+  // 新轮播优先预载首张已公开图片；旧首页配置继续回退到原 Hero 图片。
+  const preloadMedia = sliderMedia?.type === 'image' ? sliderMedia : props.home.hero_media
   const heroPreload =
-    props.home.hero_media?.type === 'image'
+    preloadMedia?.type === 'image'
       ? [
           {
             rel: 'preload',
             as: 'image',
-            href: props.home.hero_media.src,
+            href: preloadMedia.src,
             fetchpriority: 'high',
           },
         ]

@@ -1,4 +1,4 @@
-<!-- 页面用途：用可视化表单维护双语首页十四模块的顺序、显隐、样式和已发布产品引用。 -->
+<!-- 页面用途：用可视化表单维护双语首页十四模块、Hero 轮播及已发布产品引用。 -->
 <script setup lang="ts">
 import { adminMeta } from '../admin-config'
 
@@ -23,6 +23,17 @@ interface ModuleConfig {
   visible: boolean
   variant: string
   product_slugs: string[]
+  slides: HeroSlideConfig[]
+}
+
+interface HeroSlideConfig {
+  id: string
+  media_id: string
+  title: string
+  subtitle: string
+  cta_label: string | null
+  cta_href: string | null
+  enabled: boolean
 }
 
 interface LayoutConfig {
@@ -35,6 +46,18 @@ interface ProductOption {
   name: string
   summary: string
   media?: { src: string; alt: string } | null
+}
+
+interface MediaOption {
+  id: string
+  type: string
+  filename: string
+  url: string | null
+  mime_type: string
+  visibility: string
+  upload_status: string
+  width: number | null
+  height: number | null
 }
 
 interface LanguageDetail {
@@ -93,6 +116,7 @@ const productReferenceModules = new Set<ModuleKey>(['hero', 'core_product_famili
 const { currentUser } = useAuth()
 const api = useAuthorityApi()
 const detail = ref<HomepageDetail | null>(null)
+const mediaOptions = ref<MediaOption[]>([])
 const activeLocaleCode = ref('zh-CN')
 const editableModules = ref<ModuleConfig[]>([])
 const activeModuleKey = ref<ModuleKey>('hero')
@@ -100,6 +124,7 @@ const loading = ref(true)
 const saving = ref(false)
 const message = ref('')
 const errorMessage = ref('')
+const previewNonce = ref(0)
 
 const canRead = computed(() => currentUser.value?.permissions.includes('content.read') ?? false)
 const canEdit = computed(() => currentUser.value?.permissions.includes('content.update') ?? false)
@@ -110,6 +135,19 @@ const activeLanguage = computed(
 const previewUrl = computed(
   // 使用当前后台同源路径，确保主实例与 Demo 各自留在自己的认证边界内。
   () => `/preview/${activeLanguage.value?.locale.slug ?? 'zh-cn'}/`,
+)
+const previewFrameKey = computed(
+  () =>
+    `${previewUrl.value}:${activeLanguage.value?.layout.draft_revision ?? 0}:${previewNonce.value}`,
+)
+const eligibleMedia = computed(() =>
+  mediaOptions.value.filter(
+    (item) =>
+      item.type === 'image' &&
+      item.visibility === 'public' &&
+      item.upload_status === 'ready' &&
+      Boolean(item.url),
+  ),
 )
 const activeModule = computed(
   () => editableModules.value.find((module) => module.key === activeModuleKey.value) ?? null,
@@ -126,7 +164,8 @@ const hasUnappliedChanges = computed(() => {
       module.key !== saved.key ||
       module.visible !== saved.visible ||
       module.variant !== saved.variant ||
-      module.product_slugs.join('|') !== saved.product_slugs.join('|')
+      module.product_slugs.join('|') !== saved.product_slugs.join('|') ||
+      !sameSlides(module.slides, saved.slides)
     )
   })
 })
@@ -141,7 +180,29 @@ function cloneModules(modules: ModuleConfig[]): ModuleConfig[] {
   return modules.map((module) => ({
     ...module,
     product_slugs: [...module.product_slugs],
+    slides: (module.slides ?? []).map((slide) => ({ ...slide })),
   }))
+}
+
+/** 输入两组轮播配置；输出 boolean，用字段级比较识别尚未应用的改动。 */
+function sameSlides(current: HeroSlideConfig[], saved: HeroSlideConfig[] | undefined): boolean {
+  const baseline = saved ?? []
+  return (
+    current.length === baseline.length &&
+    current.every((slide, index) => {
+      const target = baseline[index]
+      if (!target) return false
+      return (
+        slide.id === target.id &&
+        slide.media_id === target.media_id &&
+        slide.title === target.title &&
+        slide.subtitle === target.subtitle &&
+        slide.cta_label === target.cta_label &&
+        slide.cta_href === target.cta_href &&
+        slide.enabled === target.enabled
+      )
+    })
+  )
 }
 
 /** 读取双语首页详情，并把当前语言的最新草稿装入编辑器。 */
@@ -149,7 +210,12 @@ async function loadHomepage(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    detail.value = await api.detail<HomepageDetail>('/presentation/homepage')
+    const [homepage, media] = await Promise.all([
+      api.detail<HomepageDetail>('/presentation/homepage'),
+      api.detail<MediaOption[]>('/media'),
+    ])
+    detail.value = homepage
+    mediaOptions.value = media
     if (!detail.value.languages.some((item) => item.locale.code === activeLocaleCode.value)) {
       activeLocaleCode.value = detail.value.languages[0]?.locale.code ?? 'zh-CN'
     }
@@ -163,6 +229,57 @@ async function loadHomepage(): Promise<void> {
   } finally {
     loading.value = false
   }
+}
+
+/** 输入媒体 ID；输出可用于后台预览的公开图片选项。 */
+function mediaFor(mediaId: string): MediaOption | undefined {
+  return eligibleMedia.value.find((item) => item.id === mediaId)
+}
+
+/** 输入无；输出无，在 Hero 末尾新增一项可编辑的 Demo 轮播草稿。 */
+function addHeroSlide(): void {
+  if (!activeModule.value || activeModule.value.key !== 'hero' || !canEdit.value) return
+  if (activeModule.value.slides.length >= 5) {
+    errorMessage.value = 'Hero 轮播最多 5 张；请先停用或删除不需要的项目。'
+    return
+  }
+  const media = eligibleMedia.value[0]
+  if (!media) {
+    errorMessage.value = '媒体库暂无已就绪的公开图片，请先到“媒体资源库”上传。'
+    return
+  }
+  activeModule.value.slides.push({
+    id: `demo-hero-${Date.now()}`,
+    media_id: media.id,
+    title: '新的 Demo 轮播项',
+    subtitle: '请替换为当前语言的演示说明。',
+    cta_label: null,
+    cta_href: null,
+    enabled: true,
+  })
+  message.value = '已在当前语言草稿中新增轮播项；请填写后保存草稿。'
+  errorMessage.value = ''
+}
+
+/** 输入轮播下标；输出无，经确认后从当前语言草稿删除对应项目。 */
+function removeHeroSlide(index: number): void {
+  if (!activeModule.value || activeModule.value.key !== 'hero' || !canEdit.value) return
+  if (!window.confirm('确定从当前语言草稿中删除这张轮播图吗？')) return
+  activeModule.value.slides.splice(index, 1)
+}
+
+/** 输入轮播下标和方向；输出无，仅调整当前语言草稿中的显示顺序。 */
+function moveHeroSlide(index: number, direction: -1 | 1): void {
+  if (!activeModule.value || activeModule.value.key !== 'hero' || !canEdit.value) return
+  const destination = index + direction
+  if (destination < 0 || destination >= activeModule.value.slides.length) return
+  const [slide] = activeModule.value.slides.splice(index, 1)
+  if (slide) activeModule.value.slides.splice(destination, 0, slide)
+}
+
+/** 输入可空表单值；输出去除首尾空格后的字符串或 null。 */
+function optionalText(value: string | null): string | null {
+  return value?.trim() || null
 }
 
 /** 幂等建立固定首页身份和双语十四模块配置。 */
@@ -205,11 +322,21 @@ async function saveDraft(): Promise<void> {
   message.value = ''
   errorMessage.value = ''
   try {
+    const modules = cloneModules(editableModules.value).map((module) => ({
+      ...module,
+      slides: module.slides.map((slide) => ({
+        ...slide,
+        title: slide.title.trim(),
+        subtitle: slide.subtitle.trim(),
+        cta_label: optionalText(slide.cta_label),
+        cta_href: optionalText(slide.cta_href),
+      })),
+    }))
     const saved = await api.update<LanguageDetail>(
       `/presentation/homepage/${activeLocaleCode.value}/draft`,
       {
         expected_revision: activeLanguage.value.layout.draft_revision,
-        modules: editableModules.value,
+        modules,
       },
     )
     const languageIndex = detail.value!.languages.findIndex(
@@ -217,6 +344,7 @@ async function saveDraft(): Promise<void> {
     )
     detail.value!.languages[languageIndex] = saved
     editableModules.value = cloneModules(saved.layout.draft.modules)
+    previewNonce.value += 1
     message.value = `草稿已保存并回读，revision ${saved.layout.draft_revision}。`
   } catch {
     errorMessage.value = '保存失败或 revision 已冲突；未覆盖服务端修改，请重新读取。'
@@ -266,6 +394,11 @@ async function restoreDraft(): Promise<void> {
 /** 在新的 Admin 同源标签页打开由服务端校验的完整布局预览。 */
 function openPreview(): void {
   window.open(previewUrl.value, '_blank', 'noopener,noreferrer')
+}
+
+/** 输入无；输出无，强制重新加载已保存草稿的认证预览。 */
+function refreshPreview(): void {
+  previewNonce.value += 1
 }
 
 watch(activeLocaleCode, () => {
@@ -414,6 +547,139 @@ onMounted(loadHomepage)
             </label>
           </div>
 
+          <!-- Hero 轮播编辑器：每个语言分别保存，图片只能从公开且已就绪的媒体库中选择。 -->
+          <section
+            v-if="activeModule.key === 'hero'"
+            class="hero-slide-editor"
+            data-testid="hero-slide-editor"
+          >
+            <header>
+              <div>
+                <h3>Banner Slider 轮播图</h3>
+                <p>
+                  当前为 {{ activeLanguage?.locale.native_name }} 文案；切换上方语言后分别维护。
+                  新增内容和图片仅为 Demo 素材，不代表正式企业资料。
+                </p>
+              </div>
+              <button
+                type="button"
+                :disabled="!canEdit || activeModule.slides.length >= 5"
+                @click="addHeroSlide"
+              >
+                新增轮播项
+              </button>
+            </header>
+            <p class="hero-slide-editor__limit">
+              最多 5 张；列表顺序就是前台播放顺序。保存草稿后可在下方预览。
+            </p>
+
+            <div v-if="!activeModule.slides.length" class="hero-slide-editor__empty">
+              当前语言尚无轮播项，普通首页会继续使用原 Hero，不影响其他 13 个模块。
+            </div>
+
+            <article
+              v-for="(slide, slideIndex) in activeModule.slides"
+              :key="slide.id"
+              class="hero-slide-card"
+            >
+              <header>
+                <div class="hero-slide-card__identity">
+                  <span>{{ String(slideIndex + 1).padStart(2, '0') }}</span>
+                  <div>
+                    <strong>{{ slide.title || '未填写标题' }}</strong>
+                    <small>{{ slide.enabled ? '已启用' : '已停用' }}</small>
+                  </div>
+                </div>
+                <div class="hero-slide-card__actions">
+                  <button
+                    type="button"
+                    aria-label="轮播项上移"
+                    :disabled="!canEdit || slideIndex === 0"
+                    @click="moveHeroSlide(slideIndex, -1)"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="轮播项下移"
+                    :disabled="!canEdit || slideIndex === activeModule.slides.length - 1"
+                    @click="moveHeroSlide(slideIndex, 1)"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    class="hero-slide-card__delete"
+                    :disabled="!canEdit"
+                    @click="removeHeroSlide(slideIndex)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </header>
+
+              <div class="hero-slide-card__body">
+                <figure>
+                  <img
+                    v-if="mediaFor(slide.media_id)?.url"
+                    :src="mediaFor(slide.media_id)!.url!"
+                    :alt="mediaFor(slide.media_id)!.filename"
+                    :width="mediaFor(slide.media_id)!.width ?? undefined"
+                    :height="mediaFor(slide.media_id)!.height ?? undefined"
+                  />
+                  <figcaption>
+                    {{ mediaFor(slide.media_id)?.filename || '图片当前不可公开使用' }}
+                  </figcaption>
+                </figure>
+
+                <div class="hero-slide-card__fields">
+                  <label class="hero-slide-card__enabled">
+                    <input v-model="slide.enabled" type="checkbox" :disabled="!canEdit" />
+                    在前台启用这一项
+                  </label>
+                  <label>
+                    图片
+                    <select v-model="slide.media_id" required :disabled="!canEdit">
+                      <option v-for="media in eligibleMedia" :key="media.id" :value="media.id">
+                        {{ media.filename }}（{{ media.width || '?' }} × {{ media.height || '?' }}）
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    主标题
+                    <input v-model="slide.title" maxlength="120" required :disabled="!canEdit" />
+                  </label>
+                  <label>
+                    副标题
+                    <textarea
+                      v-model="slide.subtitle"
+                      maxlength="300"
+                      rows="3"
+                      required
+                      :disabled="!canEdit"
+                    />
+                  </label>
+                  <div class="hero-slide-card__cta-fields">
+                    <label>
+                      按钮文案（可留空）
+                      <input v-model="slide.cta_label" maxlength="40" :disabled="!canEdit" />
+                    </label>
+                    <label>
+                      跳转链接（可留空）
+                      <input
+                        v-model="slide.cta_href"
+                        maxlength="240"
+                        placeholder="/zh-cn/products/"
+                        :disabled="!canEdit"
+                      />
+                    </label>
+                  </div>
+                  <p>按钮文案与跳转链接必须同时填写；链接只允许当前站点内的绝对路径。</p>
+                </div>
+              </div>
+            </article>
+          </section>
+
           <fieldset
             v-if="productReferenceModules.has(activeModule.key)"
             class="product-reference"
@@ -439,9 +705,17 @@ onMounted(loadHomepage)
           <div class="homepage-preview-frame">
             <header>
               <span>认证完整布局预览</span>
-              <button type="button" @click="openPreview">新窗口打开</button>
+              <span>
+                <button type="button" @click="refreshPreview">刷新预览</button>
+                <button type="button" @click="openPreview">新窗口打开</button>
+              </span>
             </header>
-            <iframe :src="previewUrl" title="首页完整布局预览" loading="lazy" />
+            <iframe
+              :key="previewFrameKey"
+              :src="previewUrl"
+              title="首页完整布局预览"
+              loading="lazy"
+            />
           </div>
         </section>
 
@@ -763,6 +1037,187 @@ onMounted(loadHomepage)
   color: #65778a;
 }
 
+.hero-slide-editor {
+  margin-inline: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.hero-slide-editor > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.hero-slide-editor h3,
+.hero-slide-editor p {
+  margin: 0;
+}
+
+.hero-slide-editor h3 {
+  color: #173651;
+  font-size: 0.98rem;
+}
+
+.hero-slide-editor > header p,
+.hero-slide-editor__limit,
+.hero-slide-card__fields > p {
+  margin-top: 0.25rem;
+  color: #65778a;
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.hero-slide-editor > header button {
+  flex: none;
+  color: #fff;
+  background: #0a5da8;
+  border: 1px solid #0a5da8;
+  border-radius: 0.4rem;
+}
+
+.hero-slide-editor__empty {
+  padding: 1.2rem;
+  color: #536b80;
+  background: #f6f9fb;
+  border: 1px dashed #b8c9d7;
+  border-radius: 0.5rem;
+  text-align: center;
+}
+
+.hero-slide-card {
+  overflow: hidden;
+  border: 1px solid #cbd9e5;
+  border-radius: 0.65rem;
+}
+
+.hero-slide-card > header {
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: linear-gradient(90deg, #eef6fc, #f9fbfd);
+  border-bottom: 1px solid #dbe5ed;
+}
+
+.hero-slide-card__identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.hero-slide-card__identity > span {
+  color: #0a5da8;
+  font-family: Consolas, monospace;
+  font-weight: 800;
+}
+
+.hero-slide-card__identity div {
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.hero-slide-card__identity strong {
+  overflow: hidden;
+  color: #173651;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-slide-card__identity small {
+  color: #65778a;
+  font-size: 0.64rem;
+}
+
+.hero-slide-card__actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.hero-slide-card__actions button {
+  min-height: 1.9rem;
+  padding: 0.25rem 0.55rem;
+  color: #24415f;
+  background: #fff;
+  border: 1px solid #b8c9d7;
+  border-radius: 0.3rem;
+}
+
+.hero-slide-card__actions .hero-slide-card__delete {
+  color: #942f2f;
+  border-color: #e0b5b5;
+}
+
+.hero-slide-card__body {
+  padding: 0.8rem;
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.38fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 0.9rem;
+}
+
+.hero-slide-card figure {
+  margin: 0;
+  overflow: hidden;
+  background: #07182b;
+  border-radius: 0.45rem;
+}
+
+.hero-slide-card figure img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: cover;
+}
+
+.hero-slide-card figcaption {
+  padding: 0.45rem 0.55rem;
+  overflow: hidden;
+  color: #cfe5f7;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-slide-card__fields {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.hero-slide-card__fields label {
+  display: grid;
+  gap: 0.3rem;
+  color: #40576d;
+  font-size: 0.7rem;
+}
+
+.hero-slide-card__fields input,
+.hero-slide-card__fields select,
+.hero-slide-card__fields textarea {
+  width: 100%;
+}
+
+.hero-slide-card__enabled {
+  grid-template-columns: auto 1fr !important;
+  align-items: center;
+}
+
+.hero-slide-card__enabled input {
+  width: auto;
+  min-height: auto;
+}
+
+.hero-slide-card__cta-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.65rem;
+}
+
 .homepage-preview-frame {
   margin-inline: 1rem;
   overflow: hidden;
@@ -777,6 +1232,10 @@ onMounted(loadHomepage)
   justify-content: space-between;
   color: #d8eafa;
   font-size: 0.68rem;
+}
+.homepage-preview-frame > header > span:last-child {
+  display: flex;
+  gap: 0.4rem;
 }
 .homepage-preview-frame button {
   padding: 0.35rem 0.55rem;
@@ -881,7 +1340,9 @@ onMounted(loadHomepage)
   }
 
   .module-controls,
-  .product-reference {
+  .product-reference,
+  .hero-slide-card__body,
+  .hero-slide-card__cta-fields {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -15,6 +15,8 @@ from app.modules.audit.models import AuditLog
 from app.modules.auth import models as auth_models  # noqa: F401
 from app.modules.content import models as content_models  # noqa: F401
 from app.modules.localization import models as localization_models  # noqa: F401
+from app.modules.localization.models import Locale
+from app.modules.media.models import DownloadResource, DownloadResourceTranslation, MediaAsset
 from app.modules.users.bootstrap import create_super_admin
 from app.modules.users.models import Permission, Role, RolePermission, User, UserRole
 from app.seed import PERMISSION_CODES, seed_database
@@ -106,6 +108,86 @@ async def test_admin_can_view_eight_roles_and_permissions(
     super_admin = next(item for item in response.json()["data"] if item["name"] == "super_admin")
     assert len(super_admin["permissions"]) == len(PERMISSION_CODES)
     assert super_admin["is_system"] is True
+
+
+async def test_download_update_returns_fresh_record_after_commit(
+    admin_api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """
+    验证下载资料更新提交后仍能返回含服务端时间戳的完整记录。
+
+    输入：
+        admin_api_session_factory: async_sessionmaker[AsyncSession]，隔离数据库会话工厂。
+
+    输出：
+        None；断言 PATCH 不触发异步延迟加载，并返回刚保存的版本标签。
+    """
+    async with admin_api_session_factory() as session, session.begin():
+        locale = await session.scalar(select(Locale).where(Locale.code == "zh-CN"))
+        assert locale is not None
+        asset = MediaAsset(
+            visibility="public",
+            media_type="document",
+            storage_bucket="public-media",
+            storage_key="tests/download-update.pdf",
+            original_filename="download-update.pdf",
+            sanitized_filename="download-update.pdf",
+            mime_type="application/pdf",
+            file_extension=".pdf",
+            file_size_bytes=16,
+            sha256="a" * 64,
+            checksum_verified=True,
+            malware_scan_status="clean",
+            upload_status="ready",
+        )
+        session.add(asset)
+        await session.flush()
+        resource = DownloadResource(
+            slug="download-update-test",
+            resource_type="document",
+            status="enabled",
+            media_asset_id=asset.id,
+            version_label="before",
+            sort_order=10,
+        )
+        session.add(resource)
+        await session.flush()
+        session.add(
+            DownloadResourceTranslation(
+                download_resource_id=resource.id,
+                locale_id=locale.id,
+                title="下载更新测试",
+                summary="更新前",
+            )
+        )
+        resource_id = resource.id
+        asset_id = asset.id
+        locale_id = locale.id
+
+    async with _admin_client(admin_api_session_factory) as client:
+        response = await client.patch(
+            f"/api/v1/downloads/{resource_id}",
+            json={
+                "slug": "download-update-test",
+                "resource_type": "document",
+                "status": "enabled",
+                "media_asset_id": str(asset_id),
+                "version_label": "after",
+                "published_date": None,
+                "requires_form": False,
+                "sort_order": 10,
+                "translations": [
+                    {
+                        "locale_id": str(locale_id),
+                        "fields": {"title": "下载更新测试", "summary": "更新后"},
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["version_label"] == "after"
+    assert response.json()["data"]["updated_at"] is not None
 
 
 async def test_test_only_role_permissions_save_audit_and_fresh_read(

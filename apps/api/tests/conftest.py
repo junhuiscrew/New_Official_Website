@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -38,7 +39,9 @@ def reset_settings_cache(monkeypatch: pytest.MonkeyPatch):
         "DATABASE_URL",
         "postgresql+asyncpg://test_user:phase32-test-db-secret@postgres-test:5432/junhui_test",
     )
-    monkeypatch.setenv("MINIO_SECRET_KEY", "junhui-minio-development-secret-32-bytes")
+    # 真实 MinIO 集成测试必须保留容器注入的凭据；普通测试继续使用固定测试密钥。
+    if os.getenv("TEST_MINIO_REAL") != "1":
+        monkeypatch.setenv("MINIO_SECRET_KEY", "junhui-minio-development-secret-32-bytes")
     monkeypatch.setenv("JWT_SIGNING_SECRET", "phase32-test-jwt-signing-secret-at-least-32-bytes")
     monkeypatch.setenv("REFRESH_TOKEN_SECRET", "phase32-test-refresh-secret-at-least-32-bytes")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", '["http://testserver"]')

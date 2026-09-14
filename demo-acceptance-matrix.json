@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "20260911T112621+0800",
+  "environment": "junhui-demo-r2",
+  "conclusion": "DEMO_BASELINE_READY_FOR_OWNER_REVIEW",
+  "statusDefinitions": {
+    "PASS": "本轮在最终运行版本上有当前证据且结果满足 Demo 预期",
+    "PASS_WITH_LIMITATION": "核心验收通过，但存在已明确、非 Demo 级阻断的边界或技术债",
+    "EXPECTED_PROTECTION": "功能被当前 Demo 安全策略有意关闭或排除",
+    "NOT_TESTED": "本轮没有执行，不能使用历史数字代替"
+  },
+  "checks": [
+    {
+      "id": "VERSION-01",
+      "area": "统一版本",
+      "status": "PASS",
+      "result": "记录 HEAD d86f524、13 个 tracked dirty 文件及逐文件哈希、依赖锁、迁移 head、镜像摘要和启动配置；明确 HEAD 不代表未提交实现。",
+      "evidence": ["demo-baseline-manifest.json", "final/checks/runtime-final.json"]
+    },
+    {
+      "id": "PUBLIC-01",
+      "area": "前台一级入口",
+      "status": "PASS_WITH_LIMITATION",
+      "result": "桌面 1440 从首页正常点击产品、方案、材料、应用、制造能力、案例、知识、关于、搜索、RFQ、联系和下载共 12 个入口，均保持 Demo 同源并显示 H1。技术工艺当前未登记为一级主导航。",
+      "evidence": ["final/checks/public-first-level-clicks.json"]
+    },
+    {
+      "id": "PUBLIC-02",
+      "area": "真实关系串联",
+      "status": "PASS",
+      "result": "首页→产品筛选 9→2→清除恢复 9→产品详情→PA66 材料→知识→返回产品→磨损方案→RFQ；仅使用现有关系，RFQ 提交按钮保持禁用。",
+      "evidence": ["final/checks/public-integrated-acceptance.json", "final/screenshots/public"]
+    },
+    {
+      "id": "SEARCH-01",
+      "area": "八类搜索与分页",
+      "status": "PASS",
+      "result": "中文“演示”共 46 个唯一类型/路径组合、4 页，覆盖产品、材料、应用、解决方案、案例、知识文章、工艺技术、制造能力；总数、分页和去重一致。",
+      "evidence": ["final/checks/public-integrated-acceptance.json"]
+    },
+    {
+      "id": "SEARCH-02",
+      "area": "搜索状态与双语",
+      "status": "PASS",
+      "result": "清除后恢复未输入提示；英文 Nitriding 返回 1 result 且类型为 Technologies；手机 375 无横向溢出。特殊字符、语言隔离和资格排除由真实 PostgreSQL 回归覆盖。",
+      "evidence": ["final/checks/public-integrated-acceptance.json", "final/checks/test-results.json"]
+    },
+    {
+      "id": "MEDIA-01",
+      "area": "图片、Gallery、视频与 PDF",
+      "status": "PASS",
+      "result": "首页 19/19 图片解码；产品详情 2/2 图片解码；Gallery 可打开、Escape 关闭并恢复焦点；2 个 WebM 均实际播放约 1.3 秒；公开 PDF 返回 application/pdf、68291 字节且签名为 %PDF-。",
+      "evidence": ["final/checks/public-integrated-acceptance.json"]
+    },
+    {
+      "id": "RESPONSIVE-01",
+      "area": "桌面与手机",
+      "status": "PASS",
+      "result": "主链覆盖桌面 1440×900 与手机 375×812；后台代表长页覆盖 1366×768 和 1440×900、DPR 1、100% 页面缩放且无文档横向溢出。",
+      "evidence": ["final/checks/public-integrated-acceptance.json", "final/checks/admin-readonly-acceptance.json"]
+    },
+    {
+      "id": "ADMIN-01",
+      "area": "后台主要侧栏",
+      "status": "PASS",
+      "result": "20 个主要侧栏页面本轮实际进入；产品、案例、知识、FAQ、专家、制造能力、下载、媒体、角色均选择既有记录并读取编辑器；询盘仅只读数量，不创建记录。",
+      "evidence": ["final/checks/admin-readonly-acceptance.json", "final/checks/admin-sanitized-evidence.json", "final/screenshots/admin-sanitized"]
+    },
+    {
+      "id": "ADMIN-02",
+      "area": "Contact/RFQ 状态文案",
+      "status": "PASS",
+      "result": "联系页与询价页分别显示内容发布状态、页面访问状态、页面搜索引擎规则和环境保护；两页仍为 noindex，未修改 SEO 值、发布状态、权限或英文正文。",
+      "evidence": ["final/checks/admin-readonly-acceptance.json", "final/screenshots/admin-sanitized/1440-contact-seo-status-redacted.png", "final/screenshots/admin-sanitized/1440-rfq-seo-status-redacted.png"]
+    },
+    {
+      "id": "SEO-01",
+      "area": "六页 SEO 前基线",
+      "status": "PASS",
+      "result": "中英文 About、Contact、RFQ 六页的 title、description、canonical、hreflang、robots 与附件独立前基线逐项完全一致；Demo 响应继续全站 noindex/nofollow、no-store。",
+      "evidence": ["final/checks/seo-ssr-baseline-check.json"]
+    },
+    {
+      "id": "SEO-02",
+      "area": "代表页首次 HTML 与 GEO/JSON-LD",
+      "status": "PASS_WITH_LIMITATION",
+      "result": "产品、氮化工艺、制造能力、知识、案例代表页首次 HTML 均 200，JSON-LD 可解析；知识页显示演示原创且无外部背书声明。制造能力详情当前缺 meta description；JSON-LD 可解析不等于专家身份或技术事实获认证。",
+      "evidence": ["final/checks/seo-ssr-baseline-check.json"]
+    },
+    {
+      "id": "QA-WRITE-01",
+      "area": "TEST ONLY 产品写链",
+      "status": "PASS",
+      "result": "隔离 PostgreSQL/媒体/缓存中完成产品正文、规格、材料/工艺/应用/方案关系保存、双语审核发布、fresh GET、刷新重开及 QA 前台回读。",
+      "evidence": ["final/checks/qa-product-write-chain.json", "final/checks/qa-product-completion.json"]
+    },
+    {
+      "id": "QA-WRITE-02",
+      "area": "TEST ONLY 文章、FAQ、SEO/GEO",
+      "status": "PASS",
+      "result": "完成文章正文/关系/SEO/GEO、双语生命周期，以及已发布 FAQ 答案/关系/SEO/GEO；fresh GET 与正常点击 FAQ 手风琴的 QA 前台内容一致。",
+      "evidence": ["final/checks/qa-authority-final.json", "final/checks/faq-geo-current.json"]
+    },
+    {
+      "id": "QA-WRITE-03",
+      "area": "TEST ONLY 媒体、指定换图、下载",
+      "status": "PASS",
+      "result": "媒体元数据保存回读；产品主图指定位置替换并完成双语生命周期；下载资源首次暴露提交后序列化 500，修复后重试、fresh GET、重开和 QA 前台均通过。",
+      "evidence": ["final/checks/qa-media-product-download-final.json"]
+    },
+    {
+      "id": "QA-WRITE-04",
+      "area": "TEST ONLY 首页生命周期",
+      "status": "PASS",
+      "result": "14 模块基线下完成草稿、弹窗预览、内建恢复、临时应用、最终恢复应用；最终 14/14 模块与材料模块均恢复。",
+      "evidence": ["final/checks/qa-homepage-write-chain.json"]
+    },
+    {
+      "id": "QA-WRITE-05",
+      "area": "TEST ONLY 非系统角色权限",
+      "status": "PASS",
+      "result": "对无用户绑定的非系统测试角色添加 media.read、fresh GET、刷新重开，再恢复原权限；系统角色与真实员工权限均未修改。",
+      "evidence": ["final/checks/qa-role-write-chain.json"]
+    },
+    {
+      "id": "DATA-01",
+      "area": "主 Demo 业务数据只读",
+      "status": "PASS",
+      "result": "将前快照还原到隔离 PostgreSQL 后，对 93 个非认证/审计/RFQ 表逐表比较计数和规范 JSONB 哈希；前后聚合 SHA-256 完全一致。",
+      "evidence": ["final/checks/business-data-integrity.json"]
+    },
+    {
+      "id": "REGRESSION-01",
+      "area": "统一回归",
+      "status": "PASS_WITH_LIMITATION",
+      "result": "最终 API 387 passed；Website 157 passed；Admin 89 passed；typecheck、Prettier、Ruff lint、build、git diff check 通过。Ruff format --check 仍报告 102 个历史文件需格式化，本轮未越界批量改写。",
+      "evidence": ["final/checks/test-results.json"]
+    },
+    {
+      "id": "SECURITY-01",
+      "area": "Demo 保护",
+      "status": "EXPECTED_PROTECTION",
+      "result": "HTTPS、127.0.0.1:443、前台无 Basic 弹窗、后台登录/RBAC/CSRF、全站 noindex/no-store、Sitemap 404 均保持；Privacy 404、RFQ 禁用继续是 Demo 预期保护。",
+      "evidence": ["final/checks/runtime-final.json", "final/checks/public-integrated-acceptance.json"]
+    },
+    {
+      "id": "RESTART-01",
+      "area": "安全重开",
+      "status": "PASS",
+      "result": "仅停止并重启 junhui-demo-r2，保留卷和共享网关；未运行迁移、Seed 或 Restore；原 phase37 业务服务未重建或改动，最终 Demo 长驻服务健康。",
+      "evidence": ["final/checks/runtime-final.json"]
+    },
+    {
+      "id": "BROWSER-EXTRA-01",
+      "area": "其他浏览器与性能实验室",
+      "status": "NOT_TESTED",
+      "result": "本轮未执行 Safari/Firefox、Lighthouse、真实 Core Web Vitals、生产 CDN 或外网链路；不得用当前 Chrome 本地 Demo 结果代替。",
+      "evidence": []
+    }
+  ],
+  "openNonDemoBlockers": [
+    "Privacy 正式文本、版本批准与公开指针尚未完成",
+    "RFQ 提交、附件生命周期、真实邮件与留存/DSAR 政策仍未启用",
+    "演示数据、虚构案例、生成式素材、示例 PDF 和部分业务事实仍需真实批准资料替换",
+    "生产域名、基础设施、备份恢复、监控、Analytics 和正式部署未执行",
+    "制造能力详情 meta description 缺口与全库 Ruff 格式债务尚未处理"
+  ]
+}

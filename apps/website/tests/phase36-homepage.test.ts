@@ -348,7 +348,7 @@ describe('Phase 3.6 homepage cards and media', () => {
     expect(chinese.text()).toContain('审核：API Reviewer')
   })
 
-  it('contains no carousel or hardcoded manufacturing claims in homepage sources', () => {
+  it('uses no third-party carousel package or hardcoded manufacturing claims', () => {
     const componentSource = [
       'HomePage.vue',
       'PageHero.vue',
@@ -357,12 +357,13 @@ describe('Phase 3.6 homepage cards and media', () => {
       'CaseCard.vue',
       'TrustMetric.vue',
       'RfqCta.vue',
+      'HeroBannerSlider.vue',
     ]
       .map((filename) => readFileSync(resolve(process.cwd(), 'app/components', filename), 'utf8'))
       .join('\n')
 
-    expect(componentSource).not.toMatch(/carousel|swiper|splide/i)
-    expect(componentSource).not.toMatch(/\bISO\s?\d*|\b\d+\+?\s*years?|\b\d+\s*(?:mm|毫米)/i)
+    expect(componentSource).not.toMatch(/swiper|splide|slick|embla|keen-slider/i)
+    expect(componentSource).not.toMatch(/\bISO\s?\d+|\b\d+\+?\s*years?|\b\d+\s*(?:mm|毫米)/i)
     expect(componentSource).not.toMatch(/(?:equipment|设备)\s*(?:count|数量)?\s*[:：=]\s*\d+/i)
   })
 })

@@ -222,6 +222,62 @@ async def test_server_visible_text_supports_product_knowledge_and_expert(
 
 
 @pytest.mark.asyncio
+async def test_server_visible_text_supports_only_published_enabled_faq(
+    remediation_factory,
+) -> None:
+    """
+    验证 FAQ 的 GEO 事实预览只读取同语言、已发布且启用的问题与答案。
+
+    输入：隔离数据库中的 FAQ、翻译和翻译发布状态。
+    输出：None；公开 FAQ 未返回，或停用 FAQ 仍可进入事实池时失败。
+    """
+    from app.modules.authority.models import FAQ, FAQTranslation
+    from app.modules.content.models import TranslationStatus
+    from app.modules.discovery.services import build_visible_source_text
+    from app.modules.localization.models import Locale
+
+    async with remediation_factory() as session, session.begin():
+        locale = Locale(
+            code="zh-CN",
+            slug="zh-cn",
+            name="Simplified Chinese",
+            native_name="简体中文",
+            is_default=True,
+            is_enabled=True,
+        )
+        faq = FAQ(status="enabled")
+        session.add_all([locale, faq])
+        await session.flush()
+        session.add_all(
+            [
+                FAQTranslation(
+                    faq_id=faq.id,
+                    locale_id=locale.id,
+                    question="公开问题",
+                    answer="公开答案",
+                ),
+                TranslationStatus(
+                    owner_type="faq",
+                    owner_id=faq.id,
+                    locale_id=locale.id,
+                    status="published",
+                ),
+            ]
+        )
+        await session.flush()
+
+        visible = await build_visible_source_text(session, "faq", faq.id, locale.id)
+        assert "公开问题" in visible
+        assert "公开答案" in visible
+
+        faq.status = "disabled"
+        await session.flush()
+        with pytest.raises(AppException) as exc:
+            await build_visible_source_text(session, "faq", faq.id, locale.id)
+        assert exc.value.code == "visible_content_not_found"
+
+
+@pytest.mark.asyncio
 async def test_geo_uses_server_visible_case_content_and_excludes_private_identity(
     remediation_factory,
 ) -> None:

@@ -100,6 +100,21 @@ describe('Phase 3.6 search journey', () => {
     expect(source).toContain('`/${locale}/knowledge/`')
     expect(source).toContain('`/${locale}/request-a-quote/`')
   })
+
+  it('uses the singular English result label when the total is exactly one', () => {
+    const source = readAppSource('pages/[lang]/search/index.vue')
+    const dictionary = readAppSource('i18n/ui.ts')
+
+    expect(dictionary).toContain("resultCountOne: 'result'")
+    expect(source).toContain('totalResults === 1')
+    expect(source).toContain('labels.search.resultCountOne')
+  })
+
+  it('keeps the search and clear button labels on one line at intermediate widths', () => {
+    const source = readAppSource('pages/[lang]/search/index.vue')
+
+    expect(source).toMatch(/\.search-page__form button,[\s\S]*?white-space: nowrap;/)
+  })
 })
 
 describe('Phase 3.6 RFQ journey', () => {

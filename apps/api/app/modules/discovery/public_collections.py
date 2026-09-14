@@ -1560,7 +1560,9 @@ async def get_public_home(
         "seo": seo,
         "schema": schema,
     }
-    return attach_homepage_presentation(
+    return await attach_homepage_presentation(
+        session,
+        locale.id,
         home,
         config=layout_config,
         revision=layout_revision,

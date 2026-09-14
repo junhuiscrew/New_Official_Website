@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "1.0",
+  "runId": "20260911T112621+0800",
+  "conclusion": "DEMO_BASELINE_READY_FOR_OWNER_REVIEW",
+  "repository": "junhuiscrew/New_Official_Website",
+  "worktree": "D:/Python_Project/New_Official_Website/junhui-global-website/.worktrees/phase-3.6",
+  "branch": "phase-3.7",
+  "upstream": "origin/phase-3.7",
+  "head": "d86f524f0d973b70c4fef6d76c7a58bd6cfd18f0",
+  "gitState": {
+    "committedStateDoesNotRepresentRuntime": true,
+    "stagedPaths": [],
+    "trackedDirtyCount": 13,
+    "untrackedImplementationFiles": [],
+    "untrackedCategories": [
+      "既有历史证据 ZIP",
+      "既有报告与交接文档",
+      "本轮 artifacts 与最终交付文件",
+      "非实现类杂项工作区文件（含 a.offsetWidth，保留未清理）"
+    ],
+    "operationsNotPerformed": [
+      "reset",
+      "stash",
+      "switch/checkout",
+      "fetch",
+      "stage",
+      "commit",
+      "tag",
+      "push",
+      "merge",
+      "history cleanup"
+    ]
+  },
+  "trackedDirtyFiles": [
+    { "path": "README.md", "bytes": 9775, "sha256": "7df7bf79d0e6829795c0f60c3e2df9a147fe3845d979eb77d22fda6a9e7ee09b" },
+    { "path": "apps/admin/app/components/discovery/GeoEditor.vue", "bytes": 3268, "sha256": "4dd77bb3bc476c181f57a0efad6d15737900763da7d02d0ea60f8e953a3be3c6" },
+    { "path": "apps/api/app/api/v1/downloads.py", "bytes": 7733, "sha256": "6d0a0d64c6090e6153a3aea48caad54828facf512263348e73515b44fd93f6cc" },
+    { "path": "apps/api/app/api/v1/media.py", "bytes": 22927, "sha256": "e873b2240d45e26cef9ebe9f2f3e1064686e76db27e8b18f8e82f088a0d6eb3e" },
+    { "path": "apps/api/app/modules/discovery/services.py", "bytes": 58186, "sha256": "4370e5520a2a9e460da2a84cfbfc5e68ab1aafb2a48ef41061de3a884aafd290" },
+    { "path": "apps/api/tests/conftest.py", "bytes": 1807, "sha256": "30907d5e6b3fa646f63b11a7ce4727fd7de0c515cdeed859d1a0d3b59e7042eb" },
+    { "path": "apps/api/tests/test_admin_foundation_api.py", "bytes": 33720, "sha256": "6e77f3ef6524456e66fcb17dbfe2df6c4115fc875623ca4e3e92977d10f1e6f3" },
+    { "path": "apps/api/tests/test_phase34_migrations.py", "bytes": 3538, "sha256": "87d56d787075270443968f6da23c242b7dee0c811b3b1265e80c9f71d64f4df9" },
+    { "path": "apps/api/tests/test_phase34_remediation.py", "bytes": 25684, "sha256": "19d03d27c49c39afd55f80d71e01d300b5b552e2f6a2595827f21dccad47285d" },
+    { "path": "apps/api/tests/test_privacy_p1_postgresql.py", "bytes": 18938, "sha256": "901ab47f2a9469ea312062cca2389711bf70ace8705acdb8a05a9170cae3fc0b" },
+    { "path": "apps/website/app/i18n/ui.ts", "bytes": 27725, "sha256": "82cef37b45107a189261438a2129cf1e74b3390438454537e6aa692f99524d0f" },
+    { "path": "apps/website/app/pages/[lang]/search/index.vue", "bytes": 10247, "sha256": "d93be7097c625c16659db6af983409777d61f8f17f557e9937d4c54014848df2" },
+    { "path": "apps/website/tests/phase36-interactions.test.ts", "bytes": 14692, "sha256": "a90476f463168cf0748089519001f37818fb6a65b3750856948705494b9161fa" }
+  ],
+  "trackedDirtyAggregate": {
+    "algorithm": "SHA-256(path|bytes|sha256, UTF-8, LF, sorted path)",
+    "sha256": "fd9fb4ac6a1dc90e11692c8acbbbbcc580681152f248cacdc1d3628aa54e8eb8"
+  },
+  "dependenciesAndLaunchConfig": {
+    "pnpm": "11.19.0",
+    "node": "24.14.0",
+    "python": ">=3.12,<3.14",
+    "migrationHead": "20260910_0016",
+    "pnpmLockSha256": "725d122fab10942c20183e99c0633e133794f54985385c09ec62f2af18636e82",
+    "apiPyprojectSha256": "532f1d122ee4adaaef49902bfe4649d6f701c51fb56ca4329a1a45d9a11d210c",
+    "baseComposeSha256": "4d3de31434875b7eba8bdd47b20d1aca4302bb50aff3956e1f8a0edf59362dda",
+    "demoComposeSha256": "9ef7964bb158e6758a1e88047d1fe12452167874dc78223ecd5b5dfe0715cff7",
+    "launcherSha256": "b7f60c45f2b7b3d5c2cb38fb144690162996a5dc5c4a38128c83c2c6092ff306",
+    "runtimeScriptSha256": "8d48fadf0e7963815dc317b98cbc8c6353c30c41bd8de5da269c77a0923deba8",
+    "normalApiCommandContainsMigrationOrSeed": false
+  },
+  "runtime": {
+    "composeProject": "junhui-demo-r2",
+    "website": "https://demo.junhuiscrewbarrel.com/",
+    "admin": "https://admin-demo.junhuiscrewbarrel.com/",
+    "hostListener": "127.0.0.1:443",
+    "images": {
+      "api": "sha256:631f22f9363336fdfd3ef68c9e4f9a79afcefd29fd39128370f229b4eb387f4e",
+      "worker": "sha256:ee20ba75673d22f255325b0910cbca4d7303c9c24206d5f2078a0b6bdf7d4f8c",
+      "website": "sha256:a8ff2c42cb516475c53f5f31f9194b4b7b69361683b67ff4fc00cd1dcbc34b9b",
+      "admin": "sha256:096ebd2ff7268bc817d7c94addc52fe79775da7c812613a347957a64d7ea54d4"
+    },
+    "allLongRunningServicesHealthy": true,
+    "minioInitExitedZero": true,
+    "safeStopStartCompleted": true,
+    "originalPhase37Changed": false
+  },
+  "contentSummary": {
+    "demoContentRecords": 90,
+    "products": 9,
+    "productSpecValues": 45,
+    "mediaAssets": 48,
+    "homeModules": 14,
+    "publishedPrivacyPointers": 0,
+    "rfqs": 12,
+    "mainBusinessDataBeforeAfterExact": true,
+    "mainBusinessDataAggregateSha256": "2be287a92c017273fd7fb79d99cbac51e3f0ea5fff610666d70eef4cbdc0532d"
+  },
+  "inputPackage": {
+    "filename": "Junhui-Demo-Integrated-Acceptance-R1.zip",
+    "bytes": 47601,
+    "sha256": "fbff9efba819b3597ad1ca2e96fde3cf70e83a7f2933d82f8697a55fd7d3e194",
+    "includedInEvidenceZip": false
+  },
+  "privateExcluded": [
+    ".env.demo-r2",
+    "QA .env and credentials",
+    "database dump",
+    "unredacted RFQ screenshots",
+    "cookies/tokens/signed URLs"
+  ]
+}

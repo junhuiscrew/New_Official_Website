@@ -80,6 +80,7 @@ def default_homepage_config() -> dict[str, Any]:
                 "visible": True,
                 "variant": _DEFAULT_VARIANTS[key],
                 "product_slugs": [],
+                "slides": [],
             }
             for key in HOMEPAGE_MODULE_KEYS
         ],
@@ -96,4 +97,3 @@ def clone_homepage_config(config: dict[str, Any]) -> dict[str, Any]:
         dict，独立配置副本。
     """
     return deepcopy(config)
-

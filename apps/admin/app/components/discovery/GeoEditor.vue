@@ -104,7 +104,7 @@ function updateLines(
       >服务端可见事实来源
       <textarea :value="serverVisibleSourceText" readonly />
     </label>
-    <p>该预览由后端真实 Product / Case / Knowledge / Expert 内容构造，不能在此编辑。</p>
+    <p>该预览由后端真实产品、案例、知识、FAQ 或专家公开内容构造，不能在此编辑。</p>
     <button type="button" @click="$emit('save')">校验并保存 GEO</button>
   </fieldset>
 </template>

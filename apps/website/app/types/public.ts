@@ -321,6 +321,15 @@ export type HomepageModuleVariant =
   | 'split'
   | 'rail'
 
+/** Hero 轮播已经通过服务端公开门禁的单项 DTO。 */
+export interface HomepageHeroSlideDto {
+  title: string
+  subtitle: string
+  cta_label: string | null
+  cta_href: string | null
+  media: PublicMediaDto
+}
+
 /** 单个首页模块的公开渲染配置及真实内容状态。 */
 export interface HomepageModuleDto {
   key: HomepageModuleKey
@@ -330,6 +339,7 @@ export interface HomepageModuleDto {
   content_status: 'available' | 'missing'
   missing_reason: string | null
   management_url: string
+  slides?: HomepageHeroSlideDto[]
 }
 
 /** 首页应用版或作者草稿的服务端配置。 */

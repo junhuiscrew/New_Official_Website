@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260910T234537+0800",
+  "captured_at": "2026-09-11T01:09:17+08:00",
+  "target": "junhui-demo-r2",
+  "website_origin": "https://demo.junhuiscrewbarrel.com",
+  "canonical_origin": "https://junhuiscrewbarrel.com",
+  "baseline_head": "2fbcc7d84865d9e98092c3e6e78751f2337e5f0d",
+  "working_tree_committed": false,
+  "pages": {
+    "about.zh-CN": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/zh-cn/about/",
+      "before": {
+        "title": "舟山骏辉塑料机械有限公司",
+        "description": null,
+        "canonical": "https://junhuiscrewbarrel.com/zh-cn/about/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/about/",
+          "en": "https://junhuiscrewbarrel.com/en/about/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/about/"
+        },
+        "robots": "index, follow"
+      },
+      "after": {
+        "title": "舟山骏辉塑料机械有限公司",
+        "description": "DEMO 示例：了解螺杆、机筒及配套件的定制需求沟通、加工与检测衔接和配套件协同。本页内容仅用于演示，不代表真实项目或产能承诺。",
+        "canonical": "https://junhuiscrewbarrel.com/zh-cn/about/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/about/",
+          "en": "https://junhuiscrewbarrel.com/en/about/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/about/"
+        },
+        "robots": "index, follow"
+      }
+    },
+    "about.en": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/en/about/",
+      "before": {
+        "title": "Zhoushan Junhui Plastic Machinery Co., Ltd.",
+        "description": null,
+        "canonical": "https://junhuiscrewbarrel.com/en/about/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/about/",
+          "en": "https://junhuiscrewbarrel.com/en/about/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/about/"
+        },
+        "robots": "index, follow"
+      },
+      "after": {
+        "title": "Zhoushan Junhui Plastic Machinery Co., Ltd.",
+        "description": "DEMO: Explore requirement review, processing and inspection handoff, and coordination of screws, barrels and related components. Illustrative content, not evidence of actual projects or capacity.",
+        "canonical": "https://junhuiscrewbarrel.com/en/about/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/about/",
+          "en": "https://junhuiscrewbarrel.com/en/about/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/about/"
+        },
+        "robots": "index, follow"
+      }
+    },
+    "contact.zh-CN": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/zh-cn/contact/",
+      "before": {
+        "title": "联系我们 · 舟山骏辉塑料机械有限公司",
+        "description": "可查看并填写产品、材料、尺寸或当前问题；演示站不会创建询盘或发送真实邮件。",
+        "canonical": null,
+        "hreflang": null,
+        "robots": "noindex, nofollow"
+      },
+      "after": {
+        "title": "联系我们 · 舟山骏辉塑料机械有限公司",
+        "description": "可查看并填写产品、材料、尺寸或当前问题；演示站不会创建询盘或发送真实邮件。",
+        "canonical": "https://junhuiscrewbarrel.com/zh-cn/contact/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/contact/",
+          "en": "https://junhuiscrewbarrel.com/en/contact/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/contact/"
+        },
+        "robots": "noindex, nofollow"
+      }
+    },
+    "contact.en": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/en/contact/",
+      "before": {
+        "title": "Contact · Zhoushan Junhui Plastic Machinery Co., Ltd.",
+        "description": "You may review and fill in product, material, dimension, or problem details. The demo will not create an inquiry or send real email.",
+        "canonical": null,
+        "hreflang": null,
+        "robots": "noindex, nofollow"
+      },
+      "after": {
+        "title": "Contact · Zhoushan Junhui Plastic Machinery Co., Ltd.",
+        "description": "You may review and fill in product, material, dimension, or problem details. The demo will not create an inquiry or send real email.",
+        "canonical": "https://junhuiscrewbarrel.com/en/contact/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/contact/",
+          "en": "https://junhuiscrewbarrel.com/en/contact/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/contact/"
+        },
+        "robots": "noindex, nofollow"
+      }
+    },
+    "rfq.zh-CN": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/zh-cn/request-a-quote/",
+      "before": {
+        "title": "获取报价",
+        "description": null,
+        "canonical": null,
+        "hreflang": null,
+        "robots": "noindex, follow"
+      },
+      "after": {
+        "title": "获取报价",
+        "description": "查看螺杆、机筒及配套件的演示询价表单，了解设备信息和技术需求等填写项目。当前演示环境暂不提交询盘或上传附件。",
+        "canonical": "https://junhuiscrewbarrel.com/zh-cn/request-a-quote/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/request-a-quote/",
+          "en": "https://junhuiscrewbarrel.com/en/request-a-quote/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/request-a-quote/"
+        },
+        "robots": "noindex, follow"
+      }
+    },
+    "rfq.en": {
+      "preview_url": "https://demo.junhuiscrewbarrel.com/en/request-a-quote/",
+      "before": {
+        "title": "Request a Quote",
+        "description": null,
+        "canonical": null,
+        "hreflang": null,
+        "robots": "noindex, follow"
+      },
+      "after": {
+        "title": "Request a Quote",
+        "description": "Preview the demo RFQ form for screws, barrels and related components, including machine information and technical requirements. Inquiry submission and file uploads are currently unavailable in this demo.",
+        "canonical": "https://junhuiscrewbarrel.com/en/request-a-quote/",
+        "hreflang": {
+          "zh-CN": "https://junhuiscrewbarrel.com/zh-cn/request-a-quote/",
+          "en": "https://junhuiscrewbarrel.com/en/request-a-quote/",
+          "x-default": "https://junhuiscrewbarrel.com/zh-cn/request-a-quote/"
+        },
+        "robots": "noindex, follow"
+      }
+    }
+  },
+  "save_summary": {
+    "updated": 6,
+    "initial_noop": 0,
+    "site_pages_initialized": 2,
+    "translations_reviewed": 4,
+    "publications_published": 4,
+    "post_save_ui_noop": 4,
+    "revisions_added": 6,
+    "audits_added": 29,
+    "audit_breakdown": {
+      "company_profile.seo.upsert": 2,
+      "site_page.initialize": 2,
+      "site_page.seo.upsert": 4,
+      "site_page.translation.review": 4,
+      "site_page.publication.status_change": 8,
+      "site_page.route.change": 8,
+      "user.login.success": 1
+    }
+  },
+  "state_checks": {
+    "alembic_version": "20260910_0016",
+    "site_page_keys": ["contact", "home", "products", "request-a-quote"],
+    "contact_and_rfq_translation_status": "published",
+    "contact_and_rfq_publication_status": "published",
+    "contact_and_rfq_route_active": true,
+    "contact_and_rfq_internal_route_indexable": true,
+    "gateway_x_robots_tag": "noindex, nofollow",
+    "gateway_cache_control": "no-store",
+    "sitemap_status": 404,
+    "rfq_count_before": 12,
+    "rfq_count_after": 12,
+    "privacy_current_before": 0,
+    "privacy_current_after": 0,
+    "product_count_before": 9,
+    "product_count_after": 9,
+    "product_spec_values_before": 45,
+    "product_spec_values_after": 45,
+    "host_443_listener": "127.0.0.1:443"
+  },
+  "verification": {
+    "admin_save_fresh_get_reopen": true,
+    "public_api_exact": true,
+    "first_ssr_exact": true,
+    "single_head_tag_per_kind": true,
+    "rfq_query_excluded_from_head": true,
+    "desktop_1440_language_switch": true,
+    "mobile_375_language_switch": true,
+    "all_navigation_origin": "https://demo.junhuiscrewbarrel.com",
+    "frontend_console_errors": 0,
+    "admin_console_errors": 0,
+    "rfq_submit_disabled": true
+  }
+}

@@ -28,6 +28,26 @@ def _serialize(record: Any) -> dict[str, Any]:
     return {column.name: getattr(record, column.name) for column in record.__table__.columns}
 
 
+async def _commit_and_serialize(
+    session: AsyncSession, record: DownloadResource
+) -> dict[str, Any]:
+    """
+    提交下载资源变更并显式回读服务端生成字段。
+
+    输入：
+        session: AsyncSession，当前请求的异步数据库会话。
+        record: DownloadResource，已经新增或修改的下载资源。
+
+    输出：
+        dict[str, Any]，提交后从数据库刷新得到的完整下载资源 DTO。
+    """
+    # updated_at 等服务端更新字段在提交后会过期，必须在异步上下文中显式刷新，
+    # 避免序列化阶段触发 MissingGreenlet 隐式查询。
+    await session.commit()
+    await session.refresh(record)
+    return _serialize(record)
+
+
 async def _validate_public_asset(session: AsyncSession, asset_id: uuid.UUID) -> MediaAsset:
     """输入数据库会话与媒体 ID；输出可用 public-media 资产，否则抛出 422。"""
     asset = await session.get(MediaAsset, asset_id)
@@ -88,8 +108,7 @@ async def create_download(payload: DownloadInput, session: AsyncSession = Depend
     await session.flush()
     await _save_translations(session, resource, payload)
     write_audit_log(session, action="download.create", target_type="download_resource", target_id=str(resource.id), user_id=user.id)
-    await session.commit()
-    return success_response(_serialize(resource))
+    return success_response(await _commit_and_serialize(session, resource))
 
 
 @router.patch("/{resource_id}", response_model=ApiResponse[dict[str, Any]])
@@ -103,8 +122,7 @@ async def update_download(resource_id: uuid.UUID, payload: DownloadInput, sessio
         setattr(resource, key, value)
     await _save_translations(session, resource, payload)
     write_audit_log(session, action="download.update", target_type="download_resource", target_id=str(resource.id), user_id=user.id)
-    await session.commit()
-    return success_response(_serialize(resource))
+    return success_response(await _commit_and_serialize(session, resource))
 
 
 @router.post("/{resource_id}/archive", response_model=ApiResponse[dict[str, Any]])
@@ -115,5 +133,4 @@ async def archive_download(resource_id: uuid.UUID, session: AsyncSession = Depen
         raise AppException(404, "download_not_found", "下载资源不存在")
     resource.status = "retired"
     write_audit_log(session, action="download.archive", target_type="download_resource", target_id=str(resource.id), user_id=user.id)
-    await session.commit()
-    return success_response(_serialize(resource))
+    return success_response(await _commit_and_serialize(session, resource))

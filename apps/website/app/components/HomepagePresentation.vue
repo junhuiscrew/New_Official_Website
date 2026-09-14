@@ -13,6 +13,7 @@ import type {
 
 import PublicImage from './PublicImage.vue'
 import PublicVideo from './PublicVideo.vue'
+import HeroBannerSlider from './HeroBannerSlider.vue'
 
 const props = defineProps<{
   locale: LocaleSlug
@@ -124,77 +125,88 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
       <section
         v-if="module.key === 'hero'"
         class="presentation-hero"
-        :class="`presentation-module--${module.variant}`"
+        :class="[
+          `presentation-module--${module.variant}`,
+          { 'presentation-hero--slider': Boolean(module.slides?.length) },
+        ]"
         data-home-module="hero"
       >
-        <div class="presentation-hero__glow" aria-hidden="true" />
-        <div class="public-container presentation-hero__grid">
-          <div class="presentation-hero__copy">
-            <div class="presentation-hero__badges">
-              <p class="presentation-kicker">{{ labels.presentation.badge }}</p>
-              <span v-if="home.demo_mode" class="presentation-demo-badge">DEMO R2</span>
+        <HeroBannerSlider
+          v-if="module.slides?.length"
+          :locale="locale"
+          :slides="module.slides"
+          :demo-mode="Boolean(home.demo_mode)"
+        />
+        <template v-else>
+          <div class="presentation-hero__glow" aria-hidden="true" />
+          <div class="public-container presentation-hero__grid">
+            <div class="presentation-hero__copy">
+              <div class="presentation-hero__badges">
+                <p class="presentation-kicker">{{ labels.presentation.badge }}</p>
+                <span v-if="home.demo_mode" class="presentation-demo-badge">DEMO R2</span>
+              </div>
+              <h1>{{ heroTitle }}</h1>
+              <p class="presentation-hero__summary">{{ heroSummary }}</p>
+              <p v-if="home.demo_mode" class="presentation-hero__company">
+                {{ home.company?.company_name }}
+              </p>
+              <div class="presentation-actions">
+                <a class="button button--primary" :href="publicHref(`/${locale}/products/`)">
+                  {{ labels.cta.exploreProducts }}
+                </a>
+                <a class="button button--ghost" :href="publicHref(`/${locale}/request-a-quote/`)">
+                  {{ labels.cta.requestQuote }}
+                </a>
+              </div>
             </div>
-            <h1>{{ heroTitle }}</h1>
-            <p class="presentation-hero__summary">{{ heroSummary }}</p>
-            <p v-if="home.demo_mode" class="presentation-hero__company">
-              {{ home.company?.company_name }}
-            </p>
-            <div class="presentation-actions">
-              <a class="button button--primary" :href="publicHref(`/${locale}/products/`)">
-                {{ labels.cta.exploreProducts }}
-              </a>
-              <a class="button button--ghost" :href="publicHref(`/${locale}/request-a-quote/`)">
-                {{ labels.cta.requestQuote }}
-              </a>
+            <div v-if="home.hero_media?.type === 'image'" class="presentation-hero__visual">
+              <figure class="presentation-hero__main-media">
+                <PublicImage
+                  :media="{ ...home.hero_media, loading: 'eager' }"
+                  :locale="locale"
+                  sizes="(max-width: 48rem) 100vw, 48vw"
+                />
+              </figure>
+              <div v-if="productsFor(module).length" class="presentation-hero__product-tags">
+                <a
+                  v-for="(product, productIndex) in productsFor(module).slice(0, 3)"
+                  :key="product.slug"
+                  :href="publicHref(product.url)"
+                >
+                  <span>{{ String(productIndex + 1).padStart(2, '0') }}</span>
+                  {{ product.name }}
+                </a>
+              </div>
+            </div>
+            <div
+              v-else-if="productsFor(module).length"
+              class="presentation-hero__visual"
+              aria-hidden="true"
+            >
+              <figure v-for="product in productsFor(module).slice(0, 3)" :key="product.slug">
+                <PublicImage
+                  v-if="product.media?.type === 'image'"
+                  :media="{
+                    ...product.media,
+                    loading: moduleIndex === 0 ? 'eager' : 'lazy',
+                  }"
+                  :locale="locale"
+                  sizes="(max-width: 40rem) 46vw, 24vw"
+                />
+              </figure>
+            </div>
+            <div
+              v-else-if="preview && module.content_status === 'missing'"
+              class="presentation-empty presentation-empty--dark"
+              data-testid="homepage-module-empty"
+            >
+              <p>
+                {{ module.missing_reason || labels.presentation.contentUnavailable }}
+              </p>
+              <a :href="adminHref(module.management_url)">{{ labels.presentation.manage }}</a>
             </div>
           </div>
-          <div v-if="home.hero_media?.type === 'image'" class="presentation-hero__visual">
-            <figure class="presentation-hero__main-media">
-              <PublicImage
-                :media="{ ...home.hero_media, loading: 'eager' }"
-                :locale="locale"
-                sizes="(max-width: 48rem) 100vw, 48vw"
-              />
-            </figure>
-            <div v-if="productsFor(module).length" class="presentation-hero__product-tags">
-              <a
-                v-for="(product, productIndex) in productsFor(module).slice(0, 3)"
-                :key="product.slug"
-                :href="publicHref(product.url)"
-              >
-                <span>{{ String(productIndex + 1).padStart(2, '0') }}</span>
-                {{ product.name }}
-              </a>
-            </div>
-          </div>
-          <div
-            v-else-if="productsFor(module).length"
-            class="presentation-hero__visual"
-            aria-hidden="true"
-          >
-            <figure v-for="product in productsFor(module).slice(0, 3)" :key="product.slug">
-              <PublicImage
-                v-if="product.media?.type === 'image'"
-                :media="{
-                  ...product.media,
-                  loading: moduleIndex === 0 ? 'eager' : 'lazy',
-                }"
-                :locale="locale"
-                sizes="(max-width: 40rem) 46vw, 24vw"
-              />
-            </figure>
-          </div>
-          <div
-            v-else-if="preview && module.content_status === 'missing'"
-            class="presentation-empty presentation-empty--dark"
-            data-testid="homepage-module-empty"
-          >
-            <p>
-              {{ module.missing_reason || labels.presentation.contentUnavailable }}
-            </p>
-            <a :href="adminHref(module.management_url)">{{ labels.presentation.manage }}</a>
-          </div>
-        </div>
+        </template>
       </section>
 
       <section
@@ -486,6 +498,16 @@ function cardsFor(key: HomepageModuleKey): PublicCardDto[] {
     rgb(6 39 75 / 96%) 52%,
     rgb(8 79 158 / 88%) 100%
   );
+}
+
+.presentation-hero--slider {
+  min-height: 0;
+  display: block;
+  background: #061525;
+}
+
+.presentation-hero--slider::before {
+  display: none;
 }
 
 .presentation-hero::before {

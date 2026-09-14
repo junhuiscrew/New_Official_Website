@@ -182,7 +182,7 @@ useHead(() => ({
 
       <p v-if="query && status !== 'pending'" class="search-page__summary">
         {{ labels.search.resultsFor }} “{{ query }}” · {{ totalResults }}
-        {{ labels.search.resultCount }}
+        {{ totalResults === 1 ? labels.search.resultCountOne : labels.search.resultCount }}
       </p>
       <p v-if="error" class="search-page__notice status-error" role="alert">
         {{ labels.error.loadingFailed }}
@@ -273,6 +273,7 @@ useHead(() => ({
   padding: var(--space-3) var(--space-5);
   color: var(--color-white);
   font-weight: 700;
+  white-space: nowrap;
   text-decoration: none;
   background: var(--color-blue-700);
   border: 0;

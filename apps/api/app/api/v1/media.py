@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.responses import ApiResponse, success_response
 from app.modules.audit.service import write_audit_log
+from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.authority.models import (
     FAQ,
     AuthorExpert,
@@ -56,7 +57,6 @@ from app.modules.company.models import (
     PatentTranslation,
 )
 from app.modules.demo.models import ContentMediaLink
-from app.modules.auth.dependencies import require_csrf, require_permission
 from app.modules.localization.models import Locale
 from app.modules.media.models import (
     DownloadResource,

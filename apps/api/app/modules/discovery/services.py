@@ -309,6 +309,27 @@ async def build_visible_source_text(
                     source.publication_date,
                 )
             )
+    elif owner_type == "faq":
+        # FAQ 的 GEO 事实预览必须直接沿用公开交付资格，不能读取草稿或停用答案。
+        translation = await session.scalar(
+            select(FAQTranslation)
+            .join(FAQ, FAQ.id == FAQTranslation.faq_id)
+            .join(
+                TranslationStatus,
+                (TranslationStatus.owner_type == "faq")
+                & (TranslationStatus.owner_id == FAQ.id)
+                & (TranslationStatus.locale_id == FAQTranslation.locale_id),
+            )
+            .where(
+                FAQ.id == owner_id,
+                FAQ.status == "enabled",
+                FAQTranslation.locale_id == locale_id,
+                TranslationStatus.status == "published",
+            )
+        )
+        if translation is None:
+            raise AppException(404, "visible_content_not_found", "未找到对应语言的公开常见问题")
+        visible.extend(_visible_values(translation.question, translation.answer))
     elif owner_type == "author_expert":
         expert = await session.get(AuthorExpert, owner_id)
         translation = await session.scalar(

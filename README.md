@@ -1,215 +1,206 @@
 # Junhui Global Website
 
-Junhui Global Website 是面向全球塑料机械行业的螺杆、机筒及相关塑化部件 B2B 官网，正式主域名为 `https://junhuiscrewbarrel.com`。
+Junhui Global Website 是舟山骏辉塑料机械有限公司面向全球塑料机械行业的双语 B2B 官网与内容管理系统。项目使用 Nuxt/Vue 前台与后台、FastAPI 模块化 API、PostgreSQL、Redis、MinIO、Celery 和 Nginx，正式规范域名为 `https://junhuiscrewbarrel.com`。
 
-Phase 3.6 前台与 QA36 已完成封板。当前分支进入 **Phase 3.7 — 真实资料盘点、隔离 Draft 导入与内容审核**：Batch01 已在独立本地 HTTPS 环境保存 Company 和三款产品草稿，尚未 Review/Publish，也未写入实际参数或进入公开索引。完整接手说明见 [`交接文档-新对话.md`](./交接文档-新对话.md)。
+当前处于 **Phase 3.7 持续验收与演示完善阶段**。代码、原始批准内容和完整 Demo 均只运行在本机隔离环境；没有生产部署，也没有修改公共 DNS。新对话继续维护前，必须先阅读 [交接文档-新对话.md](./交接文档-新对话.md)。
 
 ## 当前状态
 
-| 项目                     | 状态                                                          |
-| ------------------------ | ------------------------------------------------------------- |
-| 当前开发分支             | `phase-3.7`                                                   |
-| Phase 3.6 验收基线       | `c16385cc57ec4ce1aa66164928be2a2cc30d4473`                    |
-| Phase 3.7 当前已推送实现 | `afe99c351f9288b1b8e038dfdc053d68e1a83d20`                    |
-| Batch01                  | Company + 3 Product 双语 draft                                |
-| 参数                     | 7 个字段定义；三款产品 ProductSpecValue 均为 0                |
-| 发布                     | 未 Review、未 Publish、Route inactive/noindex、未进入 Sitemap |
-| 生产环境                 | 未部署                                                        |
+| 项目            | 当前状态                                                    |
+| --------------- | ----------------------------------------------------------- |
+| GitHub          | `junhuiscrew/New_Official_Website`                          |
+| 开发分支        | `phase-3.7`                                                 |
+| 当前已推送 HEAD | `d3e4435da63c583a3c46b395d3875ca573801ea1`                  |
+| 最新迁移        | `20260910_0016_demo_fixed_utility_site_pages`               |
+| 原始内容实例    | `junhui-phase37-pilot`，保留 COPY-V1、8 组 SEO 和原业务数据 |
+| 完整演示实例    | `junhui-demo-r2`，独立 PostgreSQL/Redis/MinIO 数据卷        |
+| 本机入口        | 仅 `127.0.0.1:443`，HTTPS，VPN 可保持开启                   |
+| 搜索引擎保护    | 全站外层 `noindex`，Sitemap 关闭                            |
+| Privacy         | P1 技术能力已实现；主实例与 Demo 均未发布正式政策           |
+| 生产环境        | 未部署、未授权上线                                          |
 
-当前内容审核入口：
+## 两套本机环境
 
-- [`docs/content/phase3-7-batch01-content-review-package.md`](./docs/content/phase3-7-batch01-content-review-package.md)
-- [`docs/content/phase3-7-batch01-draft-report.md`](./docs/content/phase3-7-batch01-draft-report.md)
-- [`docs/architecture/phase3-7-1-readiness-report.md`](./docs/architecture/phase3-7-1-readiness-report.md)
+### 1. 原始批准内容预览
 
-## 目录
+这套环境保存 Batch01 公司与三款产品的获准内容，不得被 Demo 数据覆盖。
+
+| 服务     | 地址                                                    |
+| -------- | ------------------------------------------------------- |
+| 中文网站 | `https://junhuiscrewbarrel.com/zh-cn/`                  |
+| 英文网站 | `https://junhuiscrewbarrel.com/en/`                     |
+| 后台     | `https://admin.junhuiscrewbarrel.com/`                  |
+| API      | `https://api.junhuiscrewbarrel.com/api/v1/health/ready` |
+
+当前边界：
+
+- COPY-V1 的公司与三款产品共 16 个中英文字段保持批准版本；
+- About、Products、screws、barrels 共 8 组 SEO 已保存并验证；
+- P01/P02/P03 参数值仍为 `0/0/0`，F05 英文仍空缺；
+- 三款主图尺寸元数据已修复，原文件、哈希、媒体 ID 与关联不变；
+- 旧试点产品保持 draft、Route 关闭；
+- Privacy P1 只保存私有 draft，没有 current 版本，公开 Privacy 仍不可用；
+- 内部 Publication/Route 只服务本地受保护预览，不代表生产发布。
+
+### 2. Demo R2 完整演示
+
+Demo 与原始实例数据分离，用于展示完整网站和后台运营体验。
+
+| 服务      | 地址                                                         |
+| --------- | ------------------------------------------------------------ |
+| 中文 Demo | `https://demo.junhuiscrewbarrel.com/zh-cn/`                  |
+| 英文 Demo | `https://demo.junhuiscrewbarrel.com/en/`                     |
+| Demo 后台 | `https://admin-demo.junhuiscrewbarrel.com/`                  |
+| Demo API  | `https://api-demo.junhuiscrewbarrel.com/api/v1/health/ready` |
+
+Demo 当前包含：
+
+- 90 条双语演示内容；
+- 9 个演示产品、完整栏目关系与规格示例；
+- 48 项媒体（43 张图片、2 段真实 WebM、3 个 PDF）；
+- 首页 14 个模块的真实 renderer、后台配置和有意义演示内容；
+- About、Contact、Products、RFQ、材料、工艺、应用、方案、案例、知识、下载等页面；
+- 中文运营后台、媒体具体使用位置、角色权限编辑、询盘分页与筛选；
+- About、Contact、RFQ 六个双语页面的完整 SSR SEO 元数据；
+- 12 条明确标注为 Demo 的虚构询盘，无真实附件或邮件。
+
+所有 Demo 文字、规格、案例、作者、证书、设备和生成式图片都必须按演示资料处理，不能直接迁入生产。
+
+## 日常启动
+
+前置条件：Docker Desktop 正常运行，首次 Setup 已完成 hosts、本地 CA 和代理精确直连设置。
+
+### 启动完整 Demo
+
+推荐使用桌面快捷方式“打开骏辉完整演示站”，或在当前工作树执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\Junhui-Demo-R2-Launcher.ps1 -Action Start
+```
+
+查询状态或停止（保留数据卷）：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\Junhui-Demo-R2-Launcher.ps1 -Action Status -NoOpen
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\Junhui-Demo-R2-Launcher.ps1 -Action Stop -NoOpen
+```
+
+### 启动原始批准内容预览
+
+推荐使用桌面快捷方式“打开骏辉本地官网”，或执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\Junhui-LocalPreview-Launcher.ps1 -Action Start
+```
+
+Windows PowerShell 5.1 应调用 `*-Launcher.ps1`，不要直接执行含 UTF-8 中文的主脚本。`Stop` 只停止服务并保留数据；禁止使用 `docker compose down -v`，除非用户明确授权删除数据卷。
+
+## 凭据与私有文件
+
+仓库没有公开默认管理员密码。凭据仅保存在被 Git 忽略的本地环境文件：
+
+- 原始实例：`.env.phase37` 中的 `PHASE37_ADMIN_EMAIL` / `PHASE37_ADMIN_PASSWORD`；
+- Demo：`.env.demo-r2` 中的 `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`；
+- 数据、证书、备份和运行状态：`data/phase3-7/`、`data/demo-r2/`；
+- 临时证据与私有采集：`artifacts/` 及根目录证据 ZIP。
+
+不要在聊天、日志、截图或 Git 中输出密码、Cookie、Token、数据库 URL、对象存储密钥、证书私钥、私有 RFQ 或签名下载 URL。后台应用自身登录、RBAC、CSRF、Secure Cookie 和私有附件权限必须保留。
+
+## 架构
 
 ```text
 apps/
-  website/        Public Website，Nuxt SSR 最终前台与多语言公开页面
-  admin/          Admin、Catalog/Authority/Trust/Media/Downloads/RFQ 管理页面
-  api/            FastAPI 模块化单体、Celery Worker、Alembic 与测试
+  website/        Nuxt 4 / Vue 3 双语 SSR 官网
+  admin/          Nuxt 4 / Vue 3 中文运营后台
+  api/            FastAPI、SQLAlchemy、Alembic、Celery 与测试
 packages/
   config/         Website/Admin 共享 API Base 解析
-  ui/             共享 UI 包边界
-  types/          共享 TypeScript 类型边界
+  ui/             共享 UI 边界
+  types/          共享 TypeScript 类型
   content-blocks/ Flexible Blocks 类型边界
-infra/
-  nginx/          开发与 Staging 反向代理配置
-  scripts/        本地验证脚本
-docs/architecture/ ADR、迁移策略与完成报告
-docs/content/      Phase 3.7 内容审核包、来源与 Draft 导入报告
+infra/nginx/      开发、隔离预览和本地域名 Nginx 配置
+scripts/          本机预览、Demo、验证与证据工具
+docs/             架构、内容、SEO、GEO、验收和操作文档
 ```
 
-## 本地启动
+核心内容生命周期为：
 
-前置要求：Docker Desktop 与 Docker Compose。仓库默认值只用于本地开发；自定义配置时复制 `.env.example` 为 `.env`，不要提交真实 Secret。
-
-```bash
-docker compose up -d --build
-docker compose ps
+```text
+Master Entity
+  -> Translation
+  -> Publication
+  -> ContentRoute
+  -> SeoDocument / GEO / Media / Relations
+  -> Revision + Audit + RBAC
 ```
 
-API 启动顺序固定为：
+公开 API 只返回满足实体状态、语言翻译、发布状态、Route 和 SEO 门禁的数据。正式 canonical/hreflang 使用正式规范域名；本机语言导航会安全转换为同站相对路径。
 
-```bash
-alembic upgrade head
-python -m app.cli seed
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+## 主要后台入口
 
-Seed 可重复执行，只补充缺失的 2 个 Locale、8 个系统 Role、完整 Permission Matrix、9 个 Knowledge Category 和缺失的系统映射，不删除后续自定义映射。
-
-| 服务               | 地址 / 端口                                               |
-| ------------------ | --------------------------------------------------------- |
-| Website            | http://localhost:3000/zh-cn/ 与 http://localhost:3000/en/ |
-| Admin              | http://localhost:3001/login                               |
-| API live           | http://localhost:8010/api/v1/health/live                  |
-| API ready          | http://localhost:8010/api/v1/health/ready                 |
-| API Docs           | http://localhost:8010/docs                                |
-| Nginx 同源入口     | http://localhost:8080/                                    |
-| PostgreSQL         | localhost:5432                                            |
-| Redis              | localhost:6379                                            |
-| MinIO S3 / Console | http://localhost:9000 / http://localhost:9001             |
-
-`worker` 通过 Redis 接收 RFQ 私有附件扫描任务。开发环境可关闭外部扫描器；Staging/Production 在扫描器不可用时会 fail-closed，将文件保持为不可下载状态。
-
-Website 根路径以 308 跳转到 `/zh-cn/`。浏览器统一使用同源 `/api/v1`，Nuxt SSR 在容器内使用 `http://api:8000/api/v1`。Admin 的 HTML 与响应头全局设置 `noindex, nofollow`。
-
-## Bootstrap Super Admin
-
-项目没有默认管理员或默认密码。首次初始化必须显式执行安全 Bootstrap；推荐交互输入密码，避免密码进入 shell history：
-
-```bash
-docker compose exec api python -m app.cli create-super-admin
-```
-
-自动化环境可临时注入 `BOOTSTRAP_ADMIN_EMAIL`、`BOOTSTRAP_ADMIN_PASSWORD` 和 `BOOTSTRAP_ADMIN_DISPLAY_NAME`。密码必须通过强度检查，邮箱按大小写不敏感唯一；已有账号会安全失败，不会覆盖密码或角色。
-
-## Authentication 与权限
-
-- 密码使用 Argon2id，仅保存哈希。
-- Access JWT 为短期 HttpOnly Cookie；Refresh Credential 是高熵随机值，仅以 HMAC 摘要存入 `auth_sessions`，每次 refresh 轮换并撤销旧 session；旧凭据重放会撤销该用户仍有效的后继 refresh session。
-- Refresh Credential 不进入 `localStorage` 或响应 JSON。
-- 写请求使用 SameSite Cookie 加双提交 CSRF 校验。
-- FastAPI 通过 `require_permission(...)` 做最终授权；Admin Route Guard 只负责用户体验。
-- `/api/v1/auth/login`、`refresh`、`logout`、`me` 提供完整会话生命周期；Admin 在客户端收到 access 401 时会使用 HttpOnly refresh Cookie 自动续期一次。
+- `/`：工作台
+- `/site-overview`：全站模块总览
+- `/homepage`：首页 14 模块编排
+- `/catalog`、`/catalog/products`、`/catalog/specifications`：目录与产品
+- `/trust/company`：企业资料与 About SEO
+- `/site-pages/products`：Products 固定页 SEO
+- `/site-pages/contact`、`/site-pages/request-a-quote`：Contact/RFQ 固定页 SEO
+- `/media`、`/demo-media`：媒体库与 Demo 媒体替换
+- `/cases`、`/knowledge`、`/faqs`、`/experts`：内容与作者
+- `/downloads`、`/rfqs`、`/roles`、`/users`：下载、询盘、权限与用户
+- `/privacy`：Privacy P1 私有草稿和版本管理
 
 ## 测试与质量检查
 
-宿主机测试：
-
-```bash
-cd apps/api
-.venv/Scripts/python -m pytest -p no:cacheprovider
-.venv/Scripts/python -m ruff check --no-cache app tests alembic
-
-cd ../..
+```powershell
 pnpm test
 pnpm typecheck
 pnpm format:check
 pnpm build
 ```
 
-真实 PostgreSQL 17 + Redis + MinIO 隔离测试（自动执行 migrations、seed 和完整后端测试）：
-
-```bash
-docker compose --profile test up --abort-on-container-exit --exit-code-from api-test api-test
-docker compose rm -sf api-test postgres-test redis-test
-```
-
-运行态验证：
+API 本地开发环境：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File infra/scripts/verify-local.ps1
+Set-Location apps/api
+.venv/Scripts/python -m pytest -p no:cacheprovider
+.venv/Scripts/python -m ruff check --no-cache app tests alembic
 ```
 
-## Staging 与生产安全
-
-Staging overlay 要求外部 htpasswd 文件和显式 Secret：
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.staging.yml config
-```
-
-`docker-compose.staging.yml` 仅暴露 Nginx 入口，PostgreSQL、Redis、MinIO、API、Website 与 Admin 均不发布宿主端口；入口启用 Basic Auth、全站 `X-Robots-Tag: noindex, nofollow`，并关闭 sitemap、analytics 与 marketing email。Nginx 会覆盖客户端提供的转发头，API 只信任 `TRUSTED_PROXY_CIDRS` 中的直连代理；生产负载均衡的网段需要按实际部署单独配置。所有非 development 环境若仍使用示例 Secret 会 fail-fast；Staging/Production 还要求带用户名/密码的数据库 URL 与非本地 HTTPS CORS allowlist。生产迁移顺序、回滚与并发策略见 `docs/architecture/migration-runtime-strategy.md`。
-
-## 常用命令
-
-```bash
-docker compose logs -f api
-docker compose exec api alembic current
-docker compose exec api python -m app.cli seed
-docker compose down
-```
-
-`docker compose down` 保留 named volumes；只有明确需要清空本地数据时才使用 `docker compose down -v`。
-
-## Phase 3.7 隔离审核环境
-
-Phase 3.7 使用独立 Compose project `junhui-phase37-pilot`，配置位于被 Git 忽略的 `.env.phase37`，数据与证书位于被忽略的 `data/phase3-7/`。禁止提交其中的凭据、私钥、备份或真实资料原件。
-
-首次配置本地证书与 hosts（管理员 PowerShell）：
+真实 PostgreSQL/Redis/MinIO 隔离测试：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\phase37-local-https.ps1 -InstallTrustAndHosts
+docker compose --profile test up --abort-on-container-exit `
+  --exit-code-from api-test api-test
 ```
 
-启动隔离环境：
+最近提交 `d3e4435` 前重新通过 Website `155/155` 和 Admin `88/88`。本轮仅更新文档时不应复制历史测试数量冒充新测试结果。
 
-```powershell
-docker compose --env-file .env.phase37 `
-  -f docker-compose.yml `
-  -f docker-compose.phase37.yml `
-  -p junhui-phase37-pilot up -d --build
-```
+## 维护边界
 
-| 服务      | 地址                                          |
-| --------- | --------------------------------------------- |
-| Website   | `https://junhui.test/`                        |
-| Admin     | `https://admin.junhui.test/catalog/products`  |
-| API ready | `https://api.junhui.test/api/v1/health/ready` |
+- 保留原 phase37 与 Demo 两套数据卷，禁止清库、全量重导或互相覆盖；
+- 不自动把 Demo 内容、参数、媒体、案例或 SEO 写回原始实例；
+- Privacy 正式正文、current 切换和 RFQ 正式提交仍需单独授权；
+- 不连接腾讯云、NAS、Gmail/SMTP、Analytics 或生产数据库；
+- 不修改公共 DNS，不部署，不向搜索平台提交；
+- 不用直接 SQL 绕过 CMS、Revision、Audit、权限或发布流程；
+- Git 操作前先检查未提交文件，禁止 `git add -A` 把私有证据包和快照带入仓库。
 
-浏览器先通过 Basic Auth，再使用 `.env.phase37` 中的隔离 Admin 账号登录。代理用户需要让 `.junhui.test` 直连本机；Clash 类客户端可添加 `DOMAIN-SUFFIX,junhui.test,DIRECT`，Fake-IP Filter 添加 `+.junhui.test`。不要通过修改正式 canonical 或放宽生产安全配置来解决本地代理问题。
+## 关键文档
 
-停止环境时不要删除 volume：
-
-```powershell
-docker compose --env-file .env.phase37 `
-  -f docker-compose.yml `
-  -f docker-compose.phase37.yml `
-  -p junhui-phase37-pilot down
-```
-
-当前 Batch01 只能继续在 Admin 中修改 draft。未经用户明确授权，不得重导、不填实际参数、不 Review/Publish、不激活 Route。
-
-## Phase 3.6 最终前台
-
-- Website 已具备 Desktop/Mobile Navigation、Homepage、Product、Material、Technology、Application、Solution、Knowledge、Case、About、Capability、Trust、Downloads、Search、RFQ、多语言切换、Breadcrumb、Empty State 与 404。
-- 前台 SSR 复用后端 Public DTO、Publication/Route、canonical、hreflang、Schema 和 GEO visible-source，不在 Vue 中维护第二套索引体系。
-- QA36 完成真实浏览器旅程、Gallery 与语言点击收尾；报告见 `docs/architecture/phase3-6-qa36-closeout-report.md`。
-
-## Phase 3.4 Authority 与 Discovery
-
-- Admin 最小真实 CRUD：`/cases`、`/knowledge`、`/faqs`、`/experts`。
-- SSR 公开模板：`/{lang}/products/{category}/{slug}`、`/{lang}/case-studies/{slug}`、`/{lang}/knowledge/{category}/{slug}`。
-- 公开发现文件：`/sitemap.xml`、`/robots.txt`，以及由 `LLMS_TXT_ENABLED` 控制的 `/llms.txt`。
-- Public DTO 只返回同时满足 Entity、Locale、Translation、Publication、canonical Route 与 SEO robots_index 门槛的内容。
-- FAQPage Schema 由 `FAQ_SCHEMA_ENABLED` 控制，默认关闭；系统不会生成虚构 Offer、价格、Review、Rating 或人物。
-- Redirect Manager 使用精确 host/path 规则，并拒绝 self、loop、chain、duplicate 与不安全目标；已发布 URL 必须通过单事务 URL Change API 变更。
-- Case 客户名称、地址、Logo 采用逐字段公开许可；未获许可的数据不会进入 Public DTO、Schema、SEO 或 GEO。
-
-## Phase 3.5 Trust、Media 与 RFQ
-
-- `public-media` 与 `private-rfq` 使用独立 MinIO bucket；公共媒体通过同源应用代理交付，浏览器不会看到 Docker 内部端点。
-- RFQ 支持多 Item 与匿名附件；附件经过扩展名、MIME、文件头、文件名、大小、SHA256 和恶意软件状态校验。
-- 私有下载必须同时满足认证、`rfq.download_private_file`、RFQ 归属、`clean + ready`，之后才签发短期 S3 Presigned GET。
-- Trust、Media、Downloads 与 RFQ Admin 页面均连接真实 API；公开 Trust 索引只显示满足统一可索引门槛的真实数据。
-- 当前修复验收记录见 `docs/architecture/phase3-5-remediation-report.md`。
-
-## Phase 3.2 文档
-
-- `Junhui-Codex-Handoff-Phase3.2.md`：本阶段冻结规范
-- `docs/architecture/adr-content-route-publication.md`：Publication/Route/SEO/GEO 事务边界
-- `docs/architecture/migration-runtime-strategy.md`：正式部署迁移策略
-- `docs/architecture/phase3-2-completion-report.md`：实际实现和验收结果
+- [新对话交接文档](./交接文档-新对话.md)
+- [Demo R2 实施报告](./docs/content/demo-r2-report.md)
+- [Demo R2 维护说明](./docs/content/demo-r2-maintenance-guide.md)
+- [中文后台员工使用说明](./docs/content/admin-cn-employee-guide.md)
+- [中文后台功能收尾](./docs/content/admin-cn-ux-r1-functional-closeout-report.md)
+- [Demo 六页 SEO 收尾](./docs/content/demo-seo-metadata-r1-report.md)
+- [Privacy P1 实施报告](./docs/content/privacy-p1-content-version-report.md)
+- [官网呈现 R1 报告](./docs/content/website-presentation-r1-report.md)
+- [本机域名预览报告](./docs/content/local-domain-preview-report.md)
+- [架构与发布事务 ADR](./docs/architecture/adr-content-route-publication.md)
+- [迁移与运行策略](./docs/architecture/migration-runtime-strategy.md)

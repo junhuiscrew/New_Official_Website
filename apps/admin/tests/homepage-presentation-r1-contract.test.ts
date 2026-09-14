@@ -65,4 +65,20 @@ describe('Website Presentation R1 Admin contract', () => {
     expect(source).toContain('module-navigator')
     expect(source).toContain('module-properties')
   })
+
+  it('provides a bilingual Hero slide editor with media choice and complete item controls', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/homepage.vue'), 'utf8')
+
+    expect(source).toContain("api.detail<MediaOption[]>('/media')")
+    expect(source).toContain('data-testid="hero-slide-editor"')
+    expect(source).toContain('addHeroSlide')
+    expect(source).toContain('removeHeroSlide')
+    expect(source).toContain('moveHeroSlide')
+    expect(source).toContain('slide.enabled')
+    expect(source).toContain('slide.media_id')
+    expect(source).toContain('按钮文案')
+    expect(source).toContain('跳转链接')
+    expect(source).toContain('最多 5 张')
+    expect(source).toContain('仅为 Demo 素材')
+  })
 })

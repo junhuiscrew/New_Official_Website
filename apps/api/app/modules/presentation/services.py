@@ -31,6 +31,7 @@ from app.modules.company.models import (
 from app.modules.content.models import SitePage, SitePageTranslation
 from app.modules.content.services.revisions import store_revision
 from app.modules.localization.models import Locale
+from app.modules.media.models import MediaAsset
 from app.modules.presentation.models import HomepageLayout
 from app.modules.presentation.registry import (
     HOMEPAGE_MANAGEMENT_URLS,
@@ -379,6 +380,53 @@ async def _validate_product_references(
         )
 
 
+async def _validate_hero_slide_references(
+    session: AsyncSession,
+    config: dict[str, Any],
+) -> None:
+    """
+    确保 Hero 轮播只引用公开、就绪且可由公开代理交付的图片。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        config: dict，已经通过 Pydantic 白名单校验的首页配置。
+
+    输出：
+        None；存在私有、未就绪、非图片或不存在媒体时抛出 409。
+    """
+    requested = {
+        uuid.UUID(slide["media_id"])
+        for module in config["modules"]
+        if module["key"] == "hero"
+        for slide in module.get("slides", [])
+    }
+    if not requested:
+        return
+    assets = list(
+        (
+            await session.scalars(
+                select(MediaAsset).where(MediaAsset.id.in_(requested))
+            )
+        ).all()
+    )
+    available = {
+        asset.id
+        for asset in assets
+        if asset.visibility == "public"
+        and asset.upload_status == "ready"
+        and asset.storage_bucket == "public-media"
+        and asset.media_type == "image"
+    }
+    missing = sorted(str(media_id) for media_id in requested - available)
+    if missing:
+        raise AppException(
+            409,
+            "homepage_hero_media_unavailable",
+            "首页轮播必须引用公开且已就绪的图片",
+            details={"media_ids": missing},
+        )
+
+
 async def save_homepage_draft(
     session: AsyncSession,
     *,
@@ -406,6 +454,7 @@ async def save_homepage_draft(
         )
     config = _config_from_payload(payload)
     await _validate_product_references(session, locale, config)
+    await _validate_hero_slide_references(session, config)
     if layout.draft_config_jsonb == config:
         return await get_homepage_language_detail(session, locale_code)
 
@@ -649,7 +698,57 @@ def _module_content_state(
     return "missing", "尚无符合公开门禁的内容"
 
 
-def attach_homepage_presentation(
+async def _public_hero_slides(
+    session: AsyncSession,
+    locale_id: uuid.UUID,
+    module: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    将已应用 Hero 轮播配置转换为当前语言的安全公开 DTO。
+
+    输入：
+        session: AsyncSession，数据库会话。
+        locale_id: uuid.UUID，当前语言 ID。
+        module: dict[str, Any]，已验证的 Hero 模块配置。
+
+    输出：
+        list[dict[str, Any]]，仅含启用项及仍通过公开媒体门禁的可见字段。
+    """
+    from app.modules.discovery.public_delivery import _public_media
+
+    public_slides: list[dict[str, Any]] = []
+    for slide in module.get("slides", []):
+        if not slide.get("enabled", False):
+            continue
+        try:
+            media_id = uuid.UUID(str(slide.get("media_id")))
+        except (TypeError, ValueError):
+            # 历史或人工损坏的配置按不可公开处理，不能让整个首页失败。
+            continue
+        media = await _public_media(
+            session,
+            media_id,
+            locale_id,
+            str(slide.get("title") or ""),
+            loading="eager" if not public_slides else "lazy",
+        )
+        if media is None or media.type != "image":
+            continue
+        public_slides.append(
+            {
+                "title": slide["title"],
+                "subtitle": slide["subtitle"],
+                "cta_label": slide.get("cta_label"),
+                "cta_href": slide.get("cta_href"),
+                "media": media.model_dump(),
+            }
+        )
+    return public_slides
+
+
+async def attach_homepage_presentation(
+    session: AsyncSession,
+    locale_id: uuid.UUID,
     home: dict[str, Any],
     *,
     config: dict[str, Any],
@@ -659,16 +758,28 @@ def attach_homepage_presentation(
     """
     给首页公开数据附加排序、显示、状态和管理入口。
 
-    输入：首页数据、已验证配置、修订号和预览标志。
+    输入：数据库会话、语言 ID、首页数据、已验证配置、修订号和预览标志。
     输出：dict，带安全 presentation DTO 的首页数据。
     """
     modules = []
     for module in config["modules"]:
         key = module["key"]
+        public_module = deepcopy(module)
+        if key == "hero":
+            public_module["slides"] = await _public_hero_slides(
+                session,
+                locale_id,
+                module,
+            )
+        else:
+            # 轮播只属于 Hero；公开 DTO 不携带其他模块的空实现字段。
+            public_module.pop("slides", None)
         content_status, missing_reason = _module_content_state(key, home)
+        if key == "hero" and public_module.get("slides"):
+            content_status, missing_reason = "available", None
         modules.append(
             {
-                **deepcopy(module),
+                **public_module,
                 "content_status": content_status,
                 "missing_reason": missing_reason,
                 "management_url": HOMEPAGE_MANAGEMENT_URLS[key],

@@ -95,8 +95,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         _request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        """处理 Pydantic/FastAPI 请求校验错误。"""
-        return _error_response(422, "validation_error", "请求参数校验失败", exc.errors())
+        """处理 Pydantic/FastAPI 请求校验错误，并移除不可序列化的内部异常上下文。"""
+        # 模型级校验会在 ctx.error 中携带 ValueError 对象；公开错误响应只保留稳定字段。
+        details = [
+            {key: value for key, value in error.items() if key != "ctx"}
+            for error in exc.errors()
+        ]
+        return _error_response(422, "validation_error", "请求参数校验失败", details)
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_error(

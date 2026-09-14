@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -15,6 +16,7 @@ from app.core.security.passwords import hash_password
 from app.main import create_app
 from app.modules.audit.models import AuditLog
 from app.modules.content.models import ContentRevision, SitePage
+from app.modules.media.models import MediaAsset
 from app.modules.presentation.models import HomepageLayout
 from app.modules.presentation.registry import HOMEPAGE_MODULE_KEYS
 from app.modules.users.models import Role, User, UserRole
@@ -108,6 +110,53 @@ async def _initialize(
         response = await client.post("/api/v1/presentation/homepage/initialize")
     assert response.status_code == 200
     return response.json()["data"]
+
+
+async def _media_asset(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    visibility: str = "public",
+    upload_status: str = "ready",
+    media_type: str = "image",
+) -> MediaAsset:
+    """
+    创建首页轮播输入校验使用的隔离媒体记录。
+
+    输入：
+        factory: async_sessionmaker[AsyncSession]，隔离测试会话工厂。
+        visibility: str，媒体公开级别。
+        upload_status: str，媒体处理状态。
+        media_type: str，媒体类型。
+
+    输出：
+        MediaAsset，已经提交并可在后续请求中读取的媒体记录。
+    """
+    asset_token = uuid.uuid4().hex
+    bucket = "public-media" if visibility == "public" else "private-rfq"
+    extension = ".webp" if media_type == "image" else ".webm"
+    mime_type = "image/webp" if media_type == "image" else "video/webm"
+    async with factory() as session:
+        asset = MediaAsset(
+            visibility=visibility,
+            media_type=media_type,
+            storage_bucket=bucket,
+            storage_key=f"homepage-tests/{asset_token}{extension}",
+            original_filename=f"homepage-{asset_token}{extension}",
+            sanitized_filename=f"homepage-{asset_token}{extension}",
+            mime_type=mime_type,
+            file_extension=extension,
+            file_size_bytes=128,
+            sha256=(asset_token * 2)[:64],
+            width=1600 if media_type == "image" else None,
+            height=900 if media_type == "image" else None,
+            checksum_verified=True,
+            malware_scan_status="not_required",
+            upload_status=upload_status,
+        )
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+        return asset
 
 
 async def test_homepage_initialization_requires_auth_permission_and_csrf(
@@ -245,6 +294,206 @@ async def test_homepage_draft_save_apply_restore_and_revision_conflict(
         "homepage.draft.restore",
     }.issubset(actions)
     assert revision_count == 4
+
+
+async def test_homepage_hero_slides_validate_order_links_and_public_media(
+    homepage_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证 Hero 轮播顺序、链接成对规则及公开图片门禁均由服务端控制。"""
+    detail = await _initialize(homepage_api_factory)
+    zh = next(item for item in detail["languages"] if item["locale"]["code"] == "zh-CN")
+    first_image = await _media_asset(homepage_api_factory)
+    second_image = await _media_asset(homepage_api_factory)
+    private_image = await _media_asset(homepage_api_factory, visibility="private")
+    modules = list(zh["layout"]["draft"]["modules"])
+    valid_slides = [
+        {
+            "id": "precision-manufacturing",
+            "media_id": str(first_image.id),
+            "title": "螺杆与机筒精密制造",
+            "subtitle": "Demo 内容：展示材料、工艺与制造能力的协同路径。",
+            "cta_label": "探索产品",
+            "cta_href": "/zh-cn/products/",
+            "enabled": True,
+        },
+        {
+            "id": "surface-engineering",
+            "media_id": str(second_image.id),
+            "title": "表面工程与工艺技术",
+            "subtitle": "Demo 内容：从实际工艺术语进入技术内容。",
+            "cta_label": None,
+            "cta_href": None,
+            "enabled": False,
+        },
+    ]
+    modules[0] = {**modules[0], "slides": valid_slides}
+
+    async with _role_client(homepage_api_factory, "editor") as client:
+        saved = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 0, "modules": modules},
+        )
+        reopened = await client.get("/api/v1/presentation/homepage/zh-CN")
+
+        assert saved.status_code == 200, saved.text
+        duplicate_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        duplicate_modules[0] = {
+            **duplicate_modules[0],
+            "slides": [valid_slides[0], {**valid_slides[1], "id": valid_slides[0]["id"]}],
+        }
+        duplicate_ids = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": duplicate_modules},
+        )
+
+        unsafe_link_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        unsafe_link_modules[0] = {
+            **unsafe_link_modules[0],
+            "slides": [{**valid_slides[0], "cta_href": "javascript:alert(1)"}],
+        }
+        unsafe_link = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": unsafe_link_modules},
+        )
+
+        unpaired_cta_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        unpaired_cta_modules[0] = {
+            **unpaired_cta_modules[0],
+            "slides": [{**valid_slides[0], "cta_href": None}],
+        }
+        unpaired_cta = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": unpaired_cta_modules},
+        )
+
+        private_media_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        private_media_modules[0] = {
+            **private_media_modules[0],
+            "slides": [{**valid_slides[0], "media_id": str(private_image.id)}],
+        }
+        private_media = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": private_media_modules},
+        )
+
+        too_many_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        too_many_modules[0] = {
+            **too_many_modules[0],
+            "slides": [
+                {**valid_slides[0], "id": f"slide-{index}"}
+                for index in range(6)
+            ],
+        }
+        too_many = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": too_many_modules},
+        )
+
+        non_hero_modules = list(saved.json()["data"]["layout"]["draft"]["modules"])
+        non_hero_modules[1] = {**non_hero_modules[1], "slides": [valid_slides[0]]}
+        non_hero = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 1, "modules": non_hero_modules},
+        )
+
+    saved_slides = saved.json()["data"]["layout"]["draft"]["modules"][0]["slides"]
+    assert [slide["id"] for slide in saved_slides] == [
+        "precision-manufacturing",
+        "surface-engineering",
+    ]
+    assert reopened.json()["data"]["layout"]["draft"]["modules"][0]["slides"] == saved_slides
+    assert duplicate_ids.status_code == 422
+    assert unsafe_link.status_code == 422
+    assert unpaired_cta.status_code == 422
+    assert too_many.status_code == 422
+    assert non_hero.status_code == 422
+    assert private_media.status_code == 409
+    assert private_media.json()["error"]["code"] == "homepage_hero_media_unavailable"
+
+
+async def test_public_homepage_exposes_only_enabled_currently_public_hero_slides(
+    homepage_api_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """验证公开首页只输出启用且仍通过公开媒体门禁的安全轮播 DTO。"""
+    detail = await _initialize(homepage_api_factory)
+    zh = next(item for item in detail["languages"] if item["locale"]["code"] == "zh-CN")
+    first_image = await _media_asset(homepage_api_factory)
+    disabled_image = await _media_asset(homepage_api_factory)
+    withdrawn_image = await _media_asset(homepage_api_factory)
+    modules = list(zh["layout"]["draft"]["modules"])
+    modules[0] = {
+        **modules[0],
+        "slides": [
+            {
+                "id": "precision-manufacturing",
+                "media_id": str(first_image.id),
+                "title": "螺杆与机筒精密制造",
+                "subtitle": "Demo 内容：展示材料、工艺与制造能力的协同路径。",
+                "cta_label": "探索产品",
+                "cta_href": "/zh-cn/products/",
+                "enabled": True,
+            },
+            {
+                "id": "disabled-demo-slide",
+                "media_id": str(disabled_image.id),
+                "title": "停用的演示轮播",
+                "subtitle": "这条内容不能出现在公开 DTO。",
+                "cta_label": None,
+                "cta_href": None,
+                "enabled": False,
+            },
+            {
+                "id": "manufacturing-capability",
+                "media_id": str(withdrawn_image.id),
+                "title": "制造能力与质量控制",
+                "subtitle": "Demo 内容：展示现有制造能力页面入口。",
+                "cta_label": "查看制造能力",
+                "cta_href": "/zh-cn/capabilities/",
+                "enabled": True,
+            },
+        ],
+    }
+
+    async with _role_client(homepage_api_factory, "content_admin") as client:
+        saved = await client.patch(
+            "/api/v1/presentation/homepage/zh-CN/draft",
+            json={"expected_revision": 0, "modules": modules},
+        )
+        assert saved.status_code == 200, saved.text
+        applied = await client.post(
+            "/api/v1/presentation/homepage/zh-CN/apply",
+            json={"expected_revision": 1},
+        )
+        assert applied.status_code == 200, applied.text
+
+    async with _client(homepage_api_factory) as client:
+        first_response = await client.get("/api/v1/public/home/zh-cn")
+
+    assert first_response.status_code == 200, first_response.text
+    hero = first_response.json()["data"]["presentation"]["modules"][0]
+    assert [slide["title"] for slide in hero["slides"]] == [
+        "螺杆与机筒精密制造",
+        "制造能力与质量控制",
+    ]
+    assert hero["slides"][0]["media"]["loading"] == "eager"
+    assert hero["slides"][1]["media"]["loading"] == "lazy"
+    assert "media_id" not in hero["slides"][0]
+    assert "id" not in hero["slides"][0]
+    assert "enabled" not in hero["slides"][0]
+    assert "storage_bucket" not in repr(hero["slides"])
+
+    # 模拟已应用图片随后撤回公开资格；fresh GET 必须即时过滤，不能泄漏陈旧配置。
+    async with homepage_api_factory() as session, session.begin():
+        asset = await session.get(MediaAsset, withdrawn_image.id)
+        assert asset is not None
+        asset.visibility = "private"
+        asset.storage_bucket = "private-rfq"
+
+    async with _client(homepage_api_factory) as client:
+        fresh_response = await client.get("/api/v1/public/home/zh-cn")
+
+    fresh_hero = fresh_response.json()["data"]["presentation"]["modules"][0]
+    assert [slide["title"] for slide in fresh_hero["slides"]] == ["螺杆与机筒精密制造"]
 
 
 async def test_author_preview_is_authenticated_no_store_and_lists_all_modules(

@@ -256,7 +256,9 @@ onBeforeUnmount(() => {
 }
 
 .hero-slider__content {
-  width: 100%;
+  /* 只让背景铺满视口，正文继续与页头和轮播控件使用同一响应式内容线。 */
+  width: min(calc(100% - var(--container-gutter) - var(--container-gutter)), var(--container-max));
+  margin-inline: auto;
   padding-block: clamp(6rem, 12vw, 10rem) clamp(8rem, 14vw, 11rem);
 }
 
@@ -298,6 +300,8 @@ onBeforeUnmount(() => {
   font-size: clamp(2.7rem, 6vw, 5.8rem);
   line-height: 1.02;
   letter-spacing: -0.045em;
+  word-break: auto-phrase;
+  overflow-wrap: anywhere;
   text-wrap: balance;
 }
 

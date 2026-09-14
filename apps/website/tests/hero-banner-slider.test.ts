@@ -1,4 +1,7 @@
 // 测试用途：锁定首页 Hero 轮播的单一 H1、自动播放、手动控制及减弱动态偏好。
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -76,6 +79,19 @@ afterEach(() => {
 })
 
 describe('HeroBannerSlider', () => {
+  it('keeps the copy inside responsive gutters and allows safe phrase wrapping', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'app/components/HeroBannerSlider.vue'),
+      'utf8',
+    )
+
+    expect(source).toMatch(
+      /\.hero-slider__content\s*\{[^}]*width:\s*min\(\s*calc\(100%\s*-\s*var\(--container-gutter\)/s,
+    )
+    expect(source).toMatch(/\.hero-slider h1\s*\{[^}]*word-break:\s*auto-phrase/s)
+    expect(source).toMatch(/\.hero-slider h1\s*\{[^}]*overflow-wrap:\s*anywhere/s)
+  })
+
   it('renders one active H1 and supports manual next, previous and dot navigation', async () => {
     const wrapper = mount(HeroBannerSlider, {
       props: { locale: 'zh-cn', slides, demoMode: true },

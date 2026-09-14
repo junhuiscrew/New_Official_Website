@@ -81,4 +81,13 @@ describe('Website Presentation R1 Admin contract', () => {
     expect(source).toContain('最多 5 张')
     expect(source).toContain('仅为 Demo 素材')
   })
+
+  it('bounds Hero thumbnails independently from the editor field height', () => {
+    const source = readFileSync(resolve(process.cwd(), 'app/pages/homepage.vue'), 'utf8')
+
+    expect(source).toContain('class="hero-slide-card__thumbnail"')
+    expect(source).toMatch(/\.hero-slide-card__thumbnail\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s)
+    expect(source).toMatch(/\.hero-slide-card__thumbnail img\s*\{[^}]*height:\s*100%/s)
+    expect(source).toMatch(/\.hero-slide-card figure\s*\{[^}]*max-width:/s)
+  })
 })

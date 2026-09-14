@@ -1,32 +1,59 @@
 {
-  "schema_version": 1,
-  "run_id": "20260914T141327+0800",
-  "result": "DEMO_OWNER_REVIEW_FOLLOWUP_R1_COMPLETE",
-  "scope": "Demo/local preview only",
+  "schema_version": 2,
+  "run_id": "20260914T172540+0800",
+  "result": "DEMO_OWNER_REVIEW_FOLLOWUP_R1_FOCUSED_CLOSEOUT_COMPLETE",
+  "scope": "仅处理 Hero 前台留白、后台缩略图、独立 TEST ONLY 轮播操作链、手册勘误和 50 条清单重分类",
   "git": {
     "branch": "phase-3.7",
-    "head": "d86f524f0d973b70c4fef6d76c7a58bd6cfd18f0",
+    "head": "ba80be35b05ea9d9888172183d1e5e7229cb7f88",
     "working_tree_included": true,
     "committed": false,
+    "staged": false,
     "pushed": false,
     "merged": false
   },
-  "hero_slider": {
+  "layout_fixes": {
+    "public_hero": {
+      "file": "apps/website/app/components/HeroBannerSlider.vue",
+      "change": "恢复与全站容器一致的响应式水平留白；背景继续铺满，不改轮播结构和 14 个首页模块",
+      "desktop_1440": {
+        "content_x_px": 80,
+        "heading_x_px": 80,
+        "cta_x_px": 80,
+        "horizontal_overflow": false
+      },
+      "mobile_375": {
+        "content_x_px": 16,
+        "heading_x_px": 16,
+        "cta_x_px": 16,
+        "horizontal_overflow": false
+      }
+    },
+    "admin_thumbnail": {
+      "file": "apps/admin/app/pages/homepage.vue",
+      "change": "缩略图放入独立 16:9 比例框并限制左栏宽度，避免跟随右侧字段高度拉伸",
+      "viewport": "1366x900",
+      "thumbnail_width_px": 256,
+      "thumbnail_height_px": 144,
+      "thumbnail_ratio": 1.778,
+      "source_image_dimensions": "1200x900",
+      "card_height_px": 569.11,
+      "object_fit": "cover"
+    }
+  },
+  "persistent_demo_carousel": {
     "admin_entry": "https://admin-demo.junhuiscrewbarrel.com/homepage -> Hero 首页主视觉 -> Banner Slider 轮播图",
-    "maximum_items": 5,
-    "autoplay_seconds": 6,
     "items_per_language": 4,
     "zh_cn_revision": {
-      "before": 6,
-      "after": 7
+      "draft": 7,
+      "applied": 7
     },
     "en_revision": {
-      "before": 1,
-      "after": 2
+      "draft": 2,
+      "applied": 2
     },
     "items": [
       {
-        "key": "precision-manufacturing",
         "demo_media": "generated-01.jpg",
         "zh_title": "螺杆与机筒精密制造",
         "en_title": "Precision Screw & Barrel Manufacturing",
@@ -35,7 +62,6 @@
         "enabled": true
       },
       {
-        "key": "surface-engineering",
         "demo_media": "generated-14.jpg",
         "zh_title": "表面工程与工艺技术",
         "en_title": "Surface Engineering & Process Technology",
@@ -44,7 +70,6 @@
         "enabled": true
       },
       {
-        "key": "manufacturing-quality",
         "demo_media": "generated-31.jpg",
         "zh_title": "制造能力与质量控制",
         "en_title": "Manufacturing Capability & Quality Control",
@@ -53,7 +78,6 @@
         "enabled": true
       },
       {
-        "key": "application-solutions",
         "demo_media": "generated-23.jpg",
         "zh_title": "面向应用的解决方案",
         "en_title": "Application-led Solutions",
@@ -62,88 +86,155 @@
         "enabled": true
       }
     ],
-    "public_boundary": {
-      "only_enabled_items": true,
-      "only_public_ready_image_media": true,
-      "same_language_internal_links": true,
-      "internal_id_absent": true,
-      "media_id_absent": true,
-      "enabled_field_absent": true,
-      "storage_fields_absent": true
-    },
-    "browser_acceptance": {
-      "desktop_viewport": "1440x1000",
-      "mobile_viewport": "375x812",
-      "one_h1": true,
-      "images_decoded": true,
-      "autoplay_advanced": true,
-      "pause_held": true,
-      "manual_previous_next": true,
-      "manual_dots": true,
-      "cta_click_url": "https://demo.junhuiscrewbarrel.com/zh-cn/products/",
-      "cta_target_h1": "产品中心",
-      "same_demo_origin": true,
-      "english_items_visible": 4
+    "assertions": {
+      "four_bilingual_items_preserved": true,
+      "fourteen_modules_preserved": true,
+      "test_only_title_absent": true,
+      "persistent_demo_business_data_modified": false
     }
   },
-  "deliverables": {
-    "implementation_report": "docs/handoff/demo-owner-review-followup-r1/demo-owner-review-followup-r1-report.md",
-    "admin_manual": "docs/handoff/demo-owner-review-followup-r1/后台中文使用手册.md",
-    "admin_noneditable_audit": "docs/handoff/demo-owner-review-followup-r1/后台不能直接修改的内容清单.md",
-    "design_concept": "artifacts/demo-owner-review-followup-r1-design/hero-slider-concept-desktop-demo.png",
-    "evidence_directory": "artifacts/demo-owner-review-followup-r1-20260914T141327+0800",
-    "evidence_zip": "Junhui-Demo-Owner-Review-Follow-up-R1-Evidence-20260914T141327+0800.zip"
+  "test_only_operation_chain": {
+    "environment": "junhui-integrated-acceptance-r1-test-only",
+    "database": "独立真实 PostgreSQL",
+    "media_and_cache": "独立 MinIO / Redis / Compose 数据卷",
+    "write_method": "只通过真实后台表单操作；GET 仅用于脱敏回读与断言",
+    "save_reopen_preview_apply": {
+      "save_http_status": 200,
+      "saved_draft_revision": 18,
+      "reopened_titles": [
+        "表面工程与工艺技术",
+        "TEST ONLY｜螺杆与机筒精密制造（保存回读）",
+        "制造能力与质量控制",
+        "面向应用的解决方案"
+      ],
+      "reopened_enabled": [true, true, true, false],
+      "preview_h1": "表面工程与工艺技术",
+      "preview_enabled_slide_count": 3,
+      "apply_http_status": 200,
+      "applied_revision": 10,
+      "public_enabled_slide_count": 3
+    },
+    "add_delete_restore": {
+      "after_fifth_add_count": 5,
+      "after_fifth_delete_count": 4,
+      "divergent_draft_revision": 21,
+      "restore_http_status": 200,
+      "restored_draft_revision": 22,
+      "restored_draft_equals_applied": true
+    },
+    "final_state": {
+      "zh_draft_revision": 23,
+      "zh_applied_revision": 11,
+      "zh_slide_count": 4,
+      "en_slide_count": 4,
+      "non_hero_module_hashes_unchanged": true,
+      "hero_product_relations_unchanged": true,
+      "fourteen_modules_preserved": true
+    },
+    "evidence": "artifacts/demo-owner-followup-r1-focused-closeout-20260914T172540+0800/checks/qa-carousel-operation-chain.json"
   },
-  "admin_noneditable_audit": {
-    "total": 50,
-    "p0": 21,
-    "p1": 20,
-    "p2": 9,
-    "technical_or_configuration_items": 38,
-    "owner_source_packages": 12
+  "manual_corrections": {
+    "file": "docs/handoff/demo-owner-review-followup-r1/后台中文使用手册.md",
+    "corrected": [
+      "首页轮播只在保存草稿并应用布局后影响普通首页",
+      "其他业务对象按各自审核与发布状态判断，不能套用首页草稿规则",
+      "RFQ 新提交已关闭，但历史或既有 Demo 询盘仍可能显示",
+      "媒体扫描和处理状态由系统产生，员工不能手工标记通过或完成"
+    ]
   },
-  "owner_must_supply": [
-    "公司主数据、真实联系方式和批准的品牌资产",
-    "九款产品的真实中英文名称、规格、材质、参数与公开图纸",
-    "材料、应用、工艺、制造能力和解决方案的审核资料及来源",
-    "客户案例的脱敏稿、结果证据与公开授权",
-    "真实作者/专家身份、资历、头像和公开同意",
-    "工厂与设备清单、能力边界和批准实拍素材",
-    "证书、荣誉、专利的扫描件、编号、有效期与权属证明",
-    "替换 40 张生成式 Demo 图片及 4 张轮播图的批准媒体",
-    "两段正式视频和三份审核版 PDF",
+  "noneditable_audit": {
+    "file": "docs/handoff/demo-owner-review-followup-r1/后台不能直接修改的内容清单.md",
+    "total_traceable_items": 50,
+    "original_priority_counts": {
+      "p0": 21,
+      "p1": 20,
+      "p2": 9
+    },
+    "reclassified_counts": {
+      "A_日常运营编辑缺口": 6,
+      "B_受控技术配置": 19,
+      "C_已有输入或关联能力但待真实资料授权": 15,
+      "D_可选功能或视觉高级配置": 10
+    },
+    "merged_overlap_groups": [
+      "品牌与站点身份",
+      "导航与页脚",
+      "轮播高级配置",
+      "RFQ 与 Privacy",
+      "重定向运营",
+      "搜索边界",
+      "首页结构边界",
+      "媒体、视频与下载"
+    ],
+    "public_drawings_requested": false,
+    "all_nine_demo_products_required_for_formalization": false
+  },
+  "owner_must_supply_or_approve_later": [
+    "公司正式主数据及允许公开的电话、邮箱、地址和介绍；不得自动把隐私邮箱当销售邮箱",
+    "仅拟正式上架产品的中英文名称、审核规格和关系；不要求 9 款 Demo 全部正式化，也不索取公开图纸",
+    "获批的材料、应用、工艺、能力、案例、人员、设备、证书等事实及授权",
+    "实际计划展示位置所需的批准实拍或渲染、视频和 PDF；当前轮播 4 张是现有 40 张生成式媒体的复用引用",
     "Privacy、RFQ 同意范围、收件人、保留期与数据处理决定"
   ],
+  "not_requested_again": [
+    "已有批准 Logo",
+    "已有三款产品图",
+    "COPY-V1",
+    "公开客户图纸"
+  ],
   "verification": {
-    "api_homepage_tests": "5 passed",
-    "website_tests": "160 passed",
-    "admin_tests": "90 passed",
+    "website_vitest": "17 files / 161 tests passed",
+    "admin_vitest": "14 files / 91 tests passed",
+    "api_homepage_tests": "5 passed using python -m pytest against the mounted current source",
     "typecheck": "website and admin passed",
     "prettier_affected_files": "passed",
-    "docker_build": "api, worker, website and admin passed",
-    "ruff": "not run: project-locked api-test image and host do not contain Ruff; no second dependency environment was installed",
-    "git_diff_check_affected_files": "passed with line-ending warnings only"
+    "full_repo_prettier": "not clean because two pre-existing root JSON files remain unformatted; they were outside this limited scope",
+    "build": "pnpm website/admin build passed; final Demo website/admin Docker images built",
+    "ruff": "not run: project-locked host and api-test environment do not contain Ruff; no second dependency environment was installed",
+    "browser": "Chrome via Playwright fallback because the preferred browser plugin was not installed",
+    "tool_notes": [
+      "Initial Nuxt typecheck/build attempts were blocked by sandbox EPERM on generated caches; approved reruns passed",
+      "Direct pytest console entrypoint loaded the image-installed stale package and produced two false 422 failures; python -m pytest loaded the mounted current source and all 5 tests passed"
+    ]
   },
   "final_demo": {
+    "website": "https://demo.junhuiscrewbarrel.com/",
+    "admin": "https://admin-demo.junhuiscrewbarrel.com/",
     "services": {
       "api": "healthy",
       "worker": "healthy",
       "website": "healthy",
-      "admin": "healthy"
+      "admin": "healthy",
+      "postgres": "healthy",
+      "redis": "healthy",
+      "minio": "healthy"
     },
     "website_status": 200,
     "admin_login_status": 200,
     "cache_control": "no-store",
-    "x_robots_tag": "noindex, nofollow",
-    "sitemap_status": 404,
-    "privacy_status": 404,
-    "rfq_page_status": 200,
-    "rfq_disabled_copy_present": true,
-    "rfq_submit_button_disabled": true
+    "x_robots_tag": "noindex, nofollow"
+  },
+  "deliverables": {
+    "closeout_report": "docs/handoff/demo-owner-review-followup-r1/demo-owner-followup-r1-focused-closeout-report.md",
+    "admin_manual": "docs/handoff/demo-owner-review-followup-r1/后台中文使用手册.md",
+    "admin_noneditable_audit": "docs/handoff/demo-owner-review-followup-r1/后台不能直接修改的内容清单.md",
+    "readback": "docs/handoff/demo-owner-review-followup-r1/demo-owner-review-followup-r1-readback.json",
+    "evidence_directory": "artifacts/demo-owner-followup-r1-focused-closeout-20260914T172540+0800",
+    "screenshots": [
+      "screenshots/frontend-hero-final-1440.png",
+      "screenshots/frontend-hero-final-375.png",
+      "screenshots/admin-hero-editor-final-1366.png"
+    ],
+    "checks": [
+      "checks/final-layout-readback.json",
+      "checks/qa-carousel-operation-chain.json",
+      "SHA256SUMS.txt"
+    ]
   },
   "boundaries_preserved": {
     "production_deployed": false,
     "phase37_data_modified": false,
+    "persistent_demo_business_content_modified": false,
     "privacy_published": false,
     "rfq_enabled": false,
     "email_sent": false,

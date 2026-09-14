@@ -620,13 +620,16 @@ onMounted(loadHomepage)
 
               <div class="hero-slide-card__body">
                 <figure>
-                  <img
-                    v-if="mediaFor(slide.media_id)?.url"
-                    :src="mediaFor(slide.media_id)!.url!"
-                    :alt="mediaFor(slide.media_id)!.filename"
-                    :width="mediaFor(slide.media_id)!.width ?? undefined"
-                    :height="mediaFor(slide.media_id)!.height ?? undefined"
-                  />
+                  <!-- 缩略图使用独立比例框，不跟随右侧编辑字段的高度拉伸。 -->
+                  <div class="hero-slide-card__thumbnail">
+                    <img
+                      v-if="mediaFor(slide.media_id)?.url"
+                      :src="mediaFor(slide.media_id)!.url!"
+                      :alt="mediaFor(slide.media_id)!.filename"
+                      :width="mediaFor(slide.media_id)!.width ?? undefined"
+                      :height="mediaFor(slide.media_id)!.height ?? undefined"
+                    />
+                  </div>
                   <figcaption>
                     {{ mediaFor(slide.media_id)?.filename || '图片当前不可公开使用' }}
                   </figcaption>
@@ -1156,21 +1159,31 @@ onMounted(loadHomepage)
 .hero-slide-card__body {
   padding: 0.8rem;
   display: grid;
-  grid-template-columns: minmax(10rem, 0.38fr) minmax(0, 1fr);
+  grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr);
   align-items: start;
   gap: 0.9rem;
 }
 
 .hero-slide-card figure {
+  width: 100%;
+  max-width: 16rem;
   margin: 0;
+  align-self: start;
   overflow: hidden;
   background: #07182b;
   border-radius: 0.45rem;
 }
 
-.hero-slide-card figure img {
+.hero-slide-card__thumbnail {
   width: 100%;
   aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #dce9f4;
+}
+
+.hero-slide-card__thumbnail img {
+  width: 100%;
+  height: 100%;
   display: block;
   object-fit: cover;
 }

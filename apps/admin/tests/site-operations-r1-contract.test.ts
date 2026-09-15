@@ -40,6 +40,15 @@ describe('站点运营设置 R1 后台合同', () => {
     expect(page).not.toContain('JSON.stringify')
   })
 
+  it('导航语言切换按钮在未选中、选中和键盘聚焦状态均有明确可读样式', () => {
+    const page = source('app/pages/site-operations/navigation.vue')
+    expect(page).toContain(':aria-pressed="activeLocale === locale"')
+    expect(page).toContain('.locale-tabs button {')
+    expect(page).toContain('color: #17324a;')
+    expect(page).toContain('.locale-tabs button:focus-visible')
+    expect(page).toContain('.locale-tabs button:hover:not(.active)')
+  })
+
   it('重定向页固定正式目标域并执行草稿、检查、确认、停用和历史链', () => {
     const page = source('app/pages/site-operations/redirects.vue')
     expect(page).toContain('official_target_origin')
@@ -49,5 +58,15 @@ describe('站点运营设置 R1 后台合同', () => {
     expect(page).toContain('/history`')
     expect(page).not.toContain('fetch(')
     expect(page).not.toContain('UUID')
+  })
+
+  it('重定向来源路径使用深色正文，历史动作以中文为主并保留技术代码', () => {
+    const page = source('app/pages/site-operations/redirects.vue')
+    expect(page).toContain('class="rule-source"')
+    expect(page).toContain('.rule-source {')
+    expect(page).toContain('color: #17324a;')
+    expect(page).toContain("'redirect.confirm': '确认启用'")
+    expect(page).toContain('redirectActionLabel(event.action)')
+    expect(page).toContain('技术代码：{{ event.action }}')
   })
 })

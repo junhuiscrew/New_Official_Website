@@ -1,0 +1,25 @@
+TEST ONLY redirect response headers (sanitized)
+Request target: local QA gateway only
+External redirect followed: no
+
+[enabled]
+HTTP/1.1 308 Permanent Redirect
+Server: nginx/1.28.3
+Date: Mon, 14 Sep 2026 15:46:58 GMT
+Content-Length: 0
+Connection: keep-alive
+location: https://junhuiscrewbarrel.com/en/products/
+X-Robots-Tag: noindex, nofollow
+Cache-Control: no-store
+X-Junhui-Test-Only: siteops-focused-r1
+
+[after disable]
+HTTP/1.1 404 Not Found
+Server: nginx/1.28.3
+Date: Mon, 14 Sep 2026 15:47:19 GMT
+Content-Type: application/json
+Content-Length: 119
+Connection: keep-alive
+X-Robots-Tag: noindex, nofollow
+Cache-Control: no-store
+X-Junhui-Test-Only: siteops-focused-r1

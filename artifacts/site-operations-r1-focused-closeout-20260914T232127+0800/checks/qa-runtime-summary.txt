@@ -1,0 +1,26 @@
+Independent TEST ONLY runtime
+compose_project=junhui-siteops-focused-r1-qa
+storage=tmpfs only
+postgres_version=17.6
+postgres_database=junhui_siteops_qa
+migration_head=20260914_0017
+minio_public_bucket=public-media
+minio_public_objects=1
+minio_private_bucket=private-rfq
+minio_private_objects=0
+default_seed_run=false
+main_demo_database_written=false
+phase37_database_written=false
+
+Final QA state
+brand_revision=3/3
+brand_header_logo_media_ref_is_null=true
+brand_mobile_logo_media_ref_is_null=true
+navigation_en_revision=0/0
+navigation_zh_revision=3/2
+navigation_zh_draft_equals_applied_content=true
+redirect_enabled=false
+redirect_workflow_status=draft
+redirect_revision=1
+redirect_status=308
+redirect_hit_count=1

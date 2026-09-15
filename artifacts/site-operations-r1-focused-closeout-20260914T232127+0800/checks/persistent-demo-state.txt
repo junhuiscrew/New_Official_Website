@@ -1,0 +1,25 @@
+Persistent Demo read-only final state
+website=https://demo.junhuiscrewbarrel.com/
+admin=https://admin-demo.junhuiscrewbarrel.com/
+admin_container_health=healthy
+admin_image=sha256:3ee9ae69c3891f7b5ae0ede439341ded853c8e3d5b32bf0bb9a0591b347dfbd8
+migration_head=20260914_0017
+brand_revision=0/0
+brand_static_logo=true
+navigation_zh_revision=0/0
+navigation_en_revision=0/0
+redirect_total=0
+redirect_enabled=0
+homepage_zh_revision=7
+homepage_zh_modules=14
+homepage_zh_slides=4
+homepage_en_revision=2
+homepage_en_modules=14
+homepage_en_slides=4
+homepage_status=200
+x_robots_tag=noindex, nofollow
+cache_control=no-store
+sitemap_status=404
+privacy_status=404
+rfq_submission=disabled
+phase37_changed=false

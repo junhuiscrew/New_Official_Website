@@ -1,0 +1,74 @@
+{
+  "run_id": "20260914T232127+0800",
+  "environment": "independent TEST ONLY QA",
+  "logo": {
+    "before": {
+      "draft_revision": 0,
+      "applied_revision": 0,
+      "desktop_logo": "approved static asset",
+      "mobile_logo": "approved static asset"
+    },
+    "operation": [
+      "后台媒体库上传 TEST-ONLY-real-public-ready-logo.png",
+      "桌面与移动 Logo 选择该真实媒体",
+      "保存草稿",
+      "页面重载并 fresh GET 回读",
+      "认证预览",
+      "确认应用",
+      "375px 前台打开移动菜单并验证图片解码"
+    ],
+    "applied": {
+      "draft_revision": 1,
+      "applied_revision": 1,
+      "http_status": 200,
+      "content_type": "image/png",
+      "bytes": 681151,
+      "natural_width": 2078,
+      "natural_height": 757
+    },
+    "final": {
+      "draft_revision": 3,
+      "applied_revision": 3,
+      "desktop_logo": "approved static asset",
+      "mobile_logo": "approved static asset"
+    }
+  },
+  "footer": {
+    "before": {
+      "group": "联系我们",
+      "items": ["联系我们", "提交询价", "下载资料"],
+      "draft_revision": 0,
+      "applied_revision": 0
+    },
+    "changed": {
+      "group": "TEST ONLY 服务入口",
+      "items": ["提交询价", "TEST ONLY 联系入口", "下载资料"],
+      "draft_revision": 1,
+      "applied_revision": 1,
+      "reopened": true,
+      "authenticated_preview": true,
+      "frontend_path_after_normal_click": "/zh-cn/contact/",
+      "frontend_h1": "从需求开始沟通"
+    },
+    "final": {
+      "group": "联系我们",
+      "items": ["联系我们", "提交询价", "下载资料"],
+      "draft_revision": 3,
+      "applied_revision": 2,
+      "draft_equals_applied_content": true,
+      "english_revision": "0/0"
+    }
+  },
+  "redirect": {
+    "source": "junhuiscrew.com/siteops-focused-r1-test-only/",
+    "target": "https://junhuiscrewbarrel.com/en/products/",
+    "workflow": ["保存草稿", "完成检查", "确认启用", "不跟随请求", "停用规则"],
+    "enabled_status": 308,
+    "enabled_location": "https://junhuiscrewbarrel.com/en/products/",
+    "disabled_status": 404,
+    "external_followed": false,
+    "final_enabled": false,
+    "history_main_labels": ["新建草稿", "完成检查", "确认启用", "停用规则"],
+    "technical_codes_retained": true
+  }
+}

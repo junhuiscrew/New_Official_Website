@@ -55,11 +55,23 @@ const canManage = computed(
 const selected = computed(
   () => list.value.items.find((item) => item.id === selectedId.value) ?? null,
 )
+const redirectActionLabels: Record<string, string> = {
+  'redirect.draft.create': '新建草稿',
+  'redirect.draft.update': '更新草稿',
+  'redirect.check': '完成检查',
+  'redirect.confirm': '确认启用',
+  'redirect.disable': '停用规则',
+}
 
 useHead({
   title: '重定向管理 · 骏辉内容运营后台',
   meta: [{ name: 'robots', content: 'noindex, nofollow' }],
 })
+
+/** 输入重定向审计动作代码；输出员工可读的中文主文案，未知代码保持可识别。 */
+function redirectActionLabel(action: string): string {
+  return redirectActionLabels[action] ?? '其他操作'
+}
 
 /** 输入可选选中规则；输出无，把可读字段装入表单，不要求员工输入内部标识或 JSON。 */
 function fillForm(item: RedirectItem | null): void {
@@ -201,7 +213,7 @@ onMounted(() => loadRedirects(false))
           :class="{ active: selectedId === item.id }"
           @click="selectRule(item)"
         >
-          <strong>{{ item.source_host }}{{ item.source_path }}</strong
+          <strong class="rule-source">{{ item.source_host }}{{ item.source_path }}</strong
           ><span>→ {{ item.target_url }}</span
           ><small
             >{{
@@ -279,9 +291,11 @@ onMounted(() => loadRedirects(false))
         <h2>变更历史</h2>
         <ol>
           <li v-for="event in history" :key="`${event.action}:${event.created_at}`">
-            <strong>{{ event.action }}</strong
+            <strong>{{ redirectActionLabel(event.action) }}</strong
             ><span>{{ new Date(event.created_at).toLocaleString('zh-CN') }}</span
-            ><small>revision {{ event.metadata.revision ?? '—' }}</small>
+            ><small
+              >技术代码：{{ event.action }} · revision {{ event.metadata.revision ?? '—' }}</small
+            >
           </li>
         </ol>
         <p v-if="selected && !history.length">暂无历史。</p>
@@ -362,8 +376,13 @@ onMounted(() => loadRedirects(false))
 .rule-list > button {
   display: grid;
   gap: 0.28rem;
+  color: #17324a;
   text-align: left;
   background: #f5f8fa;
+}
+.rule-source {
+  overflow-wrap: anywhere;
+  color: #17324a;
 }
 .rule-list > button.active {
   outline: 2px solid #0f70c9;

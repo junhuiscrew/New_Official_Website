@@ -1,0 +1,31 @@
+Focused closeout verification
+
+Admin Vitest
+command=pnpm --filter @junhui/admin test
+result=passed
+files=15 passed
+tests=97 passed
+failed=0
+
+Admin typecheck on host
+command=pnpm --filter @junhui/admin typecheck
+result=environment blocked
+detail=EPERM while Nuxt tried to write generated apps/admin/.nuxt/schema/nuxt.schema.json
+
+Admin typecheck in same-code locked QA image
+command=docker run --rm --entrypoint pnpm junhui-siteops-focused-r1-admin:latest typecheck
+result=passed
+
+Affected-file formatting
+tool=prettier 3.6.2 from pnpm lock installation
+files=apps/admin/app/pages/site-operations/navigation.vue; apps/admin/app/pages/site-operations/redirects.vue; apps/admin/tests/site-operations-r1-contract.test.ts
+result=passed
+
+Admin build
+tool=node:24-alpine + pnpm 11.19.0 + frozen lockfile
+result=passed
+
+API/Python
+changed=false
+old destructive seeded PostgreSQL suite run=false
+reason=the existing test drops/recreates the selected database and invokes default seed; current scope prohibits clearing and default Seed

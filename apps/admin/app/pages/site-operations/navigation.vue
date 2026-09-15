@@ -234,6 +234,8 @@ onMounted(loadNavigation)
         v-for="locale in ['zh-CN', 'en'] as const"
         :key="locale"
         :class="{ active: activeLocale === locale }"
+        :aria-pressed="activeLocale === locale"
+        :data-testid="`site-navigation-locale-${locale}`"
         @click="activeLocale = locale"
       >
         {{ locale === 'zh-CN' ? '简体中文' : '英语' }}
@@ -420,12 +422,23 @@ onMounted(loadNavigation)
 }
 .locale-tabs button {
   padding: 0.6rem 1rem;
+  color: #17324a;
   border: 1px solid #cbd8e3;
   background: #fff;
 }
-.locale-tabs .active {
+.locale-tabs button:hover:not(.active) {
+  color: #0a5b9f;
+  background: #eef6fc;
+  border-color: #7db7df;
+}
+.locale-tabs button:focus-visible {
+  outline: 3px solid rgb(15 112 201 / 28%);
+  outline-offset: 2px;
+}
+.locale-tabs button.active {
   color: #fff;
   background: #0f70c9;
+  border-color: #0f70c9;
 }
 .status-strip {
   padding: 0.8rem 1rem;

@@ -1,0 +1,17 @@
+站点运营设置 R1 有限收尾——文件校验清单
+run_id: 20260914T232127+0800
+算法: SHA-256
+
+ee1d0ecf16c8ef409448b801bc82cb65f8c5c83fe1a99d84512afbf1897ca5ec  docs/handoff/site-operations-r1-focused-closeout/site-operations-r1-focused-closeout-report.md  6967 bytes
+010acb1341bf2e38962899ce8be3ccc42b3cdfc0a7d0ae68384dbc0e1e733a36  docs/handoff/site-operations-r1-focused-closeout/site-operations-r1-focused-closeout-readback.json  5476 bytes
+e7b43091eec49550114f79e42b7c15e037f75e3209b5ef4ecf871e22eed228e0  docs/handoff/demo-owner-review-followup-r1/后台中文使用手册.md  20795 bytes
+871e96119a7b36884be6b31914d743fe6345fbe913206c81da513b0842652bbe  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/qa-mobile-menu-new-logo-decoded-375.png  25273 bytes
+eda1207dc096049366f3a1a5f74ec53a6286fed466bf09a653a047dc1e28e02a  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/admin-navigation-locale-chinese-selected-1440-final.png  213087 bytes
+a9e30757084f0a76ba481a4adaef3cf0c63d6ad9f1f76f74a2ba850af3eccf23  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/admin-footer-authenticated-preview-1440.png  30426 bytes
+bee4637ea2f7f69bdeaff125f9041a1e4ac0d6caf4706bdad2ba4dc34d171a32  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/qa-footer-applied-1440.png  28303 bytes
+cec9a557bb503f09ffb992b1111531ca2682e0006b96d20821e4ffe46f2de8c7  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/qa-footer-link-click-contact-1440.png  216442 bytes
+b55dfda067d7c434bd8c79dde74239108f1b98e90637970b97bd786c03611e1c  artifacts/site-operations-r1-focused-closeout-20260914T232127+0800/screenshots/admin-redirect-disabled-chinese-history-1440-final.png  235086 bytes
+627c433cf1ed6444884dbffe6ae3cfba1591daf4b4d19cac5bee8500c6b99211  Junhui-Site-Operations-R1-Focused-Manual-20260914T232127+0800.zip  475815 bytes
+db055a6ee13e3a3fc75554c4fd18f09f4af3eee577722ceb808aab385ce91164  Junhui-Site-Operations-R1-Focused-Closeout-Evidence-20260914T232127+0800.zip  985300 bytes
+
+说明：两个 ZIP 内均另含 SHA256SUMS.txt；独立读取校验结果为 0 个缺失、0 个哈希失败、0 个图片解码失败、0 个禁止命名条目。
